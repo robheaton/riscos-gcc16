@@ -1,0 +1,148 @@
+# Building everything from source
+
+You only need this to change the tool chain or to rebuild it. To **use** it, install the [packages](INSTALL-RISCOS.md) or the [cross compiler tarball](CROSS-COMPILER.md).
+
+> **Status of these instructions.** They are the scripts that built the released binaries, on one machine (Ubuntu 26.04, host GCC 15.2, 22 cores) in September and October 2026.
+> Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused).
+> That run found several scripts that had only worked in the author's work area; they are fixed. Compared with what was released, the rebuild gave:
+>
+> | Step | Result |
+> |---|---|
+> | 4. the cross compiler | [`cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) passes. The test programs of [TESTING.md](TESTING.md) compile to **byte-identical object files** (61 of 64; the other three differ only in an install path that C++ header strings carry, and have identical machine code). Linked programs differ from the released ones only in debug information and in the source file names that the static libraries carry. |
+> | 5. UnixLib | `libunixlib.so` and `libm.so` are identical in every loadable section (only the debug information differs). |
+> | 6. the runtime packages | C: as step 5. Fortran: identical code (only source file names differ). C++: 198 of the 199 objects of libstdc++ are identical; in the released library the 11 small functions of `std::ios_base::failure` have no stack probe (their object was compiled before probing became the default), in the rebuild they have it. |
+> | 7. the native compiler and the `Gcc16` package | rebuilt in the directory the release was built in (a mount namespace made the fresh copy appear under that path) with the original cross compiler: **1072 of the 1102 files of the package are byte-identical**, among them `f951`, `lto1`, `lto-wrapper` and `make`. The nine static libraries have identical members (only the dates in the `ar` headers differ). `cc1`, `cc1plus` (same size), `collect2`, the four drivers and the 14 binutils programs differ in a few bytes each; these differences have not been traced. Built in another directory the same files differ in the source paths they contain |
+> | 8. the Linux tarball | the unpacked tarball passes `cross-smoke.sh` (29 checks) with the directory it was built in hidden, and the programs it makes are byte-identical to those of the cross compiler of the first build. **The tarball on the releases page is this rebuilt one.** |
+>
+> Every binary contains the path it was built in (assertion messages, debug information), so a rebuild in another directory differs in those strings; the checks above allow for that, and the native packages were compared in the directory they were built in (below).
+> The packages for RISC OS on the releases page are the ones that were tested on the Raspberry Pi; they were not replaced by the rebuilt ones. The least reproducible part is step 1 (GCCSDK itself).
+
+## What gets built
+
+```
+GCC 16.2.0 + binutils 2.45.1  --->  cross compiler (Linux, x86-64)  --->  UnixLib 5.0 rebuilt (libunixlib, libm)
+                                          |                                      |
+                                          +--->  libstdc++, libgfortran         +--->  SharedLibs-C-armeabihf package
+                                          |
+                                          +--->  the native compiler (cc1, cc1plus, f951, lto1 ... for RISC OS)  +  native binutils  +  GNU make
+                                                                                        |
+                                                                                        +--->  Gcc16 package (!GCC16)
+```
+
+## Layout the scripts assume
+
+The scripts take their defaults from two directories under your home directory. **Clone this repository as `~/gccsdk-next`** (every script finds its patches relative to its own place, but they put work directories next to it):
+
+| Path | What |
+|---|---|
+| `~/gccsdk-next` | this repository; the scripts also create `src/`, `build*/`, `env-f/`, `hostlibs*/`, `binutils-*-install/`, `unixlib/`, `native-*` and `release/` here (all in `.gitignore`) |
+| `~/gccsdk` | GCCSDK: an svn checkout of trunk r7800 **and** a built GCCSDK 10.2.0 EABI tool chain (see step 1) |
+
+```bash
+git clone https://github.com/robheaton/riscos-gcc16 ~/gccsdk-next
+```
+
+Host tools: a C and C++ compiler (GCC 13 or newer; 15.2 was used), `make`, `patch`, `autoconf2.69` (the binary must be called `autoconf2.69`; it regenerates libstdc++'s `configure`), `python3`, `rsync`, `xz`, `tar`, `file`, `subversion` (to fetch GCCSDK).
+
+## 0. The upstream sources
+
+Put these in `~/gccsdk-next/src/` (URLs and checksums in [SOURCES.md](../SOURCES.md)): `gcc-16.2.0.tar.xz`, `binutils-2.45.1.tar.xz`, `make-4.4.1.tar.gz`, and extract `gmp-6.1.0`, `mpfr-3.1.4` and `mpc-1.0.3` into `~/gccsdk-next/src/prereq/` (the versions GCCSDK's own recipe uses).
+
+## 1. The GCCSDK seed
+
+The recipe reads two things from a GCCSDK 10.2.0 EABI build: the **sysroot pieces** (UnixLib and OSLib headers, `crt0.o`, the dynamic loader and the 10.2.0 `libunixlib`/`libdl`, from `~/gccsdk/env`) and the **UnixLib source tree with its generated build files** (`~/gccsdk/build/gcc/gcc-10.2.0/libunixlib`).
+Build GCCSDK as its own instructions say ([GCCSDK on riscos.info](https://www.riscos.info/index.php/GCCSDK)); the author used svn trunk r7800 (`svn://svn.riscos.info/gccsdk/trunk`) and its autobuilder recipe for GCC 10.2.0. This is the least reproducible step.
+Two packages made by GCCSDK's autobuilder are also read, from `~/gccsdk/autobuilder/autobuilder_packages/arm/Development/`: `SharedLibs-C-armeabihf_10.2.0-1_arm.zip` (the base of the C runtime package: its loader, `libgcc_s` and `libdl` are used unchanged) and `gcc_10.2.0-1_arm.zip` (the icon sprites of `!GCC16`).
+Nothing under `~/gccsdk` is modified by the scripts here.
+
+## 2. binutils 2.45.1 (cross)
+
+```bash
+cd ~/gccsdk-next/src && tar -xf binutils-2.45.1.tar.xz
+~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts/apply-port.sh  ~/gccsdk-next/src/binutils-2.45.1
+~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts/build-binutils.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils ~/gccsdk-next/binutils-2.45.1-install
+```
+
+The RISC OS changes (4 patches) are in `recipe/binutils-2.45.1-riscos/patches/`: the EABI/RISC OS ELF handling in BFD, gas and ld, and the ELF file type &E1F for programs.
+
+## 3. The host libraries
+
+```bash
+~/gccsdk-next/recipe/gcc-16.2.0-riscos/scripts/build-host-prereqs.sh       # static GMP, MPFR, MPC for the Linux host -> ~/gccsdk-next/hostlibs
+```
+
+## 4. The GCC cross compiler (about 13 minutes on 22 cores)
+
+```bash
+R=~/gccsdk-next/recipe/gcc-16.2.0-riscos/scripts
+cd ~/gccsdk-next/src && mkdir -p clean && tar -xf gcc-16.2.0.tar.xz -C clean
+$R/apply-port.sh         ~/gccsdk-next/src/clean/gcc-16.2.0      # patches/ + new-files/: the RISC OS target (backend, libgcc, throwback, stack probing by default)
+$R/apply-port-cxx.sh     ~/gccsdk-next/src/clean/gcc-16.2.0      # libstdc++ (regenerates its configure)
+$R/apply-port-fortran.sh ~/gccsdk-next/src/clean/gcc-16.2.0      # libgfortran: no shared-memory coarray library
+$R/prepare-sysroot.sh    ~/gccsdk-next/env-f                     # the install prefix, with the GCCSDK sysroot pieces and the binutils entries
+$R/configure-gcc16-full.sh ~/gccsdk-next/src/clean/gcc-16.2.0 ~/gccsdk-next/build-f ~/gccsdk-next/env-f     # C, C++, Fortran, LTO; shared libgcc, libstdc++, libgfortran
+$R/make-gcc16-full.sh ~/gccsdk-next/build-f ~/gccsdk-next/env-f all
+$R/make-gcc16-full.sh ~/gccsdk-next/build-f ~/gccsdk-next/env-f install
+export PATH=~/gccsdk-next/env-f/bin:$PATH
+~/gccsdk-next/tests/cross-smoke/cross-smoke.sh ~/gccsdk-next/env-f
+```
+
+`recipe/gcc-16.2.0-riscos/README.md` describes what each patch and new file does.
+
+## 5. UnixLib (about 15 seconds)
+
+```bash
+$R/build-unixlib.sh                                              # UnixLib 5.0 from the GCCSDK tree + patches-unixlib/ -> ~/gccsdk-next/unixlib/build/.libs/libunixlib.so.5.0.0
+~/gccsdk-next/tools/check-libunixlib.sh ~/gccsdk-next/unixlib/build/.libs/libunixlib.so.5.0.0
+```
+
+`build-unixlib.sh` refuses to build with a compiler that does not have stack probing on by default, and a patch that does not apply is a hard error. `check-libunixlib.sh` looks for the code of every fix in the built library.
+(`libunixlib.a` is not rebuilt; the SharedUnixLibrary module is built separately by `build-sul.sh`.)
+
+## 6. The runtime packages
+
+```bash
+PKG_OUT=~/gccsdk-next/release python3 $R/make-c16-package.py 11 ~/gccsdk-next/unixlib/build               # SharedLibs-C-armeabihf 16.2.0-11 (needs GCCSDK's 10.2.0-1 package as the base)
+PKG_OUT=~/gccsdk-next/release python3 $R/make-cxx-package.py 5 ~/gccsdk-next/build-f/arm-riscos-gnueabihf/libstdc++-v3/src/.libs/libstdc++.so.6.0.36
+PKG_OUT=~/gccsdk-next/release python3 $R/make-fortran-package.py 2
+```
+
+The metadata of the packages (maintainer, licence, copyright text) is in `scripts/pkgmeta.py`.
+
+## 7. The native compiler (about 15 minutes on 22 cores, 13 of them for the compilers)
+
+```bash
+$R/build-native-prereqs.sh                                       # GMP, MPFR, MPC cross-built for RISC OS -> ~/gccsdk-next/hostlibs-riscos
+$R/prepare-native-src.sh                                         # a fresh tree from the tarball: apply-port, apply-port-cxx, apply-port-native (-> src/native2)
+$R/build-native-lto.sh                                           # cc1, cc1plus, f951, lto1, lto-wrapper, collect2 ... compiled for RISC OS with LTO support (-> native-stage3-lto)
+# without LTO:  $R/build-native-all.sh O2
+B=~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts
+$B/build-binutils-native.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils-native ~/gccsdk-next/binutils-native-install2   # as, ld, ar, nm ... for RISC OS
+~/gccsdk-next/recipe/make-4.4.1-riscos/scripts/build-make.sh                                                                           # GNU make 4.4.1 for RISC OS -> make-riscos/install/bin/make
+$R/make-native-tree.sh ~/gccsdk-next/native-tree ~/gccsdk-next/native-stage3-lto ~/gccsdk-next/binutils-native-install2 ~/gccsdk-next/make-riscos/install/bin/make
+PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 11                                           # Gcc16_16.2.0-11_arm.zip
+```
+
+`make-native-tree.sh` and `build-native-lto.sh` take their stage directories as arguments or defaults (read their headers); the LTO build uses `recipe/gcc-16.2.0-riscos/data/no-plugin-ld` so that configure accepts a native `ld` without plugin support.
+The native compiler is *cross-built* on Linux with the cross compiler of step 4 (host = target = `arm-riscos-gnueabihf`); the target options are exactly those of the cross compiler, so the native `cc1` is the same compiler.
+What the native build needed, each point learned on the hardware, is in `recipe/gcc-16.2.0-riscos/README.md`.
+
+## 8. The Linux tarball and the release
+
+```bash
+$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-11 <a README file>
+```
+
+It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-11-x86_64-linux.tar.xz`. Check the result the way the release was checked:
+
+```bash
+cd ~/gccsdk-next/release
+tar -xf riscos-gcc16-cross-16.2.0-11-x86_64-linux.tar.xz
+~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-11-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
+```
+
+## Changing something
+
+* **A change to GCC or libstdc++:** edit or add a patch in `recipe/gcc-16.2.0-riscos/patches*/`, redo steps 4 and 7.
+* **A change to UnixLib:** add a patch to `patches-unixlib/`, list it in `build-unixlib.sh` (in order, after the fix-level patch it belongs behind), and add a check for it to `tools/check-libunixlib.sh`. Each fix has a "fix level": a tiny patch (`unixlib-sysconf-fixlevel-N.patch`) makes `sysconf (0x4700)` answer N.
+* **Test it** on the host with the cross compiler, then on RISC OS ([TESTING.md](TESTING.md)).

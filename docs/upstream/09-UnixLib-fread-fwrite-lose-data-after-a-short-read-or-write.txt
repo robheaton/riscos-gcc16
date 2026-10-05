@@ -1,0 +1,117 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: fread () and fwrite () do not advance their data pointer
+         after a short read () / write (): data is stored over itself or
+         written twice
+Attach:  patches/unixlib-stdio-short-transfers.patch
+         repro/stdio-model/ (host model: the real fread.c and fwrite.c)
+
+Summary
+-------
+The loops in stdio/fread.c and stdio/fwrite.c that transfer the bulk of a
+request directly (without the stream buffer) call read () / write () repeatedly
+until the request is done. They subtract the bytes that were transferred from
+the count (to_read, to_write) but never move the data pointer. A transfer that
+is only partly done therefore makes the next call read into the same place
+again (the first bytes are overwritten) or write the same bytes again. The
+returned count still comes out right, so nothing notices: the data is wrong.
+The patch adds one line to each of the three loops.
+
+This is a latent bug that I found by reading the code, not one that bit me on
+the machine. On the machine read () was never short in my tests, and the other
+'wrong bytes in a buffer' symptom that I saw while looking at this is a
+different problem (report 07). I have not run a program that shows it on RISC
+OS; what I have is a host model that runs the real fread.c and fwrite.c (below)
+and shows it with a mock read () and write ().
+
+When it can happen
+------------------
+Only when read () or write () returns more than 0 but less than was asked for,
+and the request is not finished: sockets (_sread returns what has arrived),
+terminals (__ttyicanon returns at most one line: fread (buf, 1, 100, stdin)
+after a typed line of 20 bytes reads the line with the first read and then the
+next line over it), and in general any device whose read returns what is
+available. I did not find a case on ordinary files (OS_GBPB gives all of the
+bytes, or the rest of the file at its end, where the next read returns 0) or on
+UnixLib's pipes (which are files: __piperead is __fsread). For fwrite () the
+same applies to a write () that takes only part of the data, for example on a
+non-blocking socket.
+
+Cause (trunk r7800, stdio/fread.c, stdio/fwrite.c)
+--------------------------------------------------
+fread.c, the loop at the end of the function:
+
+      while (to_read)
+        {
+          ssize_t bytes = read (stream->fd, data, to_read);
+          ...
+          else
+            {
+              to_read -= bytes;
+              stream->__offset += bytes;      /* data is not advanced */
+            }
+        }
+
+fwrite.c has two such loops, one for a buffered stream when the data is bigger
+than the room in the buffer (it flushes the buffer, then writes the rest
+straight out), and one for an unbuffered stream. Both do to_write -= bytes and
+leave data alone. The other parts of the two functions (the copy from or to the
+stream buffer) do advance data, which is why the omission is easy to miss.
+
+The patch
+---------
+One line per loop, after the subtraction: data = (void *)((char *)data +
+bytes); in fread.c and the const equivalent in the two loops of fwrite.c. 8
+lines are added, comments included. The patch is against trunk r7800; apply
+with patch -p1 from the top of the tree.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* stdio/fread.c (fread): Advance the data pointer after a short
+	read () in the direct-read loop.
+	* stdio/fwrite.c (fwrite): Likewise after a short write () in both
+	write loops.
+
+Verification
+------------
+repro/stdio-model/ compiles the real stdio/fread.c and stdio/fwrite.c on the
+host (only the struct __iobuf of include/stdio.h, a few macros and mock read
+(), write (), isatty (), __flsbuf () and __flslbbuf () are mine) and runs
+200000 random requests through each: a buffered or unbuffered stream, with data
+already in the buffer, with a pushed back character, a source that has fewer
+bytes than the request, lengths from 1 to 70000 bytes. The mock read () and
+write () complete the request, or return a random part of it, or one byte at a
+time, or pieces of 4096 bytes. After each call the model checks the returned
+count and compares every byte with what the source held (or, for fwrite, what
+the destination received, including the part that was already in the buffer).
+
+  trunk, every transfer complete:  0 failed checks (so the model itself is not
+                                   what fails).
+  trunk, short transfers:  258333 failed checks in 200000 cases (293438 of the
+                           400000 calls saw a short transfer).
+  patched:  0 failed checks.
+  mutants of the patched lines:  5 breakages (a loop that does not advance, one
+                                 that advances one byte too many, one that
+                                 advances by the whole request) are all caught.
+
+build-and-run.sh SRCDIR LABEL [mutate] runs it; SRCDIR is a libunixlib
+directory with or without the patch. It needs only a host gcc. The patch also
+compiles with GCC 10.2.0 and with GCC 16.2.0 (the flags of the UnixLib build),
+and the patched sources are part of my port's libunixlib 16.2.0-9, whose
+regression suites (C: 34541 checks in six variants) pass. Those suites do not
+exercise a short read, so they show only that the patch does not break the
+ordinary cases.
+
+What I did not do
+-----------------
+I did not run a short read or write on RISC OS, so I cannot show the failure on
+the machine; the claim rests on the code and on the model. If you have a
+suggestion for a reliable way to make a UnixLib socket or terminal read return
+short (a client that sends a few bytes at a time over the loopback, a typed
+line into a console program), I will run it.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

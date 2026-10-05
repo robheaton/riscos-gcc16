@@ -1,0 +1,273 @@
+VERIFY-LOG  2026-10-05 19:24   run by verify/run-verify.sh
+upstream: svn://svn.riscos.info/gccsdk/trunk/gcc4 revision 7800; working copy changes in the files used: 0
+
+1. every patch applies to pristine upstream
+  ok    armeabisupport-mmap-failure-cleanup.patch alone
+  ok    sul-1-vfork-child-main-stack.patch alone
+  ok    sul-2-vfork-child-wimp-slot.patch alone
+  ok    sul-3-vfork-child-execed-flag.patch alone
+  ok    sul-all-vfork-child.patch alone
+  ok    unixlib-da-heap-fallback.patch alone
+  ok    unixlib-ddeutils-prefix-loop.patch alone
+  ok    unixlib-eabi-stack-size.patch alone
+  ok    unixlib-free-signal-stack.patch alone
+  ok    unixlib-gcc14-implicit-declarations.patch alone
+  ok    unixlib-inline-swi-register-variables.patch alone
+  ok    unixlib-memcpy-split-vstm.patch alone
+  ok    unixlib-mmap-refuse-impossible.patch alone
+  ok    unixlib-pthread-cond-timedwait.patch alone
+  ok    unixlib-pthread-once.patch alone
+  ok    unixlib-scanf-long-long.patch alone
+  ok    unixlib-sleep-threads.patch alone
+  ok    unixlib-stdio-short-transfers.patch alone
+  ok    unixlib-sysconf-nprocessors.patch alone
+  ok    unixlib-touch-stack-buffers.patch alone
+  ok    unixlib-vfork-child-pthread-fini.patch alone
+  ok    unixlib-vfork-exec-heap-limit.patch alone
+  ok    sul-1 then sul-2
+  ok    sul-2 then sul-3
+
+2. module/sul.s: assemble (GCCSDK 10.2.0) and run the machine code on the A32 interpreter
+  ok    assembles: pristine (ok)
+        sul-pristine.bin  3192 bytes  sha1 bcf8c9bb60a5ce1f
+  ok    assembles: stack (ok)
+        sul-stack.bin  3200 bytes  sha1 350b08e974ab532b
+  ok    assembles: slot (ok)
+        sul-slot.bin  3200 bytes  sha1 1ed06abffac12346
+  ok    assembles: execed (ok)
+        sul-execed.bin  3204 bytes  sha1 82d589e843b6562c
+  ok    assembles: all (ok)
+        sul-all.bin  3220 bytes  sha1 8fa188777f128a72
+sul_exit (orig module): 32 scenarios, all right
+  ok    sim-sul-exit.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-pristine.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-pristine.o orig
+sul_exit (fixed module): 32 scenarios, all right
+  ok    sim-sul-exit.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-stack.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-stack.o fixed
+sul_exit (fixed module): 32 scenarios, all right
+  ok    sim-sul-exit.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-all.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-all.o fixed
+restore_wimpslot (old module): 7 scenarios, all right
+  ok    sim-sul-slot.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-pristine.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-pristine.o old
+restore_wimpslot (fixed2 module): 7 scenarios, all right
+  ok    sim-sul-slot.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-slot.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-slot.o fixed2
+restore_wimpslot (fixed2 module): 7 scenarios, all right
+  ok    sim-sul-slot.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-all.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-all.o fixed2
+ok  : 48 parent statuses: the old module copies the status word as it is (IS_EXECED included), the new one clears IS_EXECED and changes nothing else (child structure, memory writes, SWIs, registers)
+  ok    sim-sul-fork.py ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-pristine.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-pristine.o ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-execed.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-execed.o
+ok  : 48 parent statuses: the old module copies the status word as it is (IS_EXECED included), the new one clears IS_EXECED and changes nothing else (child structure, memory writes, SWIs, registers)
+  ok    sim-sul-fork.py ~/gccsdk-next/sul-build/sul-fixed2.bin ~/gccsdk-next/sul-build/sul-fixed2.o ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-all.bin ~/gccsdk-next/report/upstream-2026-10-04/verify/sul/sul-all.o
+
+3. UnixLib: the patched files compile (the flags of the UnixLib build, GCC 10.2.0 and GCC 16.2.0)
+  ok    GCC 10.2.0 compiles pthread/pthinit.c (patched by unixlib-vfork-child-pthread-fini)
+  ok    GCC 10.2.0 compiles unix/unix.c (patched by unixlib-free-signal-stack)
+  ok    GCC 10.2.0 compiles sys/exec.c (patched by unixlib-free-signal-stack)
+  ok    GCC 10.2.0 compiles sys/mman-armeabi.c (patched by unixlib-mmap-refuse-impossible)
+  ok    GCC 10.2.0 compiles sys/stackalloc.c (patched by unixlib-vfork-exec-heap-limit)
+  ok    GCC 16.2.0 compiles pthread/pthinit.c (patched by unixlib-vfork-child-pthread-fini)
+  ok    GCC 16.2.0 compiles unix/unix.c (patched by unixlib-free-signal-stack)
+  ok    GCC 16.2.0 compiles sys/exec.c (patched by unixlib-free-signal-stack)
+  ok    GCC 16.2.0 compiles sys/mman-armeabi.c (patched by unixlib-mmap-refuse-impossible)
+  ok    GCC 16.2.0 compiles sys/stackalloc.c (patched by unixlib-vfork-exec-heap-limit)
+  ok    GCC 10.2.0 assembles sys/_syslib.s (patched by unixlib-vfork-exec-heap-limit)
+  ok    GCC 16.2.0 assembles sys/_syslib.s (patched by unixlib-vfork-exec-heap-limit)
+
+4. ARMEABISupport host model (the module's own memory.c / mmap.c, unpatched and patched, on a model of the OS)
+  == ORIGINAL: 30 check(s) failed
+  ok    unpatched: 30 failed checks expected
+  == PATCHED: 0 check(s) failed
+  ok    patched: 0 failed checks expected
+
+4b. UnixLib heap growth of a vfork + exec child (report 08): the REAL sys/brk.c and sys/stackalloc.c on a host model, with the numbers measured on the machine
+  original: 7 check(s) failed
+  ok    unpatched: 7 failed checks expected (the bug: memory handed out inside the saved parent)
+  ok    patch applies to the files of the model
+  patched: 0 check(s) failed
+  ok    patched: 0 failed checks expected
+  mutation checks: 7 mutations, 0 not caught
+  ok    every breakage of the patched check is caught
+  ok    a program that was not started by exec: the sequence of requests and the slot sizes are identical before and after
+  ok    start-up lines (himem_max_start .. himem_max_end) on the A32 interpreter: 24 checks
+mutation checks of the start-up lines: 9 mutations, 0 not caught
+  ok    every breakage of those instructions is caught
+mutation checks of the stack_try / da_try loops: 76 mutations, 0 not caught
+  ok    every breakage of the stack_try / da_try loops is caught
+
+5. every reproducer source compiles (GCC 10.2.0 and GCC 16.2.0)
+  ok    GCC 10.2.0 compiles repro/sul/daprobe.c
+  ok    GCC 10.2.0 compiles repro/sul/exittest.c
+  ok    GCC 10.2.0 compiles repro/sul/modver.c
+  ok    GCC 10.2.0 compiles repro/sul/seqtest.c
+  ok    GCC 10.2.0 compiles repro/sul/vforkbare.c
+  ok    GCC 10.2.0 compiles repro/sul/vforkfail.c
+  ok    GCC 10.2.0 compiles repro/sul/vforkloop.c
+  ok    GCC 10.2.0 compiles repro/sul/vforkrma.c
+  ok    GCC 10.2.0 compiles repro/armeabisupport/mmap_leak_repro.c
+~/gccsdk-next/report/upstream-2026-10-04/repro/armeabisupport/mmaptest.c:172:32: warning: unknown option after '#pragma GCC diagnostic' kind [-Wpragmas]
+  172 | #pragma GCC diagnostic ignored "-Winfinite-recursion"
+      |                                ^~~~~~~~~~~~~~~~~~~~~~
+  ok    GCC 10.2.0 compiles repro/armeabisupport/mmaptest.c
+  ok    GCC 10.2.0 compiles repro/svc-abort/readtest2.c
+  ok    GCC 10.2.0 compiles repro/svc-abort/readtest5.c
+  ok    GCC 10.2.0 compiles repro/svc-abort/readtest6.c
+  ok    GCC 10.2.0 compiles repro/svc-abort/svc_abort_repro.c
+  ok    GCC 10.2.0 compiles repro/heap/seqtest.c
+  ok    GCC 10.2.0 compiles repro/heap/vforkheap.c
+  ok    GCC 16.2.0 compiles repro/sul/daprobe.c
+  ok    GCC 16.2.0 compiles repro/sul/exittest.c
+  ok    GCC 16.2.0 compiles repro/sul/modver.c
+  ok    GCC 16.2.0 compiles repro/sul/seqtest.c
+  ok    GCC 16.2.0 compiles repro/sul/vforkbare.c
+  ok    GCC 16.2.0 compiles repro/sul/vforkfail.c
+  ok    GCC 16.2.0 compiles repro/sul/vforkloop.c
+  ok    GCC 16.2.0 compiles repro/sul/vforkrma.c
+  ok    GCC 16.2.0 compiles repro/armeabisupport/mmap_leak_repro.c
+  ok    GCC 16.2.0 compiles repro/armeabisupport/mmaptest.c
+  ok    GCC 16.2.0 compiles repro/svc-abort/readtest2.c
+  ok    GCC 16.2.0 compiles repro/svc-abort/readtest5.c
+  ok    GCC 16.2.0 compiles repro/svc-abort/readtest6.c
+  ok    GCC 16.2.0 compiles repro/svc-abort/svc_abort_repro.c
+  ok    GCC 16.2.0 compiles repro/heap/seqtest.c
+  ok    GCC 16.2.0 compiles repro/heap/vforkheap.c
+
+6. the ten further UnixLib patches (reports 09 - 18): compile with GCC 10.2.0 and GCC 16.2.0, assemble the .s files
+  ok    GCC 10.2.0 compiles unix/stat.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 10.2.0 compiles unix/lstat.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 10.2.0 compiles unix/ul_close.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 10.2.0 compiles string/strndup.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 10.2.0 compiles stdlib/msort.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 10.2.0 compiles pthread/once.c (patched by unixlib-pthread-once)
+  ok    GCC 10.2.0 compiles pthread/cond.c (patched by unixlib-pthread-cond-timedwait)
+  ok    GCC 10.2.0 compiles signal/sleep.c (patched by unixlib-sleep-threads)
+  ok    GCC 10.2.0 compiles stdio/fread.c (patched by unixlib-stdio-short-transfers)
+  ok    GCC 10.2.0 compiles stdio/fwrite.c (patched by unixlib-stdio-short-transfers)
+  ok    GCC 10.2.0 compiles unix/dev.c (patched by unixlib-touch-stack-buffers)
+  ok    GCC 10.2.0 compiles netlib/recv.c (patched by unixlib-touch-stack-buffers)
+  ok    GCC 10.2.0 compiles netlib/recvfrom.c (patched by unixlib-touch-stack-buffers)
+  ok    GCC 10.2.0 assembles sys/_syslib.s (patched by unixlib-eabi-stack-size)
+  ok    GCC 10.2.0 assembles sys/_syslib.s (patched by unixlib-da-heap-fallback)
+  ok    GCC 10.2.0 assembles string/_memcpymove-v7l.s (patched by unixlib-memcpy-split-vstm)
+  ok    GCC 16.2.0 compiles unix/stat.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 16.2.0 compiles unix/lstat.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 16.2.0 compiles unix/ul_close.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 16.2.0 compiles string/strndup.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 16.2.0 compiles stdlib/msort.c (patched by unixlib-gcc14-implicit-declarations)
+  ok    GCC 16.2.0 compiles pthread/once.c (patched by unixlib-pthread-once)
+  ok    GCC 16.2.0 compiles pthread/cond.c (patched by unixlib-pthread-cond-timedwait)
+  ok    GCC 16.2.0 compiles signal/sleep.c (patched by unixlib-sleep-threads)
+  ok    GCC 16.2.0 compiles stdio/fread.c (patched by unixlib-stdio-short-transfers)
+  ok    GCC 16.2.0 compiles stdio/fwrite.c (patched by unixlib-stdio-short-transfers)
+  ok    GCC 16.2.0 compiles unix/dev.c (patched by unixlib-touch-stack-buffers)
+  ok    GCC 16.2.0 compiles netlib/recv.c (patched by unixlib-touch-stack-buffers)
+  ok    GCC 16.2.0 compiles netlib/recvfrom.c (patched by unixlib-touch-stack-buffers)
+  ok    GCC 16.2.0 assembles sys/_syslib.s (patched by unixlib-eabi-stack-size)
+  ok    GCC 16.2.0 assembles sys/_syslib.s (patched by unixlib-da-heap-fallback)
+  ok    GCC 16.2.0 assembles string/_memcpymove-v7l.s (patched by unixlib-memcpy-split-vstm)
+  ok    pthread/once.c built with -fexceptions has an unwind table with a personality routine (it is the C++ exceptions that the unwinder has to take through pthread_once)
+  ok    pristine trunk: GCC 16.2.0 rejects all 5 files that the gcc14 patch repairs (5 of 5 give 'error: implicit declaration')
+  ok    gcc14 patch: the code that GCC 10.2.0 generates for the 5 files is identical before and after (5 of 5)
+  ok    pristine <unistd.h>: _SC_NPROCESSORS_ONLN == _SC_BC_DIM_MAX, _SC_PHYS_PAGES == _SC_BC_BASE_MAX, and no macro for the #ifdef (4 errors)
+  ok    patched <unistd.h>: all four conditions hold (GCC 16.2.0)
+  ok    patched <unistd.h>: all four conditions hold (GCC 10.2.0)
+ok  : original 2408 instructions with 32 64-byte vstm; patched 2440 instructions with 0 64-byte vstm; after joining the pairs the listings are identical
+  ok    memcpy: the patched file differs from the original only by the split of each 64-byte vstm
+
+7. host models of the ten patches (the real source files where the host can run them)
+  original: 200000 cases (a fread () and a fwrite () each; 293438 of those transfers saw a short read or write): 258333 failed check(s)
+  ok    stdio: the real fread.c / fwrite.c of trunk fail when read () / write () return short counts
+  original, full transfers only: 200000 cases (a fread () and a fwrite () each; 0 of those transfers saw a short read or write): 0 failed check(s)
+  ok    stdio: the same model passes on trunk when every transfer is complete (the model itself is sound)
+  patched: 200000 cases (a fread () and a fwrite () each; 293438 of those transfers saw a short read or write): 0 failed check(s)
+  ok    stdio: patched fread.c / fwrite.c: 0 failed checks
+  mutation checks: 5 mutations, 0 not caught
+  ok    stdio: every breakage of the new lines is caught
+  touch model: 2000000 cases (1260177 on the stack, 739823 not): 0 failed check(s)
+  ok    touch: __touch_stack_buffer touches exactly the pages of a stack buffer
+  mutation checks: 10 mutations, 0 not caught
+  ok    touch: every breakage of it is caught
+  ok    once: the old pthread_once (one mutex held across the init routine) deadlocks in the std::async pattern (the 3 s watchdog fires)
+new: all checks passed (async pattern completed)
+  ok    once: the new state machine passes (exactly once, waiters wait, std::async pattern completes)
+extracted lines: 30
+for comparison, the OLD formula on the same cases (not checked): CLOCK_REALTIME waits too long by 49.52 cs on average, 99 cs at most; CLOCK_MONOTONIC waits too long by 105031 s on average (the uptime), 209980 s at most
+cases 3000000 (expired 501874, waited 2498126): most-early case: -10000000 ns early (negative = never early), worst lateness 1.100 cs
+edge cases done
+PASS
+  ok    cond: cond_deadline () extracted from the patched cond.c: 3000000 random deadlines, never early, at most 1.1 cs late
+
+8. the UnixLib patches against the release build, and the test programs of reports 10 - 18 compile
+ok   27 files of the 17 UnixLib patches, applied in sequence, equal the release build's sources (comments stripped)
+  ok    the 17 UnixLib patches applied in sequence = the sources of the 16.2.0-11 release build
+  ok    GCC 10.2.0 compiles repro/unixlib-models/threadtest.cc (-std=c++17)
+  ok    GCC 10.2.0 compiles repro/unixlib-models/stkinfo.c
+  ok    GCC 10.2.0 compiles repro/unixlib-models/chain.c
+  ok    GCC 10.2.0 compiles repro/unixlib-models/daprobe.c
+  ok    GCC 10.2.0 compiles repro/svc-abort/readtest2.c
+  ok    GCC 16.2.0 compiles repro/unixlib-models/threadtest.cc (-std=c++20)
+  ok    GCC 16.2.0 compiles repro/unixlib-models/stkinfo.c
+  ok    GCC 16.2.0 compiles repro/unixlib-models/chain.c
+  ok    GCC 16.2.0 compiles repro/unixlib-models/daprobe.c
+  ok    GCC 16.2.0 compiles repro/svc-abort/readtest2.c
+
+9. reports 19 and 20: the register-variable SWI wrappers (incl-local/internal/os.h) and __get_dde_prefix (common/prefix.c)
+  ok    GCC 16.2.0 compiles the pristine unix/unix.c
+  ok    GCC 16.2.0 compiles the pristine unix/unix.c with the patched os.h
+  ok    GCC 16.2.0, pristine os.h: __unixinit does NOT copy the size out of r0 before the first call (the bug) after SWI DDEUtils_GetCLSize (sequence 'BL ')
+  ok    GCC 16.2.0, patched os.h: __unixinit copies the size out of r0 before the first call (sequence 'CAPTURED BL ')
+  ok    GCC 10.2.0 compiles the pristine unix/unix.c
+  ok    GCC 10.2.0 compiles the pristine unix/unix.c with the patched os.h
+  ok    GCC 10.2.0, pristine os.h: __unixinit copies the size out of r0 before the first call after SWI DDEUtils_GetCLSize (sequence 'CAPTURED BL ')
+  ok    GCC 10.2.0, patched os.h: __unixinit copies the size out of r0 before the first call (sequence 'CAPTURED BL ')
+  ok    GCC 10.2.0 compiles the 41 source files of trunk that use an SWI wrapper (all but the SharedCLibrary-only scl_*.c), with the patched os.h (41 of 41)
+  ok    GCC 16.2.0 compiles the 41 source files of trunk that use an SWI wrapper (all but the SharedCLibrary-only scl_*.c), with the patched os.h (41 of 41)
+  ok    GCC 16.2.0: regvar1.c, wrapper as in os.h: the result of the asm is NOT captured before the first call (expected: NOT captured)
+  ok    GCC 16.2.0: regvar1.c, rewritten wrapper: captured (expected: captured)
+  ok    GCC 10.2.0: regvar1.c, wrapper as in os.h: the result of the asm is captured before the first call (expected: captured)
+  ok    GCC 10.2.0: regvar1.c, rewritten wrapper: captured (expected: captured)
+  ok    GCC 4.7.4: regvar1.c, wrapper as in os.h: the result of the asm is captured before the first call (expected: captured)
+  ok    GCC 4.7.4: regvar1.c, rewritten wrapper: captured (expected: captured)
+arm-riscos-gnueabihf-gcc (GCCSDK GCC 16.2.0 (experimental forw wrapper as in os.h     f ("hello") = 10     WRONG (expected 12: arg_size was taken from r0 after the call of strlen)
+arm-riscos-gnueabihf-gcc (GCCSDK GCC 16.2.0 (experimental forw FIXED wrapper          f ("hello") = 12     ok
+arm-riscos-gnueabihf-gcc (GCCSDK GCC 10.2.0 Release 1) 10.2.0  wrapper as in os.h     f ("hello") = 12     ok
+arm-riscos-gnueabihf-gcc (GCCSDK GCC 10.2.0 Release 1) 10.2.0  FIXED wrapper          f ("hello") = 12     ok
+  ok    interpreter: GCC 16.2.0, wrapper as in os.h: f ("hello") = 10, not 12 (arg_size = the result of strlen)
+  ok    interpreter: GCC 16.2.0, rewritten wrapper: f ("hello") = 12
+  ok    interpreter: GCC 10.2.0: f ("hello") = 12 with both wrappers
+RESULT: all 32 wrappers behave identically (old header vs rewritten header) on 300 seeds each
+MUTANTS: 10 of 10 caught
+  ok    the 32 rewritten wrappers behave like the old ones on the interpreter (300 seeds each)
+  ok    every breakage of the rewritten wrappers is caught
+rewrote 32 wrappers
+  ok    fix-unixlib-regvars.py applied to the pristine os.h gives the header of the patch (comments aside)
+RESULT: 11 of 11 cases as expected (patched file right in every case; pristine file endless in the 5 cases that have a prefix)
+MUTANTS: 5 of 5 caught
+  ok    the machine code of __get_dde_prefix: the pristine file loops for ever when a prefix is set, the patched file gives the right string in all 11 cases
+  ok    every breakage of the patched prefix.c is caught
+  ok    GCC 10.2.0 compiles the patched common/prefix.c
+  ok    GCC 10.2.0 compiles repro/regvar/regvar1.c
+  ok    GCC 16.2.0 compiles the patched common/prefix.c
+  ok    GCC 16.2.0 compiles repro/regvar/regvar1.c
+
+10. report 21: scanf with long long conversions (stdio/scanf.c): the patched file and the programs of the machine runs compile; the host model of the old and the patched vfscanf
+  ok    GCC 10.2.0 compiles the patched stdio/scanf.c
+  ok    GCC 10.2.0 compiles repro/scanf/scantest.c
+  ok    GCC 10.2.0 compiles repro/scanf/scanfcheck.c
+  ok    GCC 16.2.0 compiles the patched stdio/scanf.c
+  ok    GCC 16.2.0 compiles repro/scanf/scantest.c
+  ok    GCC 16.2.0 compiles repro/scanf/scanfcheck.c
+  ok    repro/scanf/build-model.sh builds the models and runs
+          (the old code gave a different result than the new one in 7493 of the new-modifier cases)
+          (old code: 11223344ffffffff, new code: f8f459e5fb71f146)
+        scanf model test: 47315 cases, 0 failures
+        --- scanfcheck, the table on the NEW code:
+        scanfcheck: 15066 cases, 0 failed
+        --- scanfcheck, the table on the OLD code (this is what is wrong with it):
+        FAIL  fmt "%hhd" input "0": byte 17 outside the 1 byte target was written
+        FAIL  fmt "%3hhd" input "0": byte 17 outside the 1 byte target was written
+        FAIL  fmt "%8hhd" input "0": byte 17 outside the 1 byte target was written
+        scanfcheck: 15066 cases, 5502 failed
+        --- scanfcheck, the table on glibc itself (the table is right):
+        scanfcheck: 15066 cases, 0 failed
+  ok    scanf model: old == new for the modifiers none / h / l, new == glibc for hh ll j q z t and %Lf, the canary cases: 47315 cases, 0 failures
+  ok    scanf model: the table of 15066 cases (made by glibc) on the patched function: 0 failed
+  ok    scanf model: the same table on the unpatched function: 5502 failed (the number the machine gave)
+  ok    scanf model: the table on glibc itself: 0 failed (the table is right)
+
+RESULT: 0 check(s) failed

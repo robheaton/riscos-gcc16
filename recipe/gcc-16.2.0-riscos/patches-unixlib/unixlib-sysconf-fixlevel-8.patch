@@ -1,0 +1,19 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-03 14:40:48.563525803 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-03 14:40:48.579572747 +0100
+@@ -135,11 +135,14 @@
+ 	 libunixlib carries (5: the thread fixes of SharedLibs-C-armeabihf
+ 	 10.2.0-5 and 16.2.0-1/-2; 6: 16.2.0-4, file and socket reads touch a
+ 	 stack buffer first; 7: 16.2.0-5 and later, memcpy/memmove without the
+-	 64-byte vstm, everything built with -fstack-clash-protection).  Lets a
++	 64-byte vstm, everything built with -fstack-clash-protection; 8:
++	 16.2.0-6 and later, the main stack of an EABI program is as big as
++	 __stack_size asks for, and a dynamic area for the heap is made smaller
++	 when its maximum size does not fit).  Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 7;
++	return 8;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

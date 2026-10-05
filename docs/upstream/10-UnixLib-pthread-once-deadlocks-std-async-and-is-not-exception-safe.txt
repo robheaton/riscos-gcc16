@@ -1,0 +1,152 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: pthread_once () holds one global mutex while the init routine
+         runs: std::async deadlocks, and an exception thrown by the routine
+         terminates the program
+Attach:  patches/unixlib-pthread-once.patch
+         repro/unixlib-models/once_model.c (host model of the old and the new
+         logic)
+
+Summary
+-------
+pthread/once.c serialises every pthread_once () in the process with ONE mutex
+that is held for the whole time the init routine runs. Two things follow.
+
+  1.  An init routine that waits for another thread, which in turn calls
+      pthread_once () for a DIFFERENT once object, deadlocks. libstdc++'s
+      std::async does exactly that, so a program that calls std::async and then
+      get () on the future (or wait ()) can end with the scheduler's
+      'Deadlocked' abort. This is observed on the machine, with GCC 10.2.0 and
+      GCC 16.2.0 libstdc++.
+  2.  The init routine cannot throw: the C++ exception that std::call_once
+      relies on goes through a function that has no unwind tables (libunixlib
+      is not built with -fexceptions), so the program ends with 'terminate
+      called after throwing an instance of ...' (I saw this with an
+      intermediate version of the patch, see below; on the stock library the
+      first problem comes first). Even with unwind tables, the mutex would stay
+      locked, and every later pthread_once () in the process would block for
+      ever.
+
+The patch replaces the single lock held across the routine by a state in each
+pthread_once_t (not run / running / done), protected by a mutex that is NOT
+held while the routine runs, plus a condition variable for the threads that
+have to wait for a running routine. A routine that is cancelled or throws puts
+the state back to 'not run' and wakes the waiters, which is what POSIX asks
+for. once.c has to be compiled with -fexceptions.
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+UnixLib 5.0 from trunk r7800 built with GCC 16.2.0 (my forward port), GCC
+10.2.0 for the stock toolchain comparison; libstdc++ 6.0.28 (GCC 10.2.0) and
+the one of GCC 16.2.0.
+
+Observed (stock UnixLib)
+------------------------
+My C++ regression program, group 'threads' (three checks, one of which is a
+std::async), built with GCC 16.2.0 and with GCC 10.2.0 and run against the
+stock library, ran its single-thread groups correctly and then ended with
+
+      pthreads: ***fatal error, aborting*** --
+        __pthread_context_switch: Deadlocked (no runnable threads to schedule)
+
+The backtrace that UnixLib printed with the abort, resolved with addr2line
+against an unstripped build, puts the asynchronous thread in
+std::__future_base::_Async_state_impl::_M_run ->
+std::call_once<_State_baseV2::_M_do_set> -> pthread_once -> __pthread_lock_lock
+-> __pthread_lock_block. The main thread was inside future::get (), which runs
+call_once (_M_once, &thread::join, &_M_thread): the main thread holds the
+global once mutex inside the join, and the asynchronous thread needs the same
+mutex to call pthread_once for the other once_flag before it can finish. Both
+are blocked; the scheduler finds no runnable thread and aborts. (The libstdc++
+of GCC 10.2.0 has the same code.)
+
+With the patch (and nothing else changed) the same programs pass: the 'threads'
+group of both builds (142 checks in all), and the stages call_once, async and
+call_once_throw (an exception thrown by the callable of std::call_once and
+caught outside, then the flag used again) of my threadtest program, on both
+compilers. The results are in hw-results of my port; they are not part of this
+bundle.
+
+At an intermediate stage, with the state machine but without -fexceptions, the
+call_once stage aborted with 'terminate called after throwing an instance of
+int' (the stage then still contained the throwing callable): libunixlib.so has
+no .ARM.exidx at all without it, and the unwinder cannot get through
+pthread_once. glibc builds its pthread_once with -fexceptions for the same
+reason.
+
+Cause (trunk r7800, pthread/once.c)
+-----------------------------------
+pthread_once () locks once_mutex, runs the routine if *once_control is 0, sets
+*once_control to 1 and unlocks. The cancellation handler (pthread_cleanup_push
+with __pthread_once_cleanup) only unlocks once_mutex. The one mutex is shared
+by every pthread_once_t of the process, and it is held while the routine runs:
+any dependency from a routine on another thread's progress through pthread_once
+() is a deadlock.
+
+The patch
+---------
+pthread/once.c is rewritten (126 lines of patch, mostly comments). The state of
+a pthread_once_t is 0 (not run), 2 (running) or 1 (done, as before, so objects
+that have already completed keep their value). A caller takes once_mutex, waits
+on a condition variable while the state is 'running', and if it is 0 sets it to
+'running', drops the mutex, runs the routine, takes the mutex, sets 'done' and
+broadcasts. If the routine is cancelled, or an exception leaves it, the state
+goes back to 0 and the waiters are woken. The exception case uses a local
+struct with __attribute__ ((cleanup)); it also has to remove its entry from the
+thread's list of cleanup handlers (that list is not unwound with the stack:
+pthread_cleanup_push / pop are written out as __pthread_cleanup_push /
+__pthread_cleanup_pop for that reason).
+
+The file has to be compiled with -fexceptions. In my port's build script I
+compile once.c separately with that flag and check with readelf -u that the
+object has an unwind table with a personality routine. For the trunk build I
+suggest a rule in the style of the brk.lo one in Makefile.am (it compiles one
+object with different flags): the same command line, with -fexceptions in place
+of $(EXTRA_STACK_CFLAGS). I have NOT tried that rule through automake; I only
+know that the flag is needed and that my own invocation works.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* pthread/once.c (pthread_once): Do not hold a mutex while the init
+	routine runs.  Keep a state (running, done) in the pthread_once_t
+	and wait for a running routine on a condition variable.  Reset
+	the state when the routine is cancelled or throws.  Needs
+	-fexceptions.
+	* Makefile.am (once.lo): Compile with -fexceptions.
+
+Verification
+------------
+  On the machine:  see above: the deadlock with the stock library, no deadlock
+                   and a working exception with the patched one, on both
+                   compilers.
+  Host model:  repro/unixlib-models/once_model.c is a copy of the logic of the
+               old and of the new function on glibc pthreads (it is NOT the
+               real once.c: that needs UnixLib's thread system). It checks
+               exactly-once under 8 contending threads, that a waiter does not
+               return before the running routine has finished, and the
+               std::async pattern (a routine that joins a thread that needs
+               another once object) with a 3 second watchdog. Old logic: the
+               watchdog fires (exit status 3). New logic: all checks pass.
+  Compilation:  pthread/once.c with -fexceptions builds with GCC 10.2.0 and
+                16.2.0 with the flags of the UnixLib build, and the object has
+                a personality routine.
+
+My regression suites with the patch in the library (C 34541 checks in six
+variants, C++ 139 / 142, threads, Fortran, programs using the shared libstdc++)
+all pass. (The patch is in every build of my port that I ran the suites on
+after I wrote it; I have no suite run of the same library without it, so I do
+not claim 'unchanged'.)
+
+What I did not do
+-----------------
+I did not test cancellation of a thread inside an init routine on the machine
+(the model does not either; the cleanup path is the same code as for the
+exception, but it is not exercised separately). The trunk Makefile.am rule is
+not tried.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

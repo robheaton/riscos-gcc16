@@ -1,0 +1,31 @@
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -938,7 +938,7 @@
+   rust_target_objs="${rust_target_objs} fuchsia-rust.o"
+   target_has_targetrustm=yes
+   ;;
+-*-*-linux* | frv-*-*linux* | *-*-kfreebsd*-gnu | *-*-gnu* | *-*-kopensolaris*-gnu | *-*-uclinuxfdpiceabi)
++*-*-linux* | frv-*-*linux* | *-*-kfreebsd*-gnu | *-*-kopensolaris*-gnu | *-*-uclinuxfdpiceabi)
+   extra_options="$extra_options gnu-user.opt"
+   gas=yes
+   gnu_ld=yes
+@@ -1581,6 +1581,19 @@
+ 	esac
+ 	tm_file="${tm_file} arm/aout.h arm/arm.h"
+ 	;;
++arm*-riscos-gnueabihf)
++	gas=yes
++	gnu_ld=yes
++	tm_file="elfos.h glibc-stdint.h arm/elf.h arm/aout.h arm/arm.h arm/riscos-gnueabihf.h"
++	# -mthrowback: the sink that sends the diagnostics to a text editor
++	extra_objs="${extra_objs} riscos-throwback.o"
++	# FIXME: when --enable-shared option is given, we shouldn't have t-slibgcc
++	# specified.  It's only there to let SHLIB and ENABLE_SHARED_LIBGCC
++	# being defined so REAL_LIBGCC_SPEC is correctly defined for the shared vs
++	# static cases.
++	tmake_file="arm/t-arm arm/t-riscos-gnueabihf t-slibgcc"
++	extra_options="${extra_options} arm/riscos.opt"
++	;;
+ avr-*-*)
+ 	tm_file="elfos.h avr/elf.h avr/avr-arch.h avr/avr.h avr/specs.h avr/avr-stdint.h"
+ 	if test x${with_avrlibc} != xno; then

@@ -1,0 +1,27 @@
+| RunReadtest5 - the crashes of UnixLib's memcpy on fresh stack pages, with a probe that really uses fresh pages for every line (readtest4 reused the same two pages for all lines of a
+| run, so only its first lines were on fresh pages).  Every command is its own program run (fresh stack).  Output: ResultsReadtest5 in this directory.  Installs nothing.
+| If it stops with an error, type  *Spool  to close the output file.  (the first EABI program run changes <Obey$Dir>, so remember our directory first)
+Set RoTest$Dir <Obey$Dir>
+Dir <RoTest$Dir>
+Spool <RoTest$Dir>.ResultsReadtest5
+Echo ===================== 1. one user-mode copy per line into two pages nobody has touched: 64 and 512 bytes, starting exactly at / just before a page boundary
+Run <RoTest$Dir>.readtest5 fresh memcpy
+Run <RoTest$Dir>.readtest5 fresh vstm8
+Run <RoTest$Dir>.readtest5 fresh vstm4
+Run <RoTest$Dir>.readtest5 fresh vst1q
+Run <RoTest$Dir>.readtest5 fresh strd
+Run <RoTest$Dir>.readtest5 fresh stm
+Echo ===================== 2. the same 512-byte copy repeated 12 times: into static memory, heap memory, and fresh stack pages; from the pattern (mmap) or from static memory
+Run <RoTest$Dir>.readtest5 rep memcpy static pat 512 12
+Run <RoTest$Dir>.readtest5 rep memcpy heap pat 512 12
+Run <RoTest$Dir>.readtest5 rep memcpy stack pat 512 12
+Run <RoTest$Dir>.readtest5 rep memcpy stack static 512 12
+Run <RoTest$Dir>.readtest5 rep vstm8 static pat 512 12
+Run <RoTest$Dir>.readtest5 rep vstm8 stack pat 512 12
+Echo ===================== 3. the operating system fills a fresh 64 KB buffer: OS_GSTrans (still affected), a file read (fixed by libunixlib 16.2.0-3 and later), UnixLib memcpy, control
+Run <RoTest$Dir>.readtest5 fill gstrans 64
+Run <RoTest$Dir>.readtest5 fill read 64
+Run <RoTest$Dir>.readtest5 fill memcpy 64
+Run <RoTest$Dir>.readtest5 fill touch 64
+Spool
+Echo Finished. Output is in <RoTest$Dir>.ResultsReadtest5

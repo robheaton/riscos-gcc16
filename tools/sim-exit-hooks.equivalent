@@ -1,0 +1,5 @@
+# Mutants of the exit-time additions (tools/sim-exit-hooks.py) that no scenario can tell from the original, reviewed by hand on 2026-10-03: they cannot change behaviour.
+# Format: FUNCTION+0xOFFSET WORD  # why.  The key is the instruction word of the library built from unixlib-v12: after any rebuild that moves or changes the code a survivor no longer
+# matches its line and fails the check until it has been looked at again.
+__signalhandler_stack_free+0x6c 93a02001   # movls r2, #1 -> #2: r2 is the "sp is on the signal stack" flag and is only compared with zero afterwards
+mmap_too_big+0x78 e3730003                 # cmn r3, #3 -> #4: differs only for a clamp of 0xFFFFFFFE and a length above it; every such length is 2 GB or more and refused before this point

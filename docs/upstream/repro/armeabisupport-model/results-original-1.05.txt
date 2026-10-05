@@ -1,0 +1,399 @@
+== model of ARMEABISupport's mmap pool: ORIGINAL code
+-- 1. normal use
+  mmap 1 MB: ok at 0x6ee67000                                areas=1 claimed=256 pages (1024 KB) mapped=256 rma_live=2
+  munmap 1 MB: ok                                            areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=0
+  mmap 1 MB (no munmap): ok at 0x75267000                    areas=1 claimed=256 pages (1024 KB) mapped=256 rma_live=2
+  Cleanup (root exit)                                        areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=0
+  mmap 60 MB: ok at 0x7b667000                               areas=1 claimed=15360 pages (61440 KB) mapped=15360 rma_live=2
+  mmap 60 MB: ok at 0x81a67000                               areas=2 claimed=30720 pages (122880 KB) mapped=30720 rma_live=5
+  two 60 MB blocks need two areas                            areas=2 claimed=30720 pages (122880 KB) mapped=30720 rma_live=5
+  Cleanup (root exit)                                        areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=1
+  *** CHECK FAILED: Cleanup removes both
+-- 2. a request bigger than any area (100 MB areas in these sources): 101 MB, 129 MB, 150 MB, 2 GB - 1, 2 GB + 4 KB (page count wraps), 3 GB, 4 GB - 1
+  mmap 101 MB: ERROR (ENOMEM)                                areas=1 claimed=25600 pages (102400 KB) mapped=0 rma_live=2
+  mmap 101 MB: ERROR (ENOMEM)                                areas=2 claimed=51200 pages (204800 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=51200 pages (204800 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no claimed pages
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+  mmap 129 MB: ERROR (ENOMEM)                                areas=1 claimed=25600 pages (102400 KB) mapped=0 rma_live=2
+  mmap 129 MB: ERROR (ENOMEM)                                areas=2 claimed=51200 pages (204800 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=51200 pages (204800 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no claimed pages
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+  mmap 150 MB: ERROR (ENOMEM)                                areas=1 claimed=25600 pages (102400 KB) mapped=0 rma_live=2
+  mmap 150 MB: ERROR (ENOMEM)                                areas=2 claimed=51200 pages (204800 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=51200 pages (204800 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no claimed pages
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+  mmap 2 GB - 1: ERROR (ENOMEM)                              areas=1 claimed=0 pages (0 KB) mapped=0 rma_live=2
+  mmap 2 GB - 1: ERROR (ENOMEM)                              areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+  mmap 2 GB + 4 KB: ERROR (ENOMEM)                           areas=1 claimed=0 pages (0 KB) mapped=0 rma_live=2
+  mmap 2 GB + 4 KB: ERROR (ENOMEM)                           areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+  mmap 3 GB: ERROR (ENOMEM)                                  areas=1 claimed=0 pages (0 KB) mapped=0 rma_live=2
+  mmap 3 GB: ERROR (ENOMEM)                                  areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+  mmap 4 GB - 1 (rounds up to 0 pages): ERROR (ENOMEM)       areas=1 claimed=0 pages (0 KB) mapped=0 rma_live=2
+  mmap 4 GB - 1 (rounds up to 0 pages): ERROR (ENOMEM)       areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  Cleanup (root exit)                                        areas=2 claimed=0 pages (0 KB) mapped=0 rma_live=5
+  *** CHECK FAILED: a failed over-size request leaves no area
+  *** CHECK FAILED: a failed over-size request leaves no RMA block
+-- 3. a request that fits the area (80 MB) but the OS window is smaller (clamp 64 MB): the pages are claimed, the mapping fails
+  mmap 80 MB with a 64 MB window: ERROR (ENOMEM)             areas=1 claimed=20480 pages (81920 KB) mapped=16384 rma_live=2
+  Cleanup (root exit)                                        areas=1 claimed=20480 pages (81920 KB) mapped=16384 rma_live=2
+  *** CHECK FAILED: claimed-but-unmappable pages are given back
+-- 4. the claim fails half way (physical memory runs out after 10000 pages)
+  mmap 60 MB with 39 MB of memory left: ERROR (ENOMEM)       areas=1 claimed=10000 pages (40000 KB) mapped=0 rma_live=2
+  Cleanup (root exit)                                        areas=1 claimed=10000 pages (40000 KB) mapped=0 rma_live=2
+  *** CHECK FAILED: the pages claimed before the error are given back
+  mmap 60 MB, atomic claim: ERROR (ENOMEM)                   areas=1 claimed=10000 pages (40000 KB) mapped=0 rma_live=2
+  Cleanup (root exit)                                        areas=1 claimed=10000 pages (40000 KB) mapped=0 rma_live=2
+  *** CHECK FAILED: atomic claims: nothing left either
+-- 5. the module runs out of RMA while it makes the block
+  mmap 1 MB, RMA fails for the block: ERROR (ENOMEM)         areas=1 claimed=0 pages (0 KB) mapped=0 rma_live=1
+  Cleanup (root exit)                                        areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=0
+-- 6. a failure inside an existing area (the end-of-list case): fill one area with 2 x 49 MB, then ask for 49 MB
+  mmap 49 MB: ok at 0x6ee67000                               areas=1 claimed=12544 pages (50176 KB) mapped=12544 rma_live=2
+  mmap 49 MB: ok at 0x71f67000                               areas=1 claimed=25088 pages (100352 KB) mapped=25088 rma_live=3
+  mmap 49 MB (needs a second area): ok at 0x75267000         areas=2 claimed=37632 pages (150528 KB) mapped=37632 rma_live=6
+  Cleanup (root exit)                                        areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=1
+  *** CHECK FAILED: all gone at Cleanup
+-- 7. behaviour of the successful paths must be the same in both builds: a pseudo-random sequence of mmap / munmap, addresses printed
+     0 mmap 2379776 -> 0x6ee67000
+     1 mmap 2695168 -> 0x6f0ac000
+     2 munmap 0x6ee67000 2379776
+     3 mmap  430080 -> 0x6ee67000
+     4 mmap  270336 -> 0x6eed0000
+     5 mmap 1662976 -> 0x6ef12000
+     6 mmap  540672 -> 0x6f33e000
+     7 mmap  253952 -> 0x6f3c2000
+     8 mmap 1146880 -> 0x6f400000
+     9 mmap  720896 -> 0x6f518000
+    10 mmap 1155072 -> 0x6f5c8000
+    11 mmap  114688 -> 0x6f6e2000
+    12 mmap   40960 -> 0x6f6fe000
+    13 mmap  114688 -> 0x6f708000
+    14 mmap  659456 -> 0x6f724000
+    15 mmap  487424 -> 0x6f7c5000
+    16 mmap  249856 -> 0x6f83c000
+    17 munmap 0x6f400000 1146880
+    18 mmap  270336 -> 0x6f400000
+    19 mmap 1523712 -> 0x6f879000
+    20 mmap 1863680 -> 0x6f9ed000
+    21 mmap 1179648 -> 0x6fbb4000
+    22 mmap  675840 -> 0x6f442000
+    23 mmap  442368 -> 0x6fcd4000
+    24 mmap 1105920 -> 0x6fd40000
+    25 mmap 1302528 -> 0x6fe4e000
+    26 munmap 0x6fd40000 1105920
+    27 munmap 0x6f442000 675840
+    28 mmap  135168 -> 0x6f442000
+    29 mmap 1142784 -> 0x6ff8c000
+    30 mmap 1576960 -> 0x700a3000
+    31 mmap  159744 -> 0x6f463000
+    32 munmap 0x6ef12000 1662976
+    33 mmap 1462272 -> 0x6ef12000
+    34 munmap 0x6f0ac000 2695168
+    35 mmap 1490944 -> 0x6f077000
+    36 munmap 0x6f879000 1523712
+    37 munmap 0x6f83c000 249856
+    38 mmap  372736 -> 0x6f1e3000
+    39 mmap 2437120 -> 0x70224000
+    40 munmap 0x6ef12000 1462272
+    41 mmap 2723840 -> 0x70477000
+    42 mmap  196608 -> 0x6ef12000
+    43 mmap  851968 -> 0x6ef42000
+    44 mmap  163840 -> 0x6f012000
+    45 mmap 1290240 -> 0x6f83c000
+    46 mmap  163840 -> 0x6f03a000
+    47 mmap  860160 -> 0x6f23e000
+    48 mmap  737280 -> 0x6fd40000
+    49 mmap 1105920 -> 0x70710000
+    50 mmap  839680 -> 0x7081e000
+    51 mmap  544768 -> 0x6f48a000
+    52 munmap 0x6f6e2000 114688
+    53 mmap  557056 -> 0x708eb000
+    54 mmap  368640 -> 0x6f977000
+    55 munmap 0x6f7c5000 487424
+    56 munmap 0x6ee67000 430080
+    57 munmap 0x6ff8c000 1142784
+    58 munmap 0x6f077000 1490944
+    59 mmap  405504 -> 0x6ee67000
+    60 mmap  983040 -> 0x6f062000
+    61 mmap  368640 -> 0x6f152000
+    62 munmap 0x6f33e000 540672
+    63 mmap  417792 -> 0x6f310000
+    64 mmap   45056 -> 0x6f1ac000
+    65 mmap  454656 -> 0x6f7c5000
+    66 munmap 0x6f724000 659456
+    67 mmap  286720 -> 0x6f376000
+    68 munmap 0x6f83c000 1290240
+    69 munmap 0x708eb000 557056
+    70 mmap  786432 -> 0x6f834000
+    71 mmap  745472 -> 0x6ff8c000
+    72 munmap 0x700a3000 1576960
+    73 mmap  688128 -> 0x70042000
+    74 munmap 0x7081e000 839680
+    75 mmap 1576960 -> 0x7081e000
+    76 mmap 1425408 -> 0x7099f000
+    77 mmap 1720320 -> 0x70afb000
+    78 munmap 0x6fcd4000 442368
+    79 mmap 1404928 -> 0x70c9f000
+    80 mmap  516096 -> 0x6f724000
+    81 munmap 0x6f376000 286720
+    82 munmap 0x6f518000 720896
+    83 mmap  786432 -> 0x700ea000
+    84 mmap  507904 -> 0x6f50f000
+    85 mmap   36864 -> 0x6f1b7000
+    86 munmap 0x6f463000 159744
+    87 munmap 0x7099f000 1425408
+    88 munmap 0x6f50f000 507904
+    89 mmap  565248 -> 0x6f50f000
+    90 mmap  176128 -> 0x6f376000
+    91 mmap  565248 -> 0x7099f000
+    92 munmap 0x70710000 1105920
+    93 munmap 0x6fe4e000 1302528
+    94 mmap 2285568 -> 0x70df6000
+    95 mmap 1441792 -> 0x6fdf4000
+    96 munmap 0x6ff8c000 745472
+    97 mmap  839680 -> 0x6ff54000
+    98 munmap 0x6f310000 417792
+    99 munmap 0x6ff54000 839680
+   100 mmap 1536000 -> 0x71024000
+   101 munmap 0x7099f000 565248
+   102 mmap  696320 -> 0x6ff54000
+   103 mmap  229376 -> 0x6f310000
+   104 munmap 0x6f708000 114688
+   105 mmap 1187840 -> 0x7099f000
+   106 munmap 0x6f977000 368640
+   107 munmap 0x6f724000 516096
+   108 munmap 0x6f48a000 544768
+   109 mmap  253952 -> 0x6f463000
+   110 munmap 0x6f834000 786432
+   111 mmap  307200 -> 0x6f4a1000
+   112 munmap 0x6f310000 229376
+   113 munmap 0x6f1e3000 372736
+   114 mmap 1392640 -> 0x6f834000
+   115 mmap 1499136 -> 0x7119b000
+   116 mmap  122880 -> 0x6f1c0000
+   117 mmap 1007616 -> 0x70710000
+   118 munmap 0x70042000 688128
+   119 mmap 1085440 -> 0x71309000
+   120 munmap 0x6fdf4000 1441792
+   121 munmap 0x6f50f000 565248
+   122 mmap 1490944 -> 0x71412000
+   123 mmap  761856 -> 0x6f4ec000
+   124 munmap 0x71412000 1490944
+   125 mmap  811008 -> 0x6fdf4000
+   126 munmap 0x6ef42000 851968
+   127 mmap  315392 -> 0x6ef42000
+   128 munmap 0x6ff54000 696320
+   129 mmap  262144 -> 0x6ef8f000
+   130 munmap 0x70710000 1007616
+   131 munmap 0x70224000 2437120
+   132 munmap 0x6f442000 135168
+   133 munmap 0x6f23e000 860160
+   134 mmap  331776 -> 0x6f1de000
+   135 mmap 1433600 -> 0x6feba000
+   136 mmap 2293760 -> 0x701aa000
+   137 mmap  229376 -> 0x6efcf000
+   138 munmap 0x71309000 1085440
+   139 munmap 0x6ef12000 196608
+   140 munmap 0x6fd40000 737280
+   141 mmap 1089536 -> 0x6f22f000
+   142 mmap  675840 -> 0x6f708000
+   143 mmap  761856 -> 0x6fcd4000
+   144 munmap 0x701aa000 2293760
+   145 munmap 0x6fcd4000 761856
+   146 munmap 0x6f3c2000 253952
+   147 mmap   98304 -> 0x6ef12000
+   148 munmap 0x6f1c0000 122880
+   149 mmap  245760 -> 0x6f339000
+   150 munmap 0x7081e000 1576960
+   151 mmap  147456 -> 0x6f3a1000
+   152 munmap 0x6ef8f000 262144
+   153 munmap 0x6f6fe000 40960
+   154 munmap 0x6f7c5000 454656
+   155 mmap  102400 -> 0x6ef8f000
+   156 mmap  516096 -> 0x6f7ad000
+   157 mmap 1433600 -> 0x701aa000
+   158 mmap  196608 -> 0x6f3c5000
+   159 munmap 0x6f7ad000 516096
+   160 munmap 0x7099f000 1187840
+   161 mmap  344064 -> 0x6f7ad000
+   162 mmap  294912 -> 0x6f988000
+   163 mmap 1359872 -> 0x70308000
+   164 munmap 0x6f22f000 1089536
+   165 mmap  528384 -> 0x6f22f000
+   166 munmap 0x6f376000 176128
+   167 mmap  606208 -> 0x6fcd4000
+   168 munmap 0x6efcf000 229376
+   169 mmap   81920 -> 0x6ef2a000
+   170 munmap 0x700ea000 786432
+   171 munmap 0x6f4ec000 761856
+   172 mmap  184320 -> 0x6efa8000
+   173 mmap 2150400 -> 0x70710000
+   174 munmap 0x70df6000 2285568
+   175 munmap 0x6f1b7000 36864
+   176 munmap 0x6f1de000 331776
+   177 mmap 2039808 -> 0x70df6000
+   178 mmap  774144 -> 0x6f4ec000
+   179 mmap 1167360 -> 0x70018000
+   180 munmap 0x6f834000 1392640
+   181 munmap 0x6ef42000 315392
+   182 mmap  860160 -> 0x6f801000
+   183 mmap  794624 -> 0x7091d000
+   184 munmap 0x6f988000 294912
+   185 mmap  344064 -> 0x6f1b7000
+   186 munmap 0x6f9ed000 1863680
+   187 mmap  933888 -> 0x6f8d3000
+   188 munmap 0x70018000 1167360
+   189 mmap 2408448 -> 0x71309000
+   190 munmap 0x6fcd4000 606208
+   191 munmap 0x6f339000 245760
+   192 mmap  524288 -> 0x6f2b0000
+   193 munmap 0x71309000 2408448
+   194 munmap 0x6f3c5000 196608
+   195 munmap 0x6f062000 983040
+   196 mmap  352256 -> 0x6f062000
+   197 mmap   81920 -> 0x6ef3e000
+   198 mmap  258048 -> 0x6f0b8000
+   199 mmap  503808 -> 0x6f9b7000
+   200 munmap 0x6f9b7000 503808
+   201 mmap 2408448 -> 0x71309000
+   202 munmap 0x71309000 2408448
+   203 mmap  614400 -> 0x6f9b7000
+   204 munmap 0x71024000 1536000
+   205 munmap 0x6efa8000 184320
+   206 mmap  409600 -> 0x6efa8000
+   207 mmap 2359296 -> 0x71309000
+   208 munmap 0x6f4a1000 307200
+   209 mmap 1146880 -> 0x6fa4d000
+   210 munmap 0x6eed0000 270336
+   211 munmap 0x6f062000 352256
+   212 mmap 1228800 -> 0x70018000
+   213 mmap   94208 -> 0x6eeca000
+   214 munmap 0x6f801000 860160
+   215 munmap 0x6f2b0000 524288
+   216 mmap   12288 -> 0x6eee1000
+   217 munmap 0x6f708000 675840
+   218 mmap  901120 -> 0x6f2b0000
+   219 mmap  114688 -> 0x6eee4000
+   220 munmap 0x6efa8000 409600
+   221 munmap 0x6f4ec000 774144
+   222 mmap  208896 -> 0x6ef52000
+   223 mmap 1064960 -> 0x6f4a1000
+   224 munmap 0x6f03a000 163840
+   225 mmap  245760 -> 0x6efa8000
+   226 munmap 0x6fa4d000 1146880
+   227 munmap 0x6eeca000 94208
+   228 munmap 0x6f463000 253952
+   229 mmap  331776 -> 0x6f03a000
+   230 munmap 0x6f9b7000 614400
+   231 mmap  425984 -> 0x6f6e2000
+   232 munmap 0x6f4a1000 1064960
+   233 mmap   57344 -> 0x6eeca000
+   234 mmap 1720320 -> 0x6f9b7000
+   235 mmap  348160 -> 0x6f0f7000
+   236 munmap 0x6f9b7000 1720320
+   237 mmap  151552 -> 0x6efe4000
+   238 munmap 0x701aa000 1433600
+   239 mmap  122880 -> 0x6f08b000
+   240 munmap 0x6f1b7000 344064
+   241 munmap 0x6f2b0000 901120
+   242 mmap  229376 -> 0x6f1b7000
+   243 mmap  290816 -> 0x6f2b0000
+   244 munmap 0x6f0b8000 258048
+   245 mmap  102400 -> 0x6f0a9000
+   246 munmap 0x6ef2a000 81920
+   247 munmap 0x6eee1000 12288
+   248 munmap 0x6fbb4000 1179648
+   249 mmap  385024 -> 0x6f2f7000
+   250 mmap  299008 -> 0x6f355000
+   251 mmap  110592 -> 0x6f0c2000
+   252 munmap 0x6f6e2000 425984
+   253 mmap  557056 -> 0x6f442000
+   254 munmap 0x6f2b0000 290816
+   255 mmap  802816 -> 0x6f4ca000
+   256 munmap 0x6ef12000 98304
+   257 munmap 0x6eee4000 114688
+   258 mmap  172032 -> 0x6eed8000
+   259 mmap  704512 -> 0x6f6e2000
+   260 munmap 0x6ee67000 405504
+   261 mmap  798720 -> 0x6f801000
+   262 munmap 0x6efa8000 245760
+   263 munmap 0x6f355000 299008
+   264 mmap 1802240 -> 0x6f9b7000
+   265 mmap  888832 -> 0x6fb6f000
+   266 munmap 0x6f6e2000 704512
+   267 mmap  270336 -> 0x6ee67000
+   268 munmap 0x6f8d3000 933888
+   269 mmap  196608 -> 0x6ef02000
+   270 munmap 0x6eed8000 172032
+   271 munmap 0x6f0f7000 348160
+   272 mmap  258048 -> 0x6f0dd000
+   273 mmap  475136 -> 0x6f6e2000
+   274 munmap 0x6f442000 557056
+   275 mmap  319488 -> 0x6f442000
+   276 munmap 0x6f442000 319488
+   277 mmap  917504 -> 0x6f8c4000
+   278 munmap 0x6eeca000 57344
+   279 mmap  573440 -> 0x6fc48000
+   280 munmap 0x6efe4000 151552
+   281 mmap 1777664 -> 0x70144000
+   282 munmap 0x6f1ac000 45056
+   283 mmap 1228800 -> 0x70fe8000
+   284 munmap 0x6f9b7000 1802240
+   285 munmap 0x6f03a000 331776
+   286 mmap   98304 -> 0x6eea9000
+   287 mmap  331776 -> 0x6efa8000
+   288 munmap 0x6f0a9000 102400
+   289 mmap  196608 -> 0x6eec1000
+   290 munmap 0x6f6e2000 475136
+   291 mmap  626688 -> 0x6f6e2000
+   292 munmap 0x6f012000 163840
+   293 mmap  655360 -> 0x6f9a4000
+   294 munmap 0x6f152000 368640
+   295 mmap   49152 -> 0x6eef1000
+   296 munmap 0x70afb000 1720320
+   297 mmap  356352 -> 0x6eff9000
+   298 munmap 0x6f08b000 122880
+   299 munmap 0x6f1b7000 229376
+  after the random sequence                                  areas=1 claimed=7609 pages (30436 KB) mapped=7609 rma_live=39
+  Cleanup (root exit)                                        areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=0
+-- 8. a block that fits a gap between two live blocks, but the claim fails half way: the other blocks must not be touched
+  mmap A 10 MB: ok at 0x6ee67000                             areas=1 claimed=2560 pages (10240 KB) mapped=2560 rma_live=2
+  mmap B 10 MB: ok at 0x6f867000                             areas=1 claimed=5120 pages (20480 KB) mapped=5120 rma_live=3
+  mmap C 10 MB: ok at 0x70267000                             areas=1 claimed=7680 pages (30720 KB) mapped=7680 rma_live=4
+  munmap B (leaves a gap of 10 MB): ok                       areas=1 claimed=5120 pages (20480 KB) mapped=5120 rma_live=3
+  mmap 8 MB into the gap, only 1000 pages of memory left: ERROR (ENOMEM) areas=2 claimed=6120 pages (24480 KB) mapped=5120 rma_live=6
+  *** CHECK FAILED: the pages claimed for the failed block are given back, A and C keep theirs
+  *** CHECK FAILED: the area stays (A and C are still in it)
+  mmap 8 MB into the gap, with memory again: ok at 0x70c67000 areas=2 claimed=8168 pages (32672 KB) mapped=7168 rma_live=7
+  *** CHECK FAILED: the gap is usable again (same address as B had)
+  Cleanup (root exit)                                        areas=2 claimed=1000 pages (4000 KB) mapped=0 rma_live=4
+  *** CHECK FAILED: all gone at Cleanup
+-- 9. mremap that has to move the block to a new allocator and cannot (150 MB)
+  mmap X 1 MB: ok at 0x6ee67000                              areas=1 claimed=256 pages (1024 KB) mapped=256 rma_live=2
+  mremap X 1 MB -> 150 MB: ENOMEM                            areas=2 claimed=25856 pages (103424 KB) mapped=256 rma_live=5
+  *** CHECK FAILED: X is still there and nothing else: no area, no pages left by the failed move
+  Cleanup (root exit)                                        areas=1 claimed=25600 pages (102400 KB) mapped=0 rma_live=3
+  *** CHECK FAILED: all gone at Cleanup
+-- 10. mremap that extends the last block IN PLACE and the claim fails half way (memory runs out), then a gap case
+  mmap X 1 MB: ok at 0x6ee67000                              areas=1 claimed=256 pages (1024 KB) mapped=256 rma_live=2
+  mremap X 1 MB -> 11 MB in place, 100 pages of memory left: PMP: claim failed (no memory or page ind areas=1 claimed=356 pages (1424 KB) mapped=256 rma_live=2
+  *** CHECK FAILED: the pages claimed for the failed extension are given back (X keeps its 256)
+  the same mremap with memory again: PMP: claim failed (no memory or page index out of range) areas=1 claimed=356 pages (1424 KB) mapped=256 rma_live=2
+  *** CHECK FAILED: and it works afterwards: 11 MB in use
+  Cleanup (root exit)                                        areas=0 claimed=0 pages (0 KB) mapped=0 rma_live=0
+== ORIGINAL: 30 check(s) failed

@@ -1,0 +1,101 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: ARMEABISupport / SharedUnixLibrary: the mmap memory of a vfork + exec
+         child stays allocated - and in use - until the ROOT process exits
+Attach:  repro/armeabisupport/mmap_leak_repro.c   ("b [N]")
+         repro/sul/seqtest.c  repro/sul/daprobe.c
+         repro/armeabisupport/mmaptest.c
+         (a design suggestion, no patch)
+
+Summary
+-------
+SharedUnixLibrary calls ARMEABISupport_Cleanup only for a process without a
+parent (sul_exit: "Only clean up when we know there is no parent": SWINE
+XARMEABISupport_Cleanup only when PROC_PPID == 1), and ARMEABISupport
+identifies the owner of a block by the application (the physical page behind
+logical 0x8000), which a vfork + exec child shares with its parent; UnixLib's
+__munmap_all is a no-op ("NOOP.  This is handled by ARMEABISupport.").  So the
+mmap blocks that a child has not unmapped itself stay allocated - and in use -
+until the ROOT process ends.  A long-lived parent such as make, or a configure
+script run by a shell, keeps whatever mmap memory the programs it started had
+not unmapped when they ended.  A child does give its main STACK back (every
+one of 8 children of the same parent got a full 64 MB stack from the 128 MB
+stack range), because SharedUnixLibrary frees it at exit (StackOp FREE of
+PROC_STACK, for every process). Only the mmap blocks stay.
+
+Measured (RISC OS 5.30, Cortex-A72, ARMEABISupport 1.08)
+--------------------------------------------------------
+Reproducer: repro/armeabisupport/mmap_leak_repro.c "b [N]": the parent starts
+N children one after the other, each maps 1 MB and ends without munmap; the
+parent shows the pool after each child.  The same with the real programs
+(seqtest starts a program N times by vfork + exec; mmaptest maps and does not
+unmap; the pool is read by another child after each one while the parent is
+alive):
+    seqtest 8 mmaptest small    the pool after child 1 ... 8: 1024, 2048, 3072
+                                ... 8192 KB in use (the blocks of the
+                                finished children)
+    seqtest 4 mmaptest two      4 children x 2 x 60 MB: 122880, 245760,
+                                368640, 491520 KB in use, 8 areas
+    after the parent has ended: 0 areas, 0 KB in both cases.
+
+Why it matters: the amount depends on the program.  Measured with the real
+compilers as children of a root program (seqtest, which starts them as make
+would), the pool in use after each child:
+    gcc -O0 -c, tiny C file, 4 times ...... 0 KB after every compile
+    g++ -O0 -c, small C++ file, 3 times ... 264, 528, 792 KB (264 KB each)
+    g++ -O2 -c, big C++ file (the 139-check test), 2 times
+                                            16172, 32344 KB (15.8 MB each)
+  and all of it gone when the root ended.  For GCC the effect is small (GCC
+  returns most of its garbage-collected heap with munmap - ggc-page.cc
+  release_pages - before it exits); a `make` over a hundred big C++ files
+  would hold ~1.6 GB until it ends, which is the order of the whole address
+  space (~2 GB) the machine has for dynamic areas.  Programs that never unmap
+  what they map (most programs that just exit) leave all of it.
+
+Cause (source: trunk r7800)
+---------------------------
+  * module/sul.s, sul_exit: StackOp FREE of PROC_STACK for every process, but
+    ARMEABISupport_Cleanup (armeabi_cleanup) only for a root.  A cleanup at
+    the exit of a child cannot be done with the present module:
+    armeabi_cleanup frees everything of the *application* (all stacks, all
+    allocators, all blocks whose owner is the app) and a vfork + exec child
+    has the same application identity (get_app_base = the physical address of
+    logical 0x8000: the child's image is loaded over the parent's pages) as
+    its parent.
+  * libunixlib/sys/mman-armeabi.c: __munmap_all is empty - true only for a
+    root.
+
+Design I would suggest for the module (not written; I would test it)
+--------------------------------------------------------------------
+  * Give each mmap_block a "process": the main stack object that contains the
+    caller's user-mode SP when the SWI is made (find_stack on the app's stack
+    list; read r13_usr with STMIA sp, {sp}^ in the SWI veneer).  A stack
+    allocated by a caller whose SP is in a known stack of the app inherits
+    that stack's process (thread stacks); otherwise it is its own process (the
+    main stack of a new program).  A vfork child before its exec runs on the
+    parent's stack, so its blocks belong to the parent.
+  * stack_free of a main stack (SharedUnixLibrary does that for EVERY process
+    at exit) frees the blocks of that process (not shared-memory blocks, which
+    are reference counted).  armeabi_cleanup stays as it is for the root.
+  This needs no change in SharedUnixLibrary or UnixLib.
+  The alternative inside UnixLib (a registry of the process's own blocks,
+  released in __munmap_all in children) works with the installed module but
+  duplicates its bookkeeping.
+
+Related: 04 (failed mmap leaves its area), 01 (SharedUnixLibrary: sul_exit
+frees the main stack of a vfork child too early - with that fixed the
+statement above, "a child gives its main stack back", holds only for a child
+that execs).
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30, 3963 MB
+  RAM, OS clamp on dynamic areas 128 MB, ARMEABISupport 1.08 (03 Jun 2025),
+  SharedUnixLibrary 1.16 (3 Apr 2020), SOManager 3.04, UnixLib from the GCCSDK
+  r7800 sources built with GCC 16.2.0; GCC 16.2.0 as the native compiler.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

@@ -1,0 +1,12 @@
+--- a/src/default.c	2026-10-03 13:30:32.038910540 +0100
++++ b/src/default.c	2026-10-03 13:30:32.048612747 +0100
+@@ -525,7 +525,8 @@
+     "ARFLAGS", "-rv",
+ #endif
+     "AS", "as",
+-#ifdef GCC_IS_NATIVE
++#if defined (GCC_IS_NATIVE) || defined (__riscos__)
++    /* RISC OS: the C compiler is gcc (there is no cc).  CXX stays g++, which links libstdc++.  */
+     "CC", "gcc",
+     "OBJC", "gcc",
+ #else

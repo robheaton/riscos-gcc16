@@ -1,0 +1,33 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/stdio/fread.c
++++ b/gcc4/recipe/files/gcc/libunixlib/stdio/fread.c
+@@ -91,6 +91,10 @@
+ 	  else
+ 	    {
+ 	      to_read -= bytes;
++	      /* read () may return fewer bytes than it was asked for: the next
++		 read must continue after them, not store over them (the count
++		 came out right and the data did not).  */
++	      data = (void *)((char *)data + bytes);
+ 	      /* Fix the file offset pointer.  */
+ 	      stream->__offset += bytes;
+ 	    }
+--- a/gcc4/recipe/files/gcc/libunixlib/stdio/fwrite.c
++++ b/gcc4/recipe/files/gcc/libunixlib/stdio/fwrite.c
+@@ -77,6 +77,9 @@
+ 		  break;
+ 		}
+ 	      to_write -= bytes;
++	      /* write () may take fewer bytes than it was given: carry on
++		 after them, do not write the same bytes again.  */
++	      data = (const void *)((const char *)data + bytes);
+ 	      /* Increment the internal file offset.  */
+ 	      stream->__offset += bytes;
+ 	      total_bytes += bytes;
+@@ -172,6 +175,7 @@
+ 	      break;
+ 	    }
+ 	  to_write -= bytes;
++	  data = (const void *)((const char *)data + bytes);
+ 	  stream->__offset += bytes;
+ 	  total_bytes += bytes;
+ 	}

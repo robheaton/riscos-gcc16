@@ -1,0 +1,54 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/string/_memcpymove-v7l.s
++++ b/gcc4/recipe/files/gcc/libunixlib/string/_memcpymove-v7l.s
+@@ -166,6 +166,11 @@
+  .endif
+ .endm
+ 
++/* No 64-byte store-multiple.  On a Cortex-A72 machine running RISC OS 5.30, a vstm of 8 d registers (64 bytes) that is aligned to 64 bytes and
++   is the first access to a page of an EABI stack that ARMEABISupport has not mapped yet (it maps them one at a time from a data abort handler) is not restarted after the
++   abort: the program gets SIGSEGV.  Stores of 32 bytes or less, and unaligned 64-byte ones, are restarted correctly.  The main loop of memcpy/memmove aligns the destination
++   to 64 bytes, so every copy of a few hundred bytes into a not-yet-used stack page died.  Each 64-byte vstm below is therefore split into two 32-byte ones (same bytes,
++   same order of the bytes in memory).  */
+ .macro memcpy_middle_64bytes  backwards, align, use_pld, add_nops
+  .if align == 0
+   .if backwards
+@@ -173,7 +178,8 @@
+    .if use_pld
+         pld     [S, OFF]
+    .endif
+-        vstmdb  D!, {d0-d7}
++        vstmdb  D!, {d4-d7}
++        vstmdb  D!, {d0-d3}
+   .else
+         vldmia  S!, {d0-d7}
+    .if add_nops
+@@ -184,7 +190,8 @@
+    .if use_pld
+         pld     [S, OFF]
+    .endif
+-        vstmia  D!, {d0-d7}
++        vstmia  D!, {d0-d3}
++        vstmia  D!, {d4-d7}
+    .if add_nops
+     .rept 7
+         nop
+@@ -202,7 +209,8 @@
+         vext.8  q3, q2, q3, #align
+         vext.8  q2, q1, q2, #align
+         vext.8  q1, q0, q1, #align
+-        vstmdb  D!, {d2-d9}
++        vstmdb  D!, {d6-d9}
++        vstmdb  D!, {d2-d5}
+   .else
+         vmov    s3, s19
+         vldmia  S!, {d2-d9}
+@@ -223,7 +231,8 @@
+         nop
+         nop
+    .endif
+-        vstmia  D!, {d0-d7}
++        vstmia  D!, {d0-d3}
++        vstmia  D!, {d4-d7}
+    .if add_nops
+         nop
+         nop

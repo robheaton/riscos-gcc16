@@ -1,0 +1,69 @@
+--- a/libiberty/pex-unix.c	2026-10-03 10:25:32.365537785 +0100
++++ b/libiberty/pex-unix.c	2026-10-03 10:25:32.366674454 +0100
+@@ -730,6 +730,56 @@
+   return pid;
+ }
+ #else
++#ifdef __riscos__
++/* RISC OS: a command line of 1024 characters or more only reaches the child through the DDEUtils module, which is not always loaded (the link command line of the gcc
++   driver, with the absolute paths of the crt files and the libraries, is about 2 KB; without the module the exec fails and the parent then crashes when it resumes).
++   Every program that matters here (gcc, cc1, collect2, as, ld) expands @file response files, so a long argument list is passed that way.  */
++#define RISCOS_MAX_CLI 700
++
++static char * const *
++riscos_response_file (struct pex_obj *obj, char * const *argv)
++{
++  size_t len = 0, n = 0;
++  char * const *p;
++  char *name;
++  FILE *f;
++  char **nargv;
++
++  for (p = argv; *p; p++)
++    {
++      len += strlen (*p) + 3;
++      n++;
++    }
++  if (len < RISCOS_MAX_CLI || n < 3)
++    return argv;
++  name = make_temp_file (".args");
++  if (name == NULL)
++    return argv;
++  f = fopen (name, "w");
++  if (f == NULL)
++    {
++      free (name);
++      return argv;
++    }
++  /* one argument per line, backslash-escaped: what expandargv reads */
++  if (writeargv (argv + 1, f) != 0 || fclose (f) != 0)
++    {
++      unlink (name);
++      free (name);
++      return argv;
++    }
++  /* removed (and freed) when the pex object is freed, like pex_add_remove () does */
++  ++obj->remove_count;
++  obj->remove = XRESIZEVEC (char *, obj->remove, obj->remove_count);
++  obj->remove[obj->remove_count - 1] = name;
++  nargv = XNEWVEC (char *, 3);
++  nargv[0] = argv[0];
++  nargv[1] = concat ("@", name, NULL);
++  nargv[2] = NULL;
++  return nargv;
++}
++#endif
++
+ /* Implementation of pex->exec_child using standard vfork + exec.  */
+ 
+ static pid_t
+@@ -739,6 +789,9 @@
+ 		     int toclose, const char **errmsg, int *err)
+ {
+   pid_t pid = -1;
++#ifdef __riscos__
++  argv = riscos_response_file (obj, argv);
++#endif
+   /* Tuple to communicate error from child to parent.  We can safely
+      transfer string literal pointers as both run with identical
+      address mappings.  */

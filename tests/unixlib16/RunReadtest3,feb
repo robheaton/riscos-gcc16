@@ -1,0 +1,41 @@
+| RunReadtest3 - WHICH bytes go wrong when read() fills stack memory the program has never touched, and when.  Every case is its own program run (fresh stack).
+| Output: ResultsReadtest3 in this directory (long).  Nothing is installed or changed: it copies one library file to this folder (case E) and deletes the copy.
+| (the first EABI program run changes <Obey$Dir>, so remember our directory first)
+Set RoTest$Dir <Obey$Dir>
+Dir <RoTest$Dir>
+Spool <RoTest$Dir>.ResultsReadtest3
+Echo ===================== a simulation of the damage readtest2 showed, to compare with (nothing is read from the file system)
+Run <RoTest$Dir>.readtest3 -p 408 model 32
+Echo ===================== A. the plain case, and a control that copies with UnixLib's memcpy instead of read()
+Run <RoTest$Dir>.readtest3 read 64
+Run <RoTest$Dir>.readtest3 memcpy 64
+Echo ===================== A2. the same copy by the CPU in user mode, ONE kind of store instruction at a time (are page faults restarted properly?)
+Run <RoTest$Dir>.readtest3 cpu-strb 64
+Run <RoTest$Dir>.readtest3 cpu-str 64
+Run <RoTest$Dir>.readtest3 cpu-strd 64
+Run <RoTest$Dir>.readtest3 cpu-ldm 64
+Run <RoTest$Dir>.readtest3 cpu-vstr 64
+Run <RoTest$Dir>.readtest3 cpu-vstm 64
+Echo ===================== A3. a module (CryptRand) fills the buffer in supervisor mode: /dev/urandom, no file system involved
+Run <RoTest$Dir>.readtest3 urandom 64
+Echo ===================== B. memory pages that are mapped already: the upper half written first, only the top page written first
+Run <RoTest$Dir>.readtest3 upper 64
+Run <RoTest$Dir>.readtest3 top 64
+Echo ===================== C. the same read in smaller pieces
+Run <RoTest$Dir>.readtest3 -c 65536 read 128
+Run <RoTest$Dir>.readtest3 -c 4096 read 64
+Run <RoTest$Dir>.readtest3 -c 512 read 64
+Run <RoTest$Dir>.readtest3 -c 100 read 8
+Echo ===================== D. the buffer shifted against the memory pages (-p) and the file read from another offset (-s)
+Run <RoTest$Dir>.readtest3 -p 1000 read 64
+Run <RoTest$Dir>.readtest3 -p 2048 read 64
+Run <RoTest$Dir>.readtest3 -s 100000 read 64
+Run <RoTest$Dir>.readtest3 -s 100000 -p 2048 read 64
+Echo ===================== E. another file system: a copy of the library in this folder (LanMan98) instead of the NVMe
+Copy SharedLibs:lib.armeabihf.libgcc_s/so/1 <RoTest$Dir>.gccs_copy ~C~VF
+Run <RoTest$Dir>.readtest3 -f <RoTest$Dir>.gccs_copy read 64
+Delete <RoTest$Dir>.gccs_copy
+Echo ===================== F. bigger (readtest2 had a clean memory page every 31 pages)
+Run <RoTest$Dir>.readtest3 read 256
+Spool
+Echo Finished. Output is in <RoTest$Dir>.ResultsReadtest3

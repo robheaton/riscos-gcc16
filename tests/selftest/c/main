@@ -1,0 +1,9 @@
+#include <stdio.h>
+#include "util.h"
+
+int main (void)
+{
+  int a = util_add (2, 3), s = util_square (10);
+  printf ("2 + 3 = %d, 10 squared = %d\n", a, s);
+  return (a == 5 && s == 100) ? 0 : 1;
+}

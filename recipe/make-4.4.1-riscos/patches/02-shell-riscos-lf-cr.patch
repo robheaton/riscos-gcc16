@@ -1,0 +1,19 @@
+--- a/src/function.c	2026-10-03 14:07:11.067789363 +0100
++++ b/src/function.c	2026-10-03 14:07:11.080495866 +0100
+@@ -1591,6 +1591,16 @@
+     {
+       if (src[0] == '\r' && src[1] == '\n')
+         continue;
++#ifdef __riscos__
++      /* RISC OS commands end a line with LF CR (OS_NewLine), the other way round than DOS: take the pair as one newline,
++         or the CR stays in the output of $(shell) (and prints over the start of the line).  */
++      if (src[0] == '\n' && src[1] == '\r')
++        {
++          *dst++ = ' ';
++          ++src;
++          continue;
++        }
++#endif
+       if (*src == '\n')
+         {
+           *dst++ = ' ';

@@ -1,0 +1,41 @@
+--- a/libstdc++-v3/src/c++20/atomic.cc
++++ b/libstdc++-v3/src/c++20/atomic.cc
+@@ -605,14 +605,34 @@
+ __cond_wait_until(__condvar& __cv, mutex& __mx,
+ 		  const __wait_clock_t::time_point& __atime)
+ {
+-  __gthread_time_t __ts = chrono::__to_timeout_gthread_time_t(__atime);
+-
+ #ifdef _GLIBCXX_USE_PTHREAD_COND_CLOCKWAIT
+   if constexpr (is_same_v<chrono::steady_clock, __wait_clock_t>)
+-    __cv.wait_until(__mx, CLOCK_MONOTONIC, __ts);
++    {
++      __gthread_time_t __ts = chrono::__to_timeout_gthread_time_t(__atime);
++      __cv.wait_until(__mx, CLOCK_MONOTONIC, __ts);
++    }
+   else
+ #endif
+-    __cv.wait_until(__mx, __ts);
++    {
++      // Without pthread_cond_clockwait the condition variable can only wait
++      // on CLOCK_REALTIME, so a deadline on any other clock (steady_clock by
++      // default) must be converted to system_clock first, as
++      // std::condition_variable::wait_until does.  Passing the steady_clock
++      // time since its epoch, as this code did before, makes the wait end at
++      // a meaningless time (months away on a target whose steady epoch is
++      // boot time).
++      using __sys_clock = chrono::system_clock;
++      __gthread_time_t __ts;
++      if constexpr (is_same_v<__wait_clock_t, __sys_clock>)
++	__ts = chrono::__to_timeout_gthread_time_t(__atime);
++      else
++	{
++	  const auto __delta = __atime - __wait_clock_t::now();
++	  __ts = chrono::__to_timeout_gthread_time_t(__sys_clock::now()
++	    + chrono::__detail::ceil<__sys_clock::duration>(__delta));
++	}
++      __cv.wait_until(__mx, __ts);
++    }
+   return __wait_clock_t::now() < __atime;
+ }
+ #endif // ! HAVE_PLATFORM_WAIT

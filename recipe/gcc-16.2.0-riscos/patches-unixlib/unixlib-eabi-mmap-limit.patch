@@ -1,0 +1,56 @@
+--- a/libunixlib/sys/mman-armeabi.c	2026-10-03 14:52:38.408132762 +0100
++++ b/libunixlib/sys/mman-armeabi.c	2026-10-03 18:53:14.329887084 +0100
+@@ -90,6 +90,32 @@
+   /* NOOP. This is handled by ARMEABISupport.  */
+ }
+ 
++/* GCCSDK GCC 16 forward-port: a request that can never be served is refused here, before ARMEABISupport makes a dynamic area for it.  ARMEABISupport makes an "mmap#N" area
++   first and only then finds out that it cannot serve the request: the answer is ENOMEM, but the area stays, with the pages that were claimed for it, until the next reboot.
++   malloc (2GB - 1), which is what new char[SIZE_MAX / 2] asks for, makes two such requests (the direct mmap, then the "mmap as morecore" retry) and so leaves two 100MB areas
++   behind; a request a little over the OS clamp on the size of one dynamic area (OS_DynamicArea 8: 128MB on a machine that has it set) pins all the memory it claimed.
++   So: half of the 32-bit address space or more can never be served, and nor can more than the clamp (the one for areas that give their maximum size, as the mmap areas do).
++   Such a request failed anyway, with the same errno; now it leaves nothing behind.  */
++#define MMAP_ABSURD_SIZE	0x80000000u		/* 2GB */
++#define MMAP_CLAMP_CHECK_SIZE	(16u * 1024 * 1024)	/* smaller requests are not worth a SWI */
++
++static int
++mmap_too_big (size_t len)
++{
++  unsigned int clamp;
++
++  if (len >= MMAP_ABSURD_SIZE)
++    return 1;
++  if (len < MMAP_CLAMP_CHECK_SIZE)
++    return 0;
++
++  /* OS_DynamicArea 8 with R1 = R2 = 0 only reads the clamps; R2 is the one for areas
++     that give a maximum size (0 or -1: no clamp).  An OS without it has no clamp.  */
++  if (_swix (OS_DynamicArea, _INR(0,2)|_OUT(2), 8, 0, 0, &clamp) != NULL)
++    return 0;
++  return clamp != 0 && clamp != (unsigned int) -1 && len > clamp;
++}
++
+ /* Map addresses starting near ADDR and extending for LEN bytes.  from
+    OFFSET into the file FD describes according to PROT and FLAGS.  If ADDR
+    is nonzero, it is the desired mapping address.  If the MAP_FIXED bit is
+@@ -111,6 +137,9 @@
+   if (flags & MAP_COPY)
+     return (void *) __set_errno (ENOSYS);
+ 
++  if (mmap_too_big (len))
++    return (void *) __set_errno (ENOMEM);
++
+   /* We don't support MAP_PRIVATE. However, we will just use MAP_SHARED instead
+      rather than changing all the user code calling us.  */
+ 
+@@ -339,6 +368,10 @@
+ {
+   _kernel_oserror *err;
+   void *result;
++
++  if (new_len > old_len && mmap_too_big (new_len))
++    return (void *) __set_errno (ENOMEM);
++
+   err = _swix(ARMEABISupport_MMapOp, _INR(0,4)|_OUT(0), ARMEABISUPPORT_MMAPOP_MREMAP,
+ 							addr,
+ 							old_len,

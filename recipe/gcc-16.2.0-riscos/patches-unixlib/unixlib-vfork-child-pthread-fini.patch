@@ -1,0 +1,30 @@
+--- a/libunixlib/pthread/pthinit.c	2026-10-03 20:52:38.454249009 +0100
++++ b/libunixlib/pthread/pthinit.c	2026-10-03 20:52:50.667161514 +0100
+@@ -74,7 +74,16 @@
+   gbl->pthread_num_running_threads = 1;
+ }
+ 
+-/* Called once, at program finalisation.  */
++/* Called once, at program finalisation, by the last user of the program image.
++
++   GCCSDK GCC 16 forward-port: not by a vfork child that ends without exec.  Such a child (the usual reaction to an exec that failed: vfork (); if (child) { execv (...); _exit (127); })
++   shares the program image with its parent - this RMA block, __ul_global and the pthread system included - and its _exit () used to free the block here, under the parent's feet: the
++   parent went on with a pointer to freed RMA memory (setjmp/longjmp, the signal code and every PTHREAD_UNSAFE section write into the block) and freed it a second time when it ended.
++   With one such child the block was still free and nothing showed; with several the RMA handed the block out again (the next vfork's process structure, the copy of its environment ...)
++   and the next child freed it while it was in use, which corrupted the RMA heap and froze the machine.  __dynamic_area_refcount is the number of processes that share the image: the
++   vfork child has added itself in __fork_post () and takes itself off in __dynamic_area_exit (), which _exit () calls AFTER this function, so more than one means that the image is not
++   this process's to take down; the last user (the parent, when it ends) frees the block, once.  (Until SharedUnixLibrary's own bug - the child freed the parent's main stack - was fixed, the
++   parent of a vfork child that ended without exec died first, so nobody saw this on EABI.)  */
+ void attribute_hidden
+ __pthread_prog_fini (void)
+ {
+@@ -83,6 +92,9 @@
+   debug_printf ("-- __pthread_prog_fini: Program finalisation\n");
+ #endif
+ 
++  if (__dynamic_area_refcount > 1)
++    return;
++
+   /* pthread timers must be stopped */
+   if (gbl->pthread_system_running)
+     {

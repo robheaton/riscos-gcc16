@@ -1,0 +1,33 @@
+| RunReadtest6 - the memcpy/memmove of libunixlib 16.2.0-5: every 64-byte store (vstmia {d0-d7}) of UnixLib's NEON routines is split into two 32-byte ones.  Installs nothing.  Output: ResultsReadtest6.
+| readtest6 contains three versions of the routines: "memcpy"/"memmove" are the ones in the libunixlib that is installed (16.2.0-5: split), "splitcpy"/"splitmove" the split ones linked into
+| the program, "origcpy"/"origmove" UnixLib's ORIGINAL ones (with the 64-byte store).  If it stops with an error, type  *Spool  to close the output file.
+| (the first EABI program run changes <Obey$Dir>, so remember our directory first)
+Set RoTest$Dir <Obey$Dir>
+Dir <RoTest$Dir>
+Spool <RoTest$Dir>.ResultsReadtest6
+Echo ===================== 1. correctness on ordinary memory: random copies of 0..1.1 MB at all alignments (memmove: all overlaps too).  The library's routines, the split ones, the original ones
+Run <RoTest$Dir>.readtest6 selftest memcpy 2500
+Run <RoTest$Dir>.readtest6 selftest memmove 2500
+Run <RoTest$Dir>.readtest6 selftest splitcpy 2500
+Run <RoTest$Dir>.readtest6 selftest splitmove 2500
+Run <RoTest$Dir>.readtest6 selftest origcpy 2500
+Run <RoTest$Dir>.readtest6 selftest origmove 2500
+Echo ===================== 2. the crash: user-mode copies into stack pages nobody has touched.  memcpy/memmove/split* must be OK; origcpy/origmove are expected to CRASH at offsets 0 and -64
+Run <RoTest$Dir>.readtest6 fresh memcpy
+Run <RoTest$Dir>.readtest6 fresh memmove
+Run <RoTest$Dir>.readtest6 fresh splitcpy
+Run <RoTest$Dir>.readtest6 fresh splitmove
+Run <RoTest$Dir>.readtest6 fresh origcpy
+Run <RoTest$Dir>.readtest6 fresh origmove
+Echo ===================== 3. UnixLib memset (NEON vst1 with an alignment hint) and the same store written by hand
+Run <RoTest$Dir>.readtest6 fresh memset
+Run <RoTest$Dir>.readtest6 fresh vst1a
+Echo ===================== 4. a 64 KB copy into a fresh stack buffer: library memcpy and memmove must be OK, the original memcpy is expected to crash
+Run <RoTest$Dir>.readtest6 fill memcpy 64
+Run <RoTest$Dir>.readtest6 fill memmove 64
+Run <RoTest$Dir>.readtest6 fill origcpy 64
+Echo ===================== 5. speed on heap memory: library memcpy (A) against the original (B); then memmove.  Does splitting the 64-byte store cost anything?
+Run <RoTest$Dir>.readtest6 speed memcpy
+Run <RoTest$Dir>.readtest6 speed memmove
+Spool
+Echo Finished. Output is in <RoTest$Dir>.ResultsReadtest6

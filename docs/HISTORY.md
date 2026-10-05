@@ -1,0 +1,29 @@
+# How the port was made
+
+The whole port, from the first compile to this release, was done in five days, 1 to 5 October 2026, by Rob Heaton with an AI assistant (Claude). The assistant read the sources, wrote the patches, tools and test programs, built the packages and analysed the results;
+**every run on real hardware was done by Rob**, on a Raspberry Pi Compute Module 4 running RISC OS 5.30.
+
+## The method
+
+A loop that repeated about a hundred times: build on Linux; put a *test pack* (an Obey file and the programs) on a network share; run it in a Task window on the Pi; read the results file back; explain every deviation; fix; repeat.
+Nothing was called "working" until it had passed on the machine, and the packages were promoted to the release folder only after a full regression run.
+
+## Timeline
+
+| Day | What happened |
+|---|---|
+| **1 Oct** | The GCCSDK 10.2.0 EABI recipe was forward-ported to GCC 16.2.0 (the RISC OS target files, libgcc, the arm backend changes), and the first program ran on the Pi. UnixLib was rebuilt with GCC 16. A 34,541-check C regression suite, then C++ with libstdc++ and thread-local storage, ran on hardware. binutils 2.45.1 was ported (four patches, about 1,500 lines, for BFD, gas and ld: RISC OS's PLT, GOT and module relocations and the ELF file type) and ran on hardware. LTO, Cortex-A72 tuning and a benchmark were built. The first thread tests found that `std::async` deadlocks in UnixLib. |
+| **2 Oct** | The thread bugs (`pthread_once`, timed waits, `sleep`) were fixed. Fortran (gfortran 16.2) was built from the recipe and passed on hardware. `std::random_device` got real entropy. The GCC 16-built UnixLib was loaded on the machine. A strange symptom appeared: bytes of a `read()` into a fresh stack buffer came back wrong. |
+| **3 Oct** | The cause was traced to RISC OS losing a store when the OS itself first touches a lazily mapped stack page, and a 64-byte `vstm` crash on such pages. The fix is to touch each stack page with an ordinary store, so **`-fstack-clash-protection` became the default** for this target. Programs got stacks bigger than 1 MB. The **native compiler** was built and ran on the Pi: `gcc`, `g++`, binutils, GNU `make` and `gfortran` compiled, linked and ran the test suites, and rebuilt `make` itself. A new class of bug appeared: a `vfork` child that ends without `exec` froze the machine, and the freeze hunt began. |
+| **4 Oct** | The freeze was traced to its root in SharedUnixLibrary (a flag left set in a `vfork` child) and fixed. A heap bug of `vfork` + `exec` children was reproduced and fixed. **Throwback** was implemented; making it work on hardware exposed that with the DDEUtils module loaded every native compile failed silently, because GCC 16 compiled UnixLib's inline SWI wrappers differently from GCC 10; fixed. Twenty reports for the GCCSDK maintainers were drafted and checked. The first freestanding **modules** built with GCC 16 ran on the machine. |
+| **5 Oct** | **Native LTO**: every link failed silently (a redirected output file swallowed the messages), and once the messages were visible the cause was UnixLib's `scanf`, which could not read a 64-bit hexadecimal number. The library was fixed (fix level 13) and the bug written up as the 21st report for the GCCSDK maintainers; the package was rebuilt, and the **full regression run passed**: 50 summary lines identical to the previous release. The Linux cross compiler was packaged and checked, and this repository was assembled. |
+
+## Things that were harder than they looked
+
+* **Finding out what the OS does.** Most of the interesting bugs were not in the compiler but in the interaction between the compiler's code, UnixLib, the shared-library machinery and RISC OS modules; each needed a hypothesis, a small test on the hardware, and often a trace.
+* **Silent failures.** The worst ones printed nothing: a compile that did nothing when a text editor was running, an LTO link that swallowed its own error message. The fixes were as much about making failures visible as about the failure itself.
+* **Honest measurement.** Several early diagnoses were wrong and were corrected by the next experiment (a "stdio bug" that was really the OS, a redirect theory that explained the silence but not the failure). The reports say what was measured and what was only read.
+
+## What was left
+
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md) lists it. In short: modules beyond a proof of concept, throwback from the assembler and linker, profiling, and the bugs in system modules that need their maintainers.

@@ -1,0 +1,108 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: sleep () / usleep () / nanosleep () in a program with several
+         threads outside the Wimp: one shared alarm and one flag, so a sleeper
+         can wake early and another can lose its alarm
+Attach:  patches/unixlib-sleep-threads.patch
+         repro/unixlib-models/threadtest.cc (stage sleep_for)
+
+Summary
+-------
+signal/sleep.c (sleep_int, behind sleep, usleep and nanosleep, and so behind
+std::this_thread::sleep_for) waits with ualarm () and sigsuspend (). There is
+one alarm per process, and sigsuspend () waits on one flag per process
+(__u->sleeping, cleared by whatever signal arrives). With several threads that
+sleep at the same time, by reading the code:
+
+  * the second sleeper's ualarm () replaces the first sleeper's alarm, and the
+    code that handles 'a user alarm existed' then treats it as a user alarm
+    that has to be honoured;
+  * when the earliest alarm goes off the signal clears the single flag, and
+    every thread that is in sigsuspend () leaves it: the ones that wanted to
+    sleep longer wake up too early;
+  * the exit path of a sleeper calls ualarm (0 or what it thinks is the user's
+    rest), which can cancel the alarm that another sleeper still needs, so that
+    one sleeps until some other signal arrives.
+
+The code already avoids the alarm when the program is a Wimp task or runs in a
+TaskWindow (__get_taskhandle () != 0: 'alarm () does not work in a TaskWindow
+nor whilst running as a WIMP program'): it then yields to the other threads
+until clock () has reached the end time. The patch makes the same choice when
+other threads exist (__ul_global.pthread_num_running_threads > 1), and makes
+the loop immune to the wrap-round of clock () by comparing the difference as an
+unsigned number. 26 lines of patch.
+
+What was and was not measured
+-----------------------------
+The behaviour of the old alarm path with several sleeping threads is from
+reading the code: I have not run it. My hardware tests run in a TaskWindow,
+where __get_taskhandle () is not 0, so the old code already took the yield loop
+there and could not show the problem; they cannot tell the old from the new
+code in that respect. To show the old failure one has to run a program with
+several sleeping threads outside the desktop (a command-line session without a
+Wimp task, the case that the first branch does not cover). I have not done
+that, and I would not call the claim 'observed'.
+
+What was measured, in a TaskWindow, with the patch (and so with the yield
+loop): threadtest, stage sleep_for, on RISC OS 5.30 on a Cortex-A72, GCC 16.2.0
+and GCC 10.2.0 builds. Three threads sleep 100, 160 and 220 ms with
+std::this_thread::sleep_for while main sleeps 3 x 40 ms:
+
+      three sleepers of 100/160/220 ms measured 100 ms for the first
+      ... 160 ms for the second, 220 ms for the third
+      main slept 3 x 40 ms in 130 ms (GCC 10: 140 ms); the whole group
+      took 220 ms (about 230 = they overlap, about 600 = they serialise)
+
+Each sleeper sleeps its own time, none early; the sleeps overlap; sleep_until,
+and a worker that sleeps while main waits in join () (which must not be taken
+for a deadlock by the scheduler), also pass.
+
+The patch
+---------
+-  if (__get_taskhandle () != 0)
++  if (__get_taskhandle () != 0 || __ul_global.pthread_num_running_threads > 1)
+     {
+-      before = clock () + clockticks;
+-      while (clock () < before)
++      before = clock ();
++      while ((clock_t) ((unsigned long) clock () - (unsigned long) before)
++             < clockticks)
+         pthread_yield ();
+       return 0;
+     }
+
+A program with one thread is unchanged (still the alarm). A sleeper that
+started on the alarm path before the other threads existed is alone on the
+alarm: the later sleepers do not touch it, so I believe it is not affected, but
+I have not tested that mix. With several threads a sleeper now polls through
+pthread_yield () instead of waiting in sigsuspend (), which also yields in a
+loop, so the cost is the same.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* signal/sleep.c (sleep_int): Wait by yielding, as in a Wimp task,
+	when there is more than one thread: all sleepers share one alarm
+	and one sleeping flag.  Compare the clock difference as an unsigned
+	number.
+
+Verification
+------------
+The file compiles with GCC 10.2.0 and 16.2.0 with the flags of the UnixLib
+build. The yield loop on the machine is the stage above. My regression suites
+with the patch in the library (C 34541 checks in six variants, C++ 139 / 142,
+threads) pass; none of them sleeps in several threads outside the desktop.
+There is no host model: the part that changes is a loop of three lines.
+
+What I did not do
+-----------------
+I did not reproduce the failure of the old code (see above), so this is the
+least well evidenced of my patches. If you prefer to see it first, a program of
+three threads that sleep 100, 160 and 220 ms and print how long each slept, run
+from a command line outside the desktop, should show the early wake-ups if I
+have read the code right; threadtest.cc has the same test (stage sleep_for).
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

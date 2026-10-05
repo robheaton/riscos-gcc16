@@ -1,0 +1,14 @@
+--- a/libgfortran/configure
++++ b/libgfortran/configure
+@@ -18414,6 +18414,11 @@
+ ac_compiler_gnu=$ac_cv_c_compiler_gnu
+ 
+ 
++# RISC OS (UnixLib): the pthread primitives accept PTHREAD_PROCESS_SHARED, but there is no memory shared between processes, so the
++# coarray shared-memory library (-fcoarray=shared) cannot work there: do not build it.
++case "$host" in
++  *-riscos*) enable_caf_shmem=false ;;
++esac
+ # caf_shmem needs process-shared pthread primitives that are visible through
+ # the default pthread headers.  AX_PTHREAD already established the baseline
+ # pthread flags; this additional check only verifies that the specific

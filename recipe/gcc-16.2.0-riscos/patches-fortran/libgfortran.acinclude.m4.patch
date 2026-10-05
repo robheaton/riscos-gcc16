@@ -1,0 +1,10 @@
+--- a/libgfortran/acinclude.m4
++++ b/libgfortran/acinclude.m4
+@@ -139,6 +139,7 @@
+ }]])], libgfor_cv_have_unlink_open_file=yes, libgfor_cv_have_unlink_open_file=no, [
+ case "${target}" in
+   *mingw*) libgfor_cv_have_unlink_open_file=no ;;
++  *-riscos*) libgfor_cv_have_unlink_open_file=no ;;      # UnixLib: a file that is still open cannot be deleted
+   *) libgfor_cv_have_unlink_open_file=yes;;
+ esac])])
+ if test x"$libgfor_cv_have_unlink_open_file" = xyes; then

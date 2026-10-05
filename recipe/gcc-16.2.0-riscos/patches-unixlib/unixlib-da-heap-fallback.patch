@@ -1,0 +1,44 @@
+--- a/libunixlib/sys/_syslib.s	2026-10-03 14:52:15.557718054 +0100
++++ b/libunixlib/sys/_syslib.s	2026-10-03 14:52:15.558716491 +0100
+@@ -418,17 +418,38 @@
+ 	STRB	a3, [a1, #5]	@ Change back to $Heap
+ 
+  PICEQ "MOV	v6, v4"		@ Save PIC register
+-	@ Create dynamic area
++	@ Create dynamic area.  Its MAXIMUM size (v2) is only reserved logical address space - the memory is mapped as the heap grows - but the reservations of all the
++	@ programs that are alive at once add up, and when one does not fit OS_DynamicArea fails ("Unable to allocate logical address space"; before, that ended the program
++	@ at start-up).  Try half of the size, and so on down to 2MB, instead (GCCSDK GCC 16 forward-port): the biggest size that fits is as good as the size asked for,
++	@ which the program may well not need.  The last try, at 2MB or less, is the plain SWI: an error is then reported to the parent's error handler, as before.
++	@ Nothing is trusted to survive a failing SWI: the size, the name and the registers used afterwards (the saved PIC register, __ul_memory, __ul_global) live in a
++	@ frame on the stack and are loaded again before every try.
++	STMFD	sp!, {v2, v5, v6, fp, ip}
++da_try:
++	LDMIA	sp, {v2, v5, v6, fp, ip}
+ 	MOV	a1, #0
+ 	MOV	a2, #-1
+ 	MOV	a3, #0		@ Set initial size of dynamic area to 0K
+ 	MOV	a4, #-1
+ 	MOV	v1, #0x80
+-	@ v2 is already set from above
++	@ v2 (the maximum size) and v5 (the name) are loaded above
+ 	MOV	v3, #0
+ 	MOV	v4, #0
+-	@ v5 is already set from above
++	CMP	v2, #2*1024*1024
++	BLS	da_last
++	SWI	XOS_DynamicArea
++	BVC	da_done
++	LDR	v2, [sp, #0]
++	MOV	v2, v2, LSR #1	@ no room: half the size
++	STR	v2, [sp, #0]
++	B	da_try
++da_last:
+ 	SWI	OS_DynamicArea	@ No X bit, if error -> call parent error handler.
++da_done:
++	LDR	v6, [sp, #8]
++	LDR	fp, [sp, #12]
++	LDR	ip, [sp, #16]
++	ADD	sp, sp, #20
+ 	MOV	v1, a3				@ setup for deletion at exit
+ 	STR	a2, [ip, #GBL_DYNAMIC_NUM]	@ __ul_global.dynamic_num
+  PICEQ "MOV	v4, v6"		@ Restore PIC register

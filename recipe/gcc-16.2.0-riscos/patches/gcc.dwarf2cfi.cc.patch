@@ -1,0 +1,27 @@
+--- a/gcc/dwarf2cfi.cc
++++ b/gcc/dwarf2cfi.cc
+@@ -1917,7 +1917,9 @@
+ 	      /* Rule 3 */
+ 	      /* Either setting the FP from an offset of the SP,
+ 		 or adjusting the FP */
++#ifndef TARGET_RISCOSELF
+ 	      gcc_assert (frame_pointer_needed);
++#endif
+ 
+ 	      gcc_assert (REG_P (XEXP (src, 0))
+ 			  && cur_cfa->reg == XEXP (src, 0));
+@@ -1927,6 +1929,14 @@
+ 	      cur_cfa->offset += offset;
+ 	      cur_cfa->reg = dw_frame_pointer_regnum;
+ 	    }
++
++	      /* Rule XX */
++	      else if (GET_CODE (src) == PLUS
++		       && GET_CODE (XEXP (src, 1)) == CONST_INT)
++		{
++		  cur_trace->cfa_temp.reg = dwf_cfa_reg (dest);
++		  cur_trace->cfa_temp.offset = INTVAL (XEXP (src, 1));
++		}
+ 	  else
+ 	    {
+ 	      gcc_assert (GET_CODE (src) != MINUS);

@@ -1,0 +1,30 @@
+date-string:  04 Oct 2026
+
+help-string:  TickMod 0.02
+
+title-string: TickMod
+
+initialisation-code: module_init
+
+finalisation-code: module_finalise
+
+irq-handlers: callback/callback_handler
+
+command-keyword-table: command_handler
+     TickMod_Start(min-args: 0,
+                   max-args: 0,
+                   help-text: "Syntax: *TickMod_Start\n"),
+     TickMod_Stop(min-args: 0,
+                  max-args: 0,
+                  help-text: "Syntax: *TickMod_Stop\n"),
+     TickMod_Status(min-args: 0,
+                    max-args: 0,
+                    help-text: "Syntax: *TickMod_Status\n"),
+     TickMod_Delay(min-args: 1,
+                   max-args: 1,
+                   help-text: "Syntax: *TickMod_Delay <centiseconds>\n"),
+     TickMod_RemoveTest(min-args: 0,
+                        max-args: 0,
+                        help-text: "Syntax: *TickMod_RemoveTest\n")
+
+vector-handlers: tickerv_entry/tickerv_handler

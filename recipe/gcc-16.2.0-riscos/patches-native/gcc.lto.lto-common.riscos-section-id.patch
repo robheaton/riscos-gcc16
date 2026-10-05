@@ -1,0 +1,22 @@
+--- a/gcc/lto/lto-common.cc	2026-10-05 09:02:50.710242600 +0100
++++ b/gcc/lto/lto-common.cc	2026-10-05 09:02:50.720548142 +0100
+@@ -2200,7 +2200,19 @@
+   /* If the section is not suffixed with an ID return.  */
+   if ((size_t)(s - name) == strlen (section_name_prefix))
+     return 0;
++#ifdef __riscos__
++  /* UnixLib's scanf has no 64-bit conversions: "%llx" is converted with strtoul, which gives ULONG_MAX for the 16 digits of an id, and only 32 bits are
++     stored (the rest of *ID stays as it was).  The id built from that never matches the name of the section, and lto1 then reports that the bytecode
++     stream was "generated with GCC compiler older than 10.0".  */
++  {
++    char *end;
++
++    *id = strtoull (s + 1, &end, 16);
++    return end != s + 1;
++  }
++#else
+   return sscanf (s, "." HOST_WIDE_INT_PRINT_HEX_PURE, id) == 1;
++#endif
+ }
+ 
+ /* Create file_data of each sub file id.  */

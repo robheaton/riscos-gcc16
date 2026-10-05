@@ -1,0 +1,29 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/pthread/pthinit.c
++++ b/gcc4/recipe/files/gcc/libunixlib/pthread/pthinit.c
+@@ -74,7 +74,15 @@
+   gbl->pthread_num_running_threads = 1;
+ }
+ 
+-/* Called once, at program finalisation.  */
++/* Called once, at program finalisation, by the last user of the program image.
++
++   Not by a vfork child that ends without exec.  Such a child (the usual reaction to an exec that failed: vfork (); if (child) { execv (...); _exit (127); })
++   shares the program image with its parent - this RMA block, __ul_global and the pthread system included - and its _exit () used to free the block here, under the parent's feet: the
++   parent went on with a pointer to freed RMA memory (setjmp/longjmp, the signal code and every PTHREAD_UNSAFE section write into the block) and freed it a second time when it ended.
++   With one such child the block was still free when the parent freed it again and nothing showed; if the RMA hands the block out in between, the parent goes on using, and then
++   frees, memory that belongs to somebody else.  __dynamic_area_refcount is the number of processes that share the image: the vfork child has added itself in __fork_post () and
++   takes itself off in __dynamic_area_exit (), which _exit () calls AFTER this function, so more than one means that the image is not this process's to take down; the last user
++   (the parent, when it ends) frees the block, once.  */
+ void attribute_hidden
+ __pthread_prog_fini (void)
+ {
+@@ -83,6 +91,9 @@
+   debug_printf ("-- __pthread_prog_fini: Program finalisation\n");
+ #endif
+ 
++  if (__dynamic_area_refcount > 1)
++    return;
++
+   /* pthread timers must be stopped */
+   if (gbl->pthread_system_running)
+     {

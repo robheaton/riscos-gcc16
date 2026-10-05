@@ -1,0 +1,13 @@
+--- a/libstdc++-v3/crossconfig.m4
++++ b/libstdc++-v3/crossconfig.m4
+@@ -39,6 +39,10 @@
+     AC_DEFINE(HAVE_TANHF)
+ 
+     AC_DEFINE(HAVE_ICONV)
++
++    # std::random_device reads /dev/urandom (UnixLib implements it with the CryptRand module; random.cc falls back to a
++    # time-seeded engine where the device cannot be opened)
++    AC_DEFINE(_GLIBCXX_USE_DEV_RANDOM)
+     ;;
+   arm*-*-symbianelf*)
+     # This is a freestanding configuration; there is nothing to do here.

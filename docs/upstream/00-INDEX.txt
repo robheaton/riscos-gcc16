@@ -1,0 +1,307 @@
+Upstream reports for the GCCSDK maintainers - bundle of 2026-10-04
+==================================================================
+
+Twenty-one reports, one problem per report, in four parts: 01 - 08
+(SharedUnixLibrary, UnixLib, ARMEABISupport, the kernel: the serious problems),
+09 - 18 (ten smaller UnixLib patches), 19 - 20 (two UnixLib fixes for programs
+that run with the DDEUtils module loaded) and 21 (one UnixLib fix, found
+through the native LTO work; it stands alone). Each is a complete
+plain-text e-mail (the first lines - From / To / Subject / Attach - are the
+mail headers, the body starts after the blank line), with patches,
+reproducers and the checks behind them. NOTHING HAS BEEN SENT. Everything is
+written in the first person, signed "Rob Heaton"; read them as yours before
+sending.
+
+Where to send
+-------------
+The riscos.info page "Bug_Reporting"
+(https://www.riscos.info/index.php/Bug_Reporting) says to post bug reports to
+the GCCSDK mailing list.  Its link,
+http://www.riscos.info/cgi-bin/mailman/listinfo/gcc, gave "404 Not Found" on
+2026-10-04, and https://www.riscos.info/mailman/listinfo/gcc answered "503
+Service Unavailable" the same day, so I could not confirm the list's present
+address, nor whether you must be subscribed to post.  The Control file of the
+GCCSDK packages (SharedLibs-C-armeabihf 10.2.0-1, from the autobuilder) names
+"GCCSDK mailing list <gcc@gccsdk.riscos.info>" as its maintainer, and the
+Mailman page above is the list called "gcc": that is very probably the posting
+address, and it is what the "To:" lines say now, but I could not check that it
+takes mail from non-members.  Please confirm it (subscribe first if the list
+requires it).
+
+The sources are the GCCSDK svn trunk (svn://svn.riscos.info/gccsdk/trunk); its
+last revision when I looked was r7800 (2024-10-17, Lee Noar), and every patch
+applies to that revision with  patch -p1  from the top of the tree (paths
+a/gcc4/...).  Report 07 is partly a RISC OS kernel question; its "To:" line
+says so.
+
+The reports
+-----------
+ 01  SharedUnixLibrary 1.16: a vfork child that ends without exec kills its
+     parent, resizes its parent's Wimp slot and - when the parent was started
+     by exec - frees the parent's SOManager client (hard freeze).
+     Patch: sul-all-vfork-child (or sul-1, sul-2, sul-3).
+ 02  UnixLib: the _exit of such a child frees the RMA block of the shared
+     program image.  Patch: unixlib-vfork-child-pthread-fini.
+ 03  UnixLib: the signal stack (one page per program) is never freed.
+     Patch: unixlib-free-signal-stack.
+ 04  ARMEABISupport: a failed mmap leaves its "mmap#N" dynamic area (and the
+     pages it claimed) until the next reboot.
+     Patch: armeabisupport-mmap-failure-cleanup (against 1.05) and, optional,
+     unixlib-mmap-refuse-impossible.
+ 05  ARMEABISupport + SharedUnixLibrary: the mmap memory of a vfork + exec
+     child stays allocated until the ROOT process ends.  No patch (a design
+     suggestion).
+ 06  ARMEABISupport: *RMKill succeeds while SOManager holds the handle of a
+     global allocator; every EABI program then fails to start (minor).  No
+     patch.
+ 07  RISC OS 5.30 / ARMEABISupport: a store made by the OS in SVC mode to a
+     not-yet-mapped page of an EABI stack is lost; a 64-byte VSTM into such a
+     page is not recovered.  No patch (cause not found; the report asks the
+     questions).
+ 08  UnixLib + SharedUnixLibrary: the heap of a vfork + exec child (in the Wimp
+     slot) grows over the copy of its parent that SUL keeps at the top of the
+     slot: the parent resumes destroyed.  Patch: unixlib-vfork-exec-heap-limit
+     (UnixLib only, 76 lines).
+ 09 UnixLib: fread () / fwrite () do not advance the data pointer after a short
+     read () / write (): data stored over itself, or written twice. Latent
+     (code reading + a host model of the real functions). Patch:
+     unixlib-stdio-short-transfers.
+ 10 UnixLib: pthread_once () holds one global mutex across the init routine:
+     std::async deadlocks; an exception from the routine terminates the
+     program. Patch: unixlib-pthread-once (needs -fexceptions for once.c).
+ 11 UnixLib: pthread_cond_timedwait () deadline from time () (whole seconds);
+     wrong base for CLOCK_MONOTONIC: timed waits overrun by up to a second.
+     Patch: unixlib-pthread-cond-timedwait.
+ 12 UnixLib: sleep () / usleep () / nanosleep () with several threads, outside
+     the Wimp: one shared alarm and flag. From code reading only. Patch:
+     unixlib-sleep-threads (26 lines).
+ 13 UnixLib: sysconf (_SC_NPROCESSORS_ONLN) returns 2048: the enum numbering
+     restarts after _SC_PAGE_SIZE. Patch: unixlib-sysconf-nprocessors.
+ 14 UnixLib: five implicit function declarations that GCC 14 and later reject.
+     Patch: unixlib-gcc14-implicit-declarations.
+ 15 UnixLib: touch stack buffers before read / fread / recv / recvfrom (a
+     workaround for report 07, first problem). Patch:
+     unixlib-touch-stack-buffers.
+ 16 UnixLib: split the 64-byte VSTM of the NEON memcpy / memmove (a workaround
+     for report 07, second problem). Patch: unixlib-memcpy-split-vstm.
+ 17 UnixLib: a main stack bigger than 1 MB for EABI programs (__stack_size),
+     with a fallback. Patch: unixlib-eabi-stack-size.
+ 18 UnixLib: a heap dynamic area that does not fit into the address space is
+     retried at half the maximum size. Patch: unixlib-da-heap-fallback.
+ 19 UnixLib: the inline SWI wrappers of incl-local/internal/os.h read their
+     results from local register variables after the asm: with GCC 16 the
+     arguments of every program are cut to the length of its name while the
+     DDEUtils module is loaded. Patch: unixlib-inline-swi-register-variables
+     (738 lines, generated by repro/regvar/fix-unixlib-regvars.py).
+ 20 UnixLib: __get_dde_prefix () never returns when a DDEUtils prefix is set.
+     Patch: unixlib-ddeutils-prefix-loop (one word).
+ 21 UnixLib: scanf () has no long long conversions: %llx / %lld are cut to 32
+     bits (the high word is not written), %hhd writes a short, %jd %zu %td %qd
+     are not understood, %Lf stores a float.  This is why the native GCC's
+     lto1 could not find the sections of its own objects (sscanf ".%llx").
+     Patch: unixlib-scanf-long-long (204 lines, one file).
+
+What each rests on (all hardware work: Raspberry Pi Compute Module 4,
+Cortex-A72, RISC OS 5.30, ARMEABISupport 1.08, SOManager 3.04,
+SharedUnixLibrary 1.16 (3 Apr 2020), UnixLib 5.0 from trunk r7800 built with
+GCC 16.2.0):
+ 01  Reproduced and fixed on the machine: the stock module crashes the parent
+     4 of 4; the loops that froze the machine 5 times run clean with all three
+     fixes (RMLoaded, then installed); same regression results as the stock
+     module.  Also run offline: the module's own machine code on an ARM
+     interpreter, for every flag combination.
+ 02  Measured on the machine (RMA free space around one child); patch compiled
+     with GCC 10.2.0 and 16.2.0; in every libunixlib build since 16.2.0-8 of
+     my port.
+ 03  Measured on the machine (shared stack range after each process; 12 ways
+     to end a process); in every libunixlib build since 16.2.0-7 of my port.
+ 04  Measured on the machine with two test builds of the 1.05 sources (patched
+     and unpatched), and with a host model that compiles the module's own
+     memory.c / mmap.c (unpatched: 30 failed checks, patched: 0).  The
+     installed module is 1.08 and trunk has only 1.05: see below.
+ 05  Measured on the machine; no patch.
+ 06  Seen once; the cause is read from the 1.05 and SOManager sources, not
+     tested; no patch.
+ 07  A 56-line reproducer, measured on the machine; the cause is not found.
+ 08  Reproduced on the machine: the parent dies when the child's heap passes
+     the saved copy; a probe in both processes shows the child's limit at the
+     saved parent minus 4 and the heap going over it; the workaround with the
+     child's heap in a dynamic area holds.  The patch is checked on a host
+     model (the real brk.c / stackalloc.c: unpatched 7 failed checks, patched
+     0, 7 breakages of the new condition caught), on an ARM interpreter (its
+     start-up instructions: 9 breakages caught) and on the machine: with a
+     private copy of the patched library every stage that destroyed the
+     parent is intact (62, 63, 64 and 100 MB; the overflow comes from mmap),
+     and again with the library installed (libunixlib 16.2.0-9 of my port);
+     the regression suites of my port then give the same check counts as
+     before the patch (all 50 summary lines identical, none fails).
+
+ 09 A host model that compiles the real fread.c and fwrite.c against a mock
+     read () / write (): trunk 258333 failed checks with short transfers and 0
+     when every transfer is complete; patched 0; 5 of 5 breakages caught. Not
+     seen on the machine.
+ 10 Seen on the machine (stock: the scheduler's Deadlocked abort; patched: the
+     threads group, call_once, async and call_once_throw pass, GCC 10.2.0 and
+     16.2.0); a host model of the old and the new logic.
+ 11 Measured on the machine, stock and patched (timed waits 110 - 920 ms for 30
+     - 60 ms asked, then 40 - 70 ms); a host model of the real deadline
+     function, 3,000,000 random cases.
+ 12 Code reading; the patched yield loop passes on the machine, but the tests
+     run in a TaskWindow, where the old code took that path too, so they cannot
+     show the old failure (the report says so).
+ 13 Values compiled with both compilers (pristine 11 / 12, patched 27 / 28);
+     hardware_concurrency () 2048 measured before.
+ 14 Five errors with GCC 16.2.0, all gone; the code that GCC 10.2.0 generates
+     is identical before and after.
+ 15 Measured on the machine, before and after (wrong bytes 2 ... 697 per read;
+     right after); a host model of the new function, 2,000,000 cases, 10 of 10
+     breakages caught.
+ 16 Measured on the machine (crash at 0 and -64 / all six offsets before; ok
+     after; no speed cost); the patched file is shown to differ from the
+     original only by the split.
+ 17 Measured on the machine (1, 16, 64 MB granted; 200 MB refused and 100 MB
+     granted; the native compilers A/B at 1 MB and 64 MB); the start-up loop on
+     an ARM interpreter, 25 combinations, with breakage checks.
+ 18 Measured on the machine (a chain of 24 programs: the fallback at level 17);
+     the start-up loop on an ARM interpreter, 13 combinations, with breakage
+     checks.
+
+ 19 Measured on the machine: with DDEUtils loaded 15 of 60 words arrive (the
+     arguments are cut to the length of the program name), all arrive with
+     DDEUtils unloaded; a freestanding program and a round trip of the
+     DDEUtils SWIs show that the loader and the module are faithful; with the
+     patched library all arguments arrive (up to 1511 characters) and the
+     native compilers work with DDEUtils loaded, and the regression suites of
+     my port give the same counts (all 50 summary lines identical).  The
+     machine code of the real unix.c compiled by GCC 16.2.0 (the size is read
+     from r0 after the call of strlen) and by 10.2.0 (copied at once); the
+     reproducer on an ARM interpreter (GCC 16.2.0: 10 instead of 12; 10.2.0:
+     12) and, as assembler output, with 4.7.4; the old and the rewritten
+     wrappers compared on the interpreter (32 wrappers x 300 seeds identical,
+     10 of 10 breakages caught).  The heap overflow is from reading the code.
+ 20 Code reading, and the compiled function run on an ARM interpreter (trunk:
+     endless in all 5 cases with a prefix; patched: right in all 11 cases;
+     5 of 5 breakages caught).  NOT seen on the machine with the unpatched
+     code (the report says so).
+ 21 Measured on the machine, unpatched and patched: 16 canary cases
+     (unpatched 11 fail, patched 0) and a table of 15066 cases made by glibc
+     (unpatched 5502 fail, patched 0); the unmodified GCC 16 lto1 links with
+     the patched library and fails with the unpatched one.  A host model of
+     the real vfscanf, old and new (47315 cases, 0 failures; the table on
+     the model of the old function gives the machine's 5502).  In the release
+     build 1788 of 1792 object files are identical.  The seven regression
+     suites of my port give the same 50 summary lines on the patched library
+     as on the unpatched one (none fails).
+
+Suggested order: 01 first (it is the serious one, and 02 / 03 / 05 build on
+it), then 02, 03, 04, 05, 08, and 06 / 07 last (06 is minor, 07 is unresolved);
+then, with 00-COVER-NOTE-2.txt, the second batch: the bug fixes 09 - 14, then
+15 and 16 (workarounds that 07 would make unnecessary), then the features 17
+and 18; then, with 00-COVER-NOTE-3.txt, 19 and 20 (19 is the one that
+matters: with the DDEUtils module loaded it breaks every program that is
+started with long arguments, in a UnixLib built by GCC 16; 20 is one word).
+Report 21 can follow at any time, as a mail of its own: it needs no cover note
+and does not depend on the others.
+Each report refers to the others by number where they relate.
+
+Things to decide or fill in before sending
+------------------------------------------
+ * Sender.  "From: Rob Heaton <rob@robheaton.co.uk>", as you told me.
+ * ChangeLog.  The reports contain suggested ChangeLog entries; the date and
+   name are left to you ("the date and name are yours").  The patches contain
+   code and comments only, no ChangeLog hunk.
+ * Attachments.  Every patch but one is small (11 - 204 lines; report 19's
+   is 738 lines, generated): paste them below the signature if the list
+   strips attachments.  The reproducers are plain C
+   files; build:  arm-riscos-gnueabihf-gcc -O2 X.c -o X,e1f  (report 07's
+   svc_abort_repro.c needs -fno-stack-clash-protection with GCC 16).
+ * ARMEABISupport version.  The module on the machine is 1.08 (03 Jun 2025);
+   trunk r7800 has 1.05 (last changed by r7734, 2023-01-07).  I do NOT have
+   the sources of 1.06 - 1.08.  Report 04's patch is written against 1.05 and
+   has to be rebased by someone who has the current sources (the report says
+   so); reports 05 and 06 describe code that I read in 1.05 and measured on
+   1.08.
+ * AI assistance.  Every mail carries, above the signature, the line "The
+   analysis, the patches and the drafting were done with the help of an AI
+   assistant (Claude); every run on the machine was mine." (you asked for it).
+ * The first mail.  00-COVER-NOTE.txt is a short introduction to send before
+   report 01: the list may not know you, and it says that eight mails follow.
+   Skip it if you prefer to send the reports alone.  00-COVER-NOTE-2.txt does
+   the same for reports 09 - 18, and 00-COVER-NOTE-3.txt for reports 19 - 20;
+   they need not be sent at once: the first batch is the one that matters.
+ * The ten patches of the second batch.  They are in the release build of my
+   port (libunixlib 16.2.0-11, which also has the patches of reports 19, 20
+   and 21), and verify/run-verify.sh checks that the 17 UnixLib patches of
+   this bundle, applied in sequence to trunk, give the same code as that
+   build.  Two of them (15, 16) are workarounds for report 07 and
+   become unnecessary if 07 is fixed; 12 has no evidence of the old failure;
+   09 has none from the machine (both say so).  Some of the machine runs used
+   my port's test programs, which ask for a private 'fix level' of the library
+   (sysconf (0x4700)); that is only a convenience of my packaging.
+ * Report 21.  It has evidence from the machine for both the unpatched and
+   the patched library (11 of 16 and 5502 of 15066 cases fail, then none),
+   and says what was run on the patched library (the regression suites of
+   my port: the same counts as before; the LTO tests after the first one
+   used a lto1 with a workaround).  Its patch is one file; the numbers in
+   the report that come from the host model are re-checked by
+   verify/run-verify.sh (section 10).  One sentence of the report mentions a
+   second, separate problem of the native build (the output of a process
+   that collect2 starts with a redirected stdout) as handled in my port and
+   not part of the report.
+ * The two patches of the third batch.  19 is mechanical (generated by
+   repro/regvar/fix-unixlib-regvars.py, 738 lines) and its report lists what
+   I did not change: the other files that declare register variables for SWI
+   results (socket.h, DRender.h, iconv.c, ...), which I did not audit.  20 has
+   no evidence from the machine with the unpatched code (it says so).
+
+Layout of this directory
+------------------------
+  00-INDEX.txt            this file
+  00-COVER-NOTE.txt       an optional first mail (introduction): reports 01-08
+  00-COVER-NOTE-2.txt     the same for the second batch, reports 09 - 18
+  00-COVER-NOTE-3.txt     the same for the third batch, reports 19 - 20
+  01-... 21-...           the reports
+  patches/                the patches (against trunk r7800; patch -p1)
+  repro/sul/              reproducers for 01, 02, 03, 05 (seqtest, daprobe,
+                          vforkbare, vforkfail, vforkloop, vforkrma, exittest,
+                          modver)
+  repro/armeabisupport/   reproducers for 04, 05 (mmap_leak_repro, mmaptest)
+  repro/armeabisupport-model/   the host model of memory.c / mmap.c (04) and
+                          its recorded results
+  repro/svc-abort/        report 07 (svc_abort_repro.c, readtest5 / readtest6
+                          and the built programs)
+  repro/heap/             report 08 (vforkheap.c, seqtest.c)
+  repro/heap-model/       report 08: the host model of brk.c / stackalloc.c
+  repro/stdio-model/      report 09: the real fread.c / fwrite.c on the host
+                          with a mock read () / write (); build-and-run.sh
+  repro/unixlib-models/   reports 10, 11, 12, 17, 18: once_model.c (10),
+                          cond/ (the model of cond_deadline (), 11),
+                          threadtest.cc (10, 11, 12: my C++ thread test),
+                          stkinfo.c, chain.c, daprobe.c, dautil.h (17, 18)
+  repro/svc-abort/        (also) readtest2.c: read / fread into a fresh stack
+                          buffer (15); readtest5 / readtest6 (16)
+  repro/touch-model/      report 15: the host model of __touch_stack_buffer
+  repro/scanf/            report 21: scantest.c (16 canary cases) and
+                          scanfcheck.c + scantab (15066 cases made by glibc),
+                          the programs of the machine runs; build-model.sh:
+                          the host model of the old and the patched vfscanf
+  repro/regvar/           report 19: regvar1.c (the reproducer, builds on any
+                          ARM target), fix-unixlib-regvars.py (the generator
+                          of the patch), argtest.c / rawarg.c / ddecl.c (the
+                          programs of the machine runs: see README.txt)
+  src/                    the patched files as they were compiled for the
+                          checks (src/pristine = trunk r7800 originals)
+  verify/                 run-verify.sh re-runs every check that does not need
+                          the machine; VERIFY-LOG.txt is its last output;
+                          tools/ has the ARM interpreter and the models (see
+                          tools/README.txt).  Needs ~/gccsdk (a clean svn
+                          working copy of trunk), the GCCSDK 10.2.0 tool chain
+                          and a GCC 16.2.0 arm-riscos-gnueabihf compiler.  The
+                          interpreter checks of reports 08, 17 and 18 also need
+                          a built patched libunixlib.so, and the fidelity
+                          check a copy of the release build's sources
+                          (~/gccsdk-next/unixlib-v18); they are skipped when
+                          it is not there.  Section 9 (reports 19, 20) also
+                          uses the GCCSDK 4.7.4 compiler (~/gccsdk/cross) for
+                          the reproducer.  Section 10 (report 21) runs
+                          repro/scanf/build-model.sh (a host gcc with ASan).

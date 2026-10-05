@@ -1,0 +1,2 @@
+/* this file has an error on purpose: the compiler must report it and return a non-zero code */
+int main (void) { return missing_function (3) + ; }

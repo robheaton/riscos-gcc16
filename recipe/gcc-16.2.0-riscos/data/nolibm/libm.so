@@ -1,0 +1,1 @@
+/* empty: libm.so.1 is an empty stub on RISC OS (the math functions are in libunixlib); linking against this keeps libm.so.1 out of DT_NEEDED */

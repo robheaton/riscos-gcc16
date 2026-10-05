@@ -1,0 +1,20 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-03 14:52:38.451551820 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-03 18:53:14.330066582 +0100
+@@ -138,11 +138,15 @@
+ 	 64-byte vstm, everything built with -fstack-clash-protection; 8:
+ 	 16.2.0-6 and later, the main stack of an EABI program is as big as
+ 	 __stack_size asks for, and a dynamic area for the heap is made smaller
+-	 when its maximum size does not fit).  Lets a
++	 when its maximum size does not fit; 9: 16.2.0-7 and later, an mmap or
++	 mremap request of 2GB or more, or over the OS clamp on the size of a
++	 dynamic area, is refused (ENOMEM) before ARMEABISupport makes an area
++	 for it that it would never give back, and the one page signal stack is
++	 freed when the process ends).  Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 8;
++	return 9;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

@@ -1,0 +1,31 @@
+| RunAll - run every variant and spool all output to <RoTest$Dir>.Results
+| The first EABI program that runs makes SharedLibs run its own Obey files, which changes <Obey$Dir>,
+| so remember our directory in a private variable BEFORE running anything.
+| (If a program stops with an error this script stops too: type *Spool to close the results file,
+|  then run the remaining variants one at a time, e.g.  *Run <RoTest$Dir>.g16-O2 )
+Set RoTest$Dir <Obey$Dir>
+Spool <RoTest$Dir>.Results
+Echo ===================== g10-O0
+Run <RoTest$Dir>.g10-O0
+Echo ===================== g10-O2
+Run <RoTest$Dir>.g10-O2
+Echo ===================== g10-O3
+Run <RoTest$Dir>.g10-O3
+Echo ===================== g10-O2p
+Run <RoTest$Dir>.g10-O2p
+Echo ===================== g16-O0
+Run <RoTest$Dir>.g16-O0
+Echo ===================== g16-O2
+Run <RoTest$Dir>.g16-O2
+Echo ===================== g16-O3
+Run <RoTest$Dir>.g16-O3
+Echo ===================== g16-O2p
+Run <RoTest$Dir>.g16-O2p
+Echo ===================== g16-dyn
+Run <RoTest$Dir>.g16-dyn
+Echo ===================== mixA
+Run <RoTest$Dir>.mixA
+Echo ===================== mixB
+Run <RoTest$Dir>.mixB
+Spool
+Echo Finished. Output is in <RoTest$Dir>.Results

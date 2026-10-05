@@ -1,0 +1,148 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib (EABI): the main stack of a program is always 1 MB; make
+         __stack_size work for EABI programs, with a fallback when the shared
+         stack range has no room
+Attach:  patches/unixlib-eabi-stack-size.patch
+         repro/unixlib-models/stkinfo.c repro/unixlib-models/dautil.h
+         (build: arm-riscos-gnueabihf-gcc -O2 -DSTACK_MB=64 stkinfo.c -o
+         stkinfo,e1f)
+         verify/tools/sim-startup-loops.py verify/tools/mutate-stack-da.py
+
+Summary
+-------
+The EABI start-up code in sys/_syslib.s asks ARMEABISupport for a main stack of
+256 pages (1 MB) with a fixed constant. The documented link-time feature
+__stack_size (doc/UnixLib/README, item 6: 'the size in bytes of the initial
+stack chunk'), which the chunked-stack start-up reads, is ignored for EABI
+programs. A program that needs more than 1 MB of stack - a compiler on a deeply
+nested input, a recursive algorithm - has no way to get it, and dies with
+UnixLib's 'stack overflow' EMT trap.
+
+The patch reads __stack_size in the EABI start-up as well (pages = max (256,
+__stack_size / 4096)), asks ARMEABISupport for that, and when the module
+refuses (there is no room in the range of address space that all EABI stacks
+share, nominally 256 MB) tries half the size, and so on down to 1 MB, before
+giving up with the same error as before. A program that does not define
+__stack_size gets exactly what it got before: 256 pages, one try. 44 lines of
+patch, assembler only.
+
+This is a feature, not a bug fix. It is part of what made GCC 16.2.0 run as a
+native compiler on RISC OS (cc1plus with a 64 MB stack), and it should be
+useful for any big program.
+
+Why the fallback
+----------------
+All EABI stacks (main, signal, pthread) are carved out of one dynamic area,
+'UnixLib stacks', whose maximum ARMEABISupport sets to 256 MB. Pages are mapped
+when they are first touched, so a big stack costs address space only, but the
+address space is shared: two programs that each ask for 200 MB do not both get
+it, and on my machine the operating system clamps the maximum size of every
+dynamic area to 128 MB (OS_DynamicArea 8; the 'logical window' line of stkinfo
+shows it). A request that does not fit makes StackOp ALLOC fail cleanly (r2 =
+0, V set), so the retry is safe, and a program that asked for more than is
+there still runs, with the biggest stack that fits.
+
+Measured on the machine
+-----------------------
+Raspberry Pi Compute Module 4, RISC OS 5.30, ARMEABISupport 1.08, UnixLib 5.0
+from trunk r7800 built with GCC 16.2.0 (my port; the patch is in it since
+16.2.0-6). stkinfo.c is built five times with -DSTACK_MB=N (the program then
+defines int __stack_size = N MB), and asks ARMEABISupport (StackOp: get stack,
+bounds, size) what its stack is, compares that with sp, and recurses down the
+stack with a 32 KB frame per level and a pattern in every frame. (stkinfo also
+prints a check of 'fix level' that only my port's library answers: on another
+libunixlib that line fails; ignore it.)
+
+  program    __stack_size   result
+  stk-def    (none)         1 MB, as before
+  stk-16m    16 MB          16 MB; 480 frames, 15360 KB deep, patterns intact
+  stk-64m    64 MB          64 MB exactly (usable 67108864 bytes, guard
+                            4096 bytes); 2016 frames, 64512 KB deep, patterns
+                            intact, 0.04 s
+  stk-200m   200 MB         first try, 51200 pages: refused cleanly by
+                            ARMEABISupport; second try,
+                            25600 pages = 100 MB: granted; usable 104857600
+                            bytes; 2048 frames, 65536 KB deep, patterns
+                            intact
+
+The same libunixlib's stack for a program that does not define __stack_size: 1
+MB, unchanged. The native GCC 16.2.0 compilers (cc1, cc1plus) define a 64 MB
+stack, and an A/B run with the old compilers (no __stack_size, 1 MB) and the
+new ones on the same inputs shows what it is for: templates nested N deep and
+nested parentheses, compiled directly with cc1plus / cc1. The new ones (64 MB)
+compile template depths 100, 300, 500, 890, 1500 and 3000 (2 to 8 seconds each)
+and 1000, 6000 and 12000 nested parentheses (1 s each); the old ones compile
+depths 100 to 500 and die at 890 (GCC's own default -ftemplate-depth is 900),
+and the C compiler dies at 600 and 1000 nested parentheses, each time with
+UnixLib's 'Unixlib detected stack overflow' trap and a clean exit.
+
+The patch
+---------
+In sys/_syslib.s, after the signal handler stack is set up and before the main
+stack is allocated:
+
+        LDR  v2, ___stack_size           (the weak symbol, as the chunked
+        (PIC: LDR v2, [v4, v2])           stack code uses it)
+        TEQ  v2, #0 ; LDRNE v2, [v2]     (bytes, or 0 if not defined)
+        MOV  v2, v2, LSR #12             (pages)
+        CMP  v2, #256 ; MOVCC v2, #256   (never less than 1 MB)
+stack_try:
+        StackOp ALLOC, v2 pages, 1 guard page, program name
+        TEQ a3, #0 ; BNE stack_ok       (a3 = the new sp; 0 = failed)
+        CMP v2, #256 ; MOVLS a1, #ERR_NO_STACK ; BLS __exit_with_error_num
+        v2 = v2 >> 1, but not below 256 ; B stack_try
+
+(The patch has the real instructions; the above is a sketch.) The weak
+reference needs no change to libunixlib's exports. I did not change
+doc/UnixLib/README, which describes __stack_size for the chunked stack only; a
+sentence about EABI would belong there.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* sys/_syslib.s (EABI start-up): Take the size of the main stack
+	from __stack_size (at least 1MB) instead of a constant 1MB.  If
+	ARMEABISupport has no room, try half the size, down to 1MB.
+
+Verification
+------------
+  Machine:  the table and the A/B run above, and my regression suites with the
+            library installed: C 34541 checks in six variants, C++ 139 / 142,
+            threads, Fortran, the native compilers building and running
+            programs (all the same counts as before the patch).
+  Assembler:  sys/_syslib.s assembles with GCC 10.2.0 and 16.2.0 with the flags
+              of the UnixLib build.
+  Interpreter:  verify/tools/sim-startup-loops.py reads the machine code of
+                stack_try out of a built libunixlib.so (symbols stack_try,
+                stack_ok, __exit_with_error_num) and runs it on a small A32
+                interpreter, with ARMEABISupport's StackOp modelled: 25
+                combinations of __stack_size (undefined, 0, 100 bytes, 1 MB, 5
+                MB + 100, 16 MB, 64 MB, 1 GB, 0x80000000, 0xF0000000, ...) and
+                free pages (100000 down to 200), including the halving between
+                256 and 511 pages and a program that does not define the weak
+                program name. Every one asks the sequence of sizes that the
+                model (pages = max (256, size / 4096), then halve, not below
+                256, error at 256) predicts, ends at stack_ok or the error exit
+                as predicted, and leaves the PIC register, ip and fp alone.
+                verify/tools/mutate-stack-da.py then breaks each instruction of
+                the loop (replaced by a nop, condition flipped, immediate
+                changed by 1 or 4): all 76 breakages of the two start-up loops
+                (this and report 18) make the interpreter fail.
+
+What I did not do
+-----------------
+I did not run a program with a stack of 1 GB or a chain of programs that
+together ask for more than the range holds (I wrote the tests, stk-1g and
+chainstk, but have not run them), so the case of several big stacks alive at
+once is covered by the interpreter and by the 200 MB case above, not by a run
+on the machine. The size is rounded down to whole pages. A stack bigger than
+the range is never granted; the program gets the biggest power-of-two fraction
+that fits, which can be much smaller than the room that is left. And a program
+that asks for a big stack takes it from every other EABI program for as long as
+it runs (that is inherent to the shared range).
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

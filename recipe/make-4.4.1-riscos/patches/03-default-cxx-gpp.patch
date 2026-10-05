@@ -1,0 +1,14 @@
+--- a/src/default.c	2026-10-03 14:11:53.207192215 +0100
++++ b/src/default.c	2026-10-03 14:11:53.217084455 +0100
+@@ -532,9 +532,10 @@
+     "CC", "cc",
+     "OBJC", "cc",
+ #endif
+-#ifdef MAKE_CXX
++#if defined (MAKE_CXX) && !defined (__riscos__)
+     "CXX", MAKE_CXX,
+ #else
++    /* RISC OS: configure put the name of the CROSS compiler (arm-riscos-gnueabihf-g++) into MAKE_CXX; the native one is g++.  */
+ # ifdef GCC_IS_NATIVE
+ #  ifdef __MSDOS__
+     "CXX", "gpp",       /* g++ is an invalid name on MSDOS */

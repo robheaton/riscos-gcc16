@@ -1,0 +1,135 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: pthread_cond_timedwait () computes the deadline from time ()
+         (whole seconds) and, for CLOCK_MONOTONIC, from the wrong base: timed
+         waits overrun by up to a second, or by the uptime
+Attach:  patches/unixlib-pthread-cond-timedwait.patch
+         repro/unixlib-models/cond/ (host model of the new deadline function)
+         repro/unixlib-models/threadtest.cc (my hardware test: stages
+         cv_timeout,
+         timed_mutex, future_wait_for, semaphore_timed, pthread_timedwait)
+
+Summary
+-------
+pthread_cond_timedwait () turns the absolute time that the caller gives into
+the scheduler's deadline (a clock () value, centiseconds) like this:
+
+      if (cond->clock_id == CLOCK_MONOTONIC)
+        diff = (abstime->tv_sec * 100) + (abstime->tv_nsec / 10000000);
+      else
+        diff = (100 * (abstime->tv_sec - time (NULL)))
+             + (abstime->tv_nsec / 10000000);
+      condtimeout = clock () + diff;
+
+For CLOCK_REALTIME, time () has a resolution of one second, so the wait is too
+long by the fractional part of the current second: 0 to 0.99 s, on average half
+a second. For CLOCK_MONOTONIC, abstime is an absolute time on the monotonic
+clock, which is what clock () counts, but the code uses it as if it were a
+difference and then adds clock () once more: the wait is as long as the uptime
+of the machine too long. All the timed waits of libstdc++ that I measured
+(below: condition_variable::wait_for / wait_until, timed_mutex::try_lock_for,
+shared_timed_mutex::try_lock_shared_for, future::wait_for,
+counting_semaphore::try_acquire_for) overrun in the way that this predicts; I
+did not trace which of them call pthread_cond_timedwait directly.
+
+The patch computes the remaining time from clock_gettime () on the clock of the
+condition variable (both clocks have centisecond resolution on RISC OS), rounds
+it up to whole centiseconds so that a wait is never early, returns ETIMEDOUT at
+once (with the mutex still held, as POSIX asks) when the time has already
+passed, EINVAL for a tv_nsec outside 0..999999999, and cuts waits of more than
+10^7 seconds short instead of overflowing.
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, UnixLib 5.0 from
+trunk r7800 (stock: the SharedLibs-C-armeabihf 10.2.0-1 package of the
+autobuilder; patched: my port), libstdc++ of GCC 10.2.0 and of GCC 16.2.0. The
+threadtest program is mine (repro/unixlib-models/threadtest.cc; C++17 and C++20
+builds; build: arm-riscos-gnueabihf-g++ -O2 -std=c++20 threadtest.cc -o
+threadtest,e1f; run threadtest all -x
+call_once,async,pthread_timedwait,sleep_for against the stock library, in a
+TaskWindow). The program also asks for a private fix level of my port (sysconf
+(0x4700)); on a library that does not know it, it prints that and carries on
+unless --need-fix is given.
+
+Measured on the machine
+-----------------------
+Time that the call took, in ms (the clock has a resolution of 10 ms). 'stock'
+is the stock library; the first number is the GCC 16.2.0 build of the program,
+the second the GCC 10.2.0 one. 'patched' is the same programs with the patch in
+the library (both builds gave the same numbers).
+
+   call                                          stock        patched
+   cv.wait_for (60 ms)                         610 / 820          70
+   cv.wait_until (system_clock + 30 ms)        380 / 220          40
+   timed_mutex.try_lock_for (40 ms)            560 / 920          50
+   shared_timed_mutex.try_lock_shared_for (30) 110 / 850          40
+   future.wait_for (50 ms)                     460 / 400          60
+   counting_semaphore.try_acquire_for (40 ms)  820 / -            50
+   pthread_cond_timedwait, 6 waits of           not run     worst overrun
+     80..170 ms, each clock                                    10 ms (both)
+
+The pthread_timedwait stage (calls pthread_cond_timedwait directly, once per
+clock, with absolute times) was not run against the stock library: with the
+CLOCK_MONOTONIC formula above the wait would be as long as the uptime and I did
+not want to hang the machine. That a monotonic wait is wrong is therefore from
+reading the code and from the model, not from a measurement. The libstdc++
+waits in the table go through the default condition variable clock,
+CLOCK_REALTIME, as far as I know (I did not check each one); the 0.1 to 0.9 s
+overruns are what the whole-second error of the REALTIME formula predicts.
+
+Note that the stock numbers are not all of the same size: they depend on where
+in the second the call happens, which is what the patch removes.
+
+The patch
+---------
+A new static function cond_deadline (clock_id, abstime, &deadline) in
+pthread/cond.c, called at the top of pthread_cond_timedwait () before anything
+has been changed (so ETIMEDOUT and EINVAL leave the state as it was), and the
+two-branch computation above is replaced by the stored deadline. 105 lines of
+patch, most of them comments.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* pthread/cond.c (cond_deadline): New.  Convert an absolute time on
+	the condition variable's clock to a clock () deadline.
+	(pthread_cond_timedwait): Use it.  Return ETIMEDOUT for a time that
+	has passed and EINVAL for an invalid tv_nsec.  The old code took
+	time () (whole seconds) for CLOCK_REALTIME and added clock () to an
+	absolute time for CLOCK_MONOTONIC.
+
+Verification
+------------
+  Machine:  the table above, and 24 / 19 passed threadtest checks (GCC 16.2.0 /
+            GCC 10.2.0 builds) with the patch.
+  Host model:  repro/unixlib-models/cond/ . build-model.sh cuts cond_deadline
+               () out of the patched cond.c, makes it 32-bit (long becomes int,
+               as on the target) and runs it against a model of the two clocks
+               (both tick in whole centiseconds; boot time up to 55 hours; Unix
+               time of about 2026). 3,000,000 random deadlines (below 1
+               microsecond to 1000 seconds, in the past, whole centisecond
+               multiples) go through the scheduler's rule (time out at the
+               first poll, 1 ms apart, where clock () is past the deadline): a
+               wait is never early and never more than 1.1 cs late; the
+               already-passed cases give ETIMEDOUT, bad tv_nsec EINVAL, absurd
+               waits are clamped. The model prints, for comparison and without
+               checking it, what the OLD formula does on the same cases:
+               CLOCK_REALTIME waits too long by 49.5 cs on average and up to 99
+               cs, CLOCK_MONOTONIC waits too long by the uptime. It is built
+               with -fsanitize=undefined,address.
+  Compilation:  pthread/cond.c builds with GCC 10.2.0 and 16.2.0 with the flags
+                of the UnixLib build.
+
+What I did not do
+-----------------
+I did not measure the stock CLOCK_MONOTONIC wait (see above). The scheduler
+itself (the polling of condtimeout in __pthread_context_switch) is unchanged;
+its resolution (centiseconds) is the limit of the accuracy. A wait is rounded
+up to a centisecond and then ends at the next scheduler pass after the clock
+has passed it, which is the 'at most 10 ms' that the machine shows.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

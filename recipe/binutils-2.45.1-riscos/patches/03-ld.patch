@@ -1,0 +1,331 @@
+diff -ruN a/ld/configure.tgt b/ld/configure.tgt
+--- a/ld/configure.tgt	2025-11-10 00:00:00.000000000 +0000
++++ b/ld/configure.tgt	2026-10-01 19:53:45.834159597 +0100
+@@ -203,6 +203,8 @@
+ armeb-*-elf | armeb-*-eabi*)
+ 			targ_emul=armelfb
+ 			;;
++arm-riscos-gnueabihf)	targ_emul=armelf_riscos_eabi
++			;;
+ arm-*-elf | arm*-*-eabi* | arm-*-rtems* | arm-*-genode*)
+ 			targ_emul=armelf
+ 			;;
+diff -ruN a/ld/emulparams/armelf_riscos_eabi.sh b/ld/emulparams/armelf_riscos_eabi.sh
+--- a/ld/emulparams/armelf_riscos_eabi.sh	1970-01-01 01:00:00.000000000 +0100
++++ b/ld/emulparams/armelf_riscos_eabi.sh	2026-10-01 19:53:34.013907480 +0100
+@@ -0,0 +1,35 @@
++# GCCSDK RISC OS EABI (arm-riscos-gnueabihf) emulation.
++ARCH=arm
++SCRIPT_NAME=elf
++OUTPUT_FORMAT="elf32-littlearm"
++BIG_OUTPUT_FORMAT="elf32-bigarm"
++LITTLE_OUTPUT_FORMAT="elf32-littlearm"
++
++# Makes elf.sc emit the RISC OS specific sections and Image$$... symbols.
++RISCOS_TARGET=yes
++
++TEXT_START_ADDR=0x8000
++MAXPAGESIZE=0x4
++COMMONPAGESIZE=0x4
++
++TEMPLATE_NAME=elf
++EXTRA_EM_FILE=armelf
++GENERATE_SHLIB_SCRIPT=yes
++
++TEXT_START_SYMBOLS='__text_start = . ;';
++DATA_START_SYMBOLS='__data_start = . ;';
++OTHER_TEXT_SECTIONS='*(.glue_7t) *(.glue_7) *(.riscos.libscl.chunkstub.start) *(SORT(.riscos.libscl.chunkstub.id*)) *(.riscos.libscl.chunkstub.end)'
++OTHER_BSS_SYMBOLS='__bss_start__ = .;'
++OTHER_BSS_END_SYMBOLS='_bss_end__ = . ; __bss_end__ = . ; __end__ = . ;'
++OTHER_SECTIONS='.note.gnu.arm.ident 0 : { KEEP (*(.note.gnu.arm.ident)) }'
++OTHER_READONLY_SECTIONS="
++  .ARM.extab ${RELOCATING-0} : { *(.ARM.extab${RELOCATING+* .gnu.linkonce.armextab.*}) }
++  ${RELOCATING+ PROVIDE_HIDDEN (__exidx_start = .); }
++  .ARM.exidx ${RELOCATING-0} : { *(.ARM.exidx${RELOCATING+* .gnu.linkonce.armexidx.*}) }
++  ${RELOCATING+ PROVIDE_HIDDEN (__exidx_end = .); }
++  .riscos.abi.version : { KEEP (*(.riscos.abi.version)) }"
++
++TARGET2_TYPE=got-rel
++
++# ARM does not support .s* sections.
++NO_SMALL_DATA=yes
+diff -ruN a/ld/emultempl/armelf.em b/ld/emultempl/armelf.em
+--- a/ld/emultempl/armelf.em	2025-11-10 00:00:00.000000000 +0000
++++ b/ld/emultempl/armelf.em	2026-10-01 20:13:17.727914291 +0100
+@@ -46,7 +46,8 @@
+   1,				/* fix_arm1176 */
+   -1,				/* merge_exidx_entries */
+   0,				/* cmse_implib */
+-  NULL				/* in_implib_bfd */
++  NULL,				/* in_implib_bfd */
++  0				/* riscos_module */
+ };
+ static char *in_implib_filename = NULL;
+ 
+@@ -71,6 +72,16 @@
+   link_info.warn_execstack = DEFAULT_LD_WARN_EXECSTACK;
+   link_info.no_warn_rwx_segments = ! DEFAULT_LD_WARN_RWX_SEGMENTS;
+   link_info.default_execstack = DEFAULT_LD_EXECSTACK;
++EOF
++if test -n "$RISCOS_TARGET"; then
++fragment <<EOF
++  /* RISC OS: export undefined weak symbols that regular objects refer to
++     to .dynsym, as binutils 2.30 did (-z nodynamic-undefined-weak turns
++     this off).  */
++  link_info.dynamic_undefined_weak = 1;
++EOF
++fi
++fragment <<EOF
+ }
+ 
+ static void
+@@ -87,6 +98,28 @@
+ }
+ 
+ static void
++arm_elf_after_open (void)
++{
++  /* Add __RelocCode code section to the first input bfd struct we find. This section
++     can be picked up by our linker script. */
++  if (params.riscos_module
++      && !bfd_elf32_arm_create_riscos_module_reloc (((lang_input_statement_type *)file_chain.head)->the_bfd, &link_info))
++    {
++      einfo (_("%P: failed to create RISC OS module relocation code\n"));
++      params.riscos_module = 0;
++    }
++
++  if (bfd_link_pic (&link_info) && link_info.flag_pic == 2)
++    {
++      if (!bfd_elf32_arm_create_riscos_pic_section (&link_info))
++        einfo (_("%P: failed to create RISC OS PIC section\n"));
++    }
++
++  /* Call the standard elf routine.  */
++  gld${EMULATION_NAME}_after_open ();
++}
++
++static void
+ arm_elf_before_allocation (void)
+ {
+   bfd_elf32_arm_set_byteswap_code (&link_info, params.byteswap_code);
+@@ -130,8 +163,29 @@
+       bfd_elf32_arm_allocate_interworking_sections (& link_info);
+     }
+ 
++  /* Allocate the right size of our __RelocCode section based on the
++     relocations in all our output bfd's.  */
++  if (params.riscos_module)
++    {
++      if (!bfd_elf32_arm_allocate_riscos_module_reloc (&link_info))
++	{
++	  einfo (_("%P: failed to allocate RISC OS module relocation code\n"));
++	  params.riscos_module = 0;
++	  return;
++	}
++    }
++
+   /* Call the standard elf routine.  */
+   gld${EMULATION_NAME}_before_allocation ();
++
++  if (bfd_link_pic (&link_info) && link_info.flag_pic == 2)
++    {
++      if (!bfd_elf32_arm_allocate_riscos_pic_section (&link_info))
++	{
++	  einfo (_("%P: failed to allocate RISC OS PIC section\n"));
++	  return;
++	}
++    }
+ }
+ 
+ /* Fake input file for stubs.  */
+@@ -592,6 +646,10 @@
+   { "long-plt", no_argument, NULL, OPTION_LONG_PLT },
+   { "cmse-implib", no_argument, NULL, OPTION_CMSE_IMPLIB },
+   { "in-implib", required_argument, NULL, OPTION_IN_IMPLIB },
++  { "fpic", no_argument, NULL, OPTION_FPIC_1 },
++  { "fPIC", no_argument, NULL, OPTION_FPIC_2 },
++  { "ro-module-reloc", no_argument, NULL, OPTION_RISCOS_MODULE },
++  { "riscos-abi", required_argument, NULL, OPTION_RISCOS_ABI },
+ '
+ 
+ PARSE_AND_LIST_OPTIONS='
+@@ -628,6 +686,10 @@
+   fprintf (file, _("  --[no-]fix-cortex-a8        Disable/enable Cortex-A8 Thumb-2 branch erratum fix\n"));
+   fprintf (file, _("  --no-merge-exidx-entries    Disable merging exidx entries\n"));
+   fprintf (file, _("  --[no-]fix-arm1176          Disable/enable ARM1176 BLX immediate erratum fix\n"));
++  fprintf (file, _("  -fpic                       Generate original PLT entries (RISC OS)\n"));
++  fprintf (file, _("  -fPIC                       Generate RISC OS PLT entries\n"));
++  fprintf (file, _("  --ro-module-reloc           Add RISC OS module relocation code & data\n"));
++  fprintf (file, _("  --riscos-abi <ABI>          Use ABI as the contents of the .riscos.abi.version section.\n"));
+ '
+ 
+ PARSE_AND_LIST_ARGS_CASES='
+@@ -744,8 +806,27 @@
+    case OPTION_IN_IMPLIB:
+       in_implib_filename = optarg;
+       break;
++
++    case OPTION_FPIC_1:
++      link_info.flag_pic = 1;
++      break;
++
++    case OPTION_FPIC_2:
++      link_info.flag_pic = 2;
++      break;
++
++    case OPTION_RISCOS_MODULE:
++      params.riscos_module = 1;
++      break;
++
++    case OPTION_RISCOS_ABI:
++      link_info.riscos_abi = optarg;
++      break;
+ '
+ 
++# To add __RelocCode section for RISC OS modules.
++LDEMUL_AFTER_OPEN=arm_elf_after_open
++
+ # We have our own before_allocation etc. functions, but they call
+ # the standard routines, so give them a different name.
+ LDEMUL_BEFORE_ALLOCATION=arm_elf_before_allocation
+diff -ruN a/ld/ldlex.h b/ld/ldlex.h
+--- a/ld/ldlex.h	2025-11-10 00:00:00.000000000 +0000
++++ b/ld/ldlex.h	2026-10-01 19:55:27.322515461 +0100
+@@ -266,6 +266,11 @@
+   OPTION_STM32L4XX_FIX,
+   OPTION_CMSE_IMPLIB,
+   OPTION_IN_IMPLIB,
++  /* Used by emultempl/armelf.em (RISC OS).  */
++  OPTION_FPIC_1,
++  OPTION_FPIC_2,
++  OPTION_RISCOS_MODULE,
++  OPTION_RISCOS_ABI,
+   /* Used by emultempl/avrelf.em.  */
+   OPTION_NO_CALL_RET_REPLACEMENT,
+   OPTION_PMEM_WRAP_AROUND,
+diff -ruN a/ld/Makefile.am b/ld/Makefile.am
+--- a/ld/Makefile.am	2025-11-10 00:00:00.000000000 +0000
++++ b/ld/Makefile.am	2026-10-01 19:53:45.834273218 +0100
+@@ -174,6 +174,7 @@
+ 	earmelf_nacl.c \
+ 	earmelf_nbsd.c \
+ 	earmelf_phoenix.c \
++	earmelf_riscos_eabi.c \
+ 	earmelf_vxworks.c \
+ 	earmelfb.c \
+ 	earmelfb_fbsd.c \
+diff -ruN a/ld/Makefile.in b/ld/Makefile.in
+--- a/ld/Makefile.in	2025-11-10 00:00:00.000000000 +0000
++++ b/ld/Makefile.in	2026-10-01 19:53:45.865452118 +0100
+@@ -685,6 +685,7 @@
+ 	earmelf_nacl.c \
+ 	earmelf_nbsd.c \
+ 	earmelf_phoenix.c \
++	earmelf_riscos_eabi.c \
+ 	earmelf_vxworks.c \
+ 	earmelfb.c \
+ 	earmelfb_fbsd.c \
+@@ -1307,6 +1308,7 @@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelf_nacl.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelf_nbsd.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelf_phoenix.Po@am__quote@
++@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelf_riscos_eabi.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelf_vxworks.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelfb.Po@am__quote@
+ @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/earmelfb_fbsd.Po@am__quote@
+diff -ruN a/ld/scripttempl/elf.sc b/ld/scripttempl/elf.sc
+--- a/ld/scripttempl/elf.sc	2025-11-10 00:00:00.000000000 +0000
++++ b/ld/scripttempl/elf.sc	2026-10-01 19:53:34.009107832 +0100
+@@ -384,6 +384,25 @@
+    test -z "${TEXT_BASE_ADDRESS}" && TEXT_BASE_ADDRESS="${TEXT_START_ADDR}"
+ fi
+ 
++# RISC OS (RISCOS_TARGET is set by the emulation's emulparams file):
++# the standard RISC OS linker variables and the sections which carry the
++# module header, the module relocation code/data and the PIC relocations.
++if test -n "${RISCOS_TARGET}"; then
++  RISCOS_ROBASE="PROVIDE (Image\$\$RO\$\$Base = .);"
++  RISCOS_ROLIMIT="PROVIDE (Image\$\$RO\$\$Limit = .);"
++  RISCOS_RWBASE="PROVIDE (Image\$\$RW\$\$Base = .);"
++  RISCOS_RWLIMIT="PROVIDE (Image\$\$RW\$\$Limit = .);"
++  RISCOS_ZIBASE="PROVIDE (Image\$\$ZI\$\$Base = .);"
++  RISCOS_ZILIMIT="PROVIDE (Image\$\$ZI\$\$Limit = .);"
++  RISCOS_MODULE_HEADER="/* RISC OS module header: */
++  .riscos.module.header : { *(.riscos.module.header) }"
++  RISCOS_PIC_SECTION="/* RISC OS PIC relocs */
++  .riscos.pic : { *(.riscos.pic) }"
++  RISCOS_MODULE_RELOCS="/* RISC OS module __RelocCode & __RelocData */
++  .riscos.module.relocdata : { *(.riscos.module.relocdata) }
++  .riscos.module.reloccode : { *(.riscos.module.reloccode) }"
++fi
++
+ # ===========================================================================
+ # Functions for generating parts of the linker script
+ 
+@@ -493,6 +512,8 @@
+   ${CREATE_PIE+${RELOCATING+PROVIDE (__executable_start = ${SHLIB_TEXT_START_ADDR});
+   . = ${SHLIB_TEXT_START_ADDR}${SIZEOF_HEADERS_CODE};}}
+ 
++  ${RELOCATING+${CREATE_SHLIB-${RISCOS_ROBASE}}}
++
+   /* Place the build-id as close to the ELF headers as possible.  This
+      maximises the chance the build-id will be present in core files,
+      which GDB can then use to locate the associated debuginfo file.  */
+@@ -634,6 +655,7 @@
+ {
+ cat <<EOF
+   /* Start of the executable code region.  */
++  ${RISCOS_MODULE_HEADER}
+   .init         ${RELOCATING-0}${RELOCATING+${INIT_ADDR}} :
+   {
+     ${RELOCATING+${INIT_START}}
+@@ -744,6 +766,10 @@
+   ${RELOCATING+${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (__${ETEXT_NAME} = .);}}
+   ${RELOCATING+${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (_${ETEXT_NAME} = .);}}
+   ${RELOCATING+${ETEXT_LAST_IN_RODATA_SEGMENT+PROVIDE (${ETEXT_NAME} = .);}}
++
++  ${RISCOS_PIC_SECTION}
++
++  ${RELOCATING+${CREATE_SHLIB-${RISCOS_ROLIMIT}}}
+ EOF
+ }
+ 
+@@ -831,6 +857,9 @@
+ 
+   ${DATA_PLT+${PLT_BEFORE_GOT-${PLT}}}
+ 
++  ${RISCOS_MODULE_RELOCS}
++
++  ${RELOCATING+${CREATE_SHLIB-${RISCOS_RWBASE}}}
+   .data         ${RELOCATING-0}${RELOCATING+${DATA_SECTION_ALIGNMENT}} :
+   {
+     ${RELOCATING+${DATA_START_SYMBOLS}}
+@@ -869,6 +898,7 @@
+   ${BSS_PLT+${PLT}}
+   .${BSS_NAME}          ${RELOCATING-0} :
+   {
++    ${RELOCATING+${CREATE_SHLIB-${RISCOS_ZIBASE}}}
+     ${RELOCATING+*(.dynbss)}
+     *(.${BSS_NAME}${RELOCATING+ .${BSS_NAME}.* .gnu.linkonce.b.*})
+     ${RELOCATING+*(COMMON)}
+@@ -879,6 +909,7 @@
+        FIXME: Why do we need it? When there is no .bss section, we do not
+        pad the .data section.  */
+     $(align_to_default_section_alignment)
++    ${RELOCATING+${CREATE_SHLIB-${RISCOS_ZILIMIT}}}
+   }
+ 
+   ${OTHER_BSS_SECTIONS}
+@@ -1094,6 +1125,12 @@
+ 
+   emit_stack
+ 
++  if test -n "${RISCOS_RWLIMIT}"; then
++cat <<EOF
++  ${RELOCATING+${CREATE_SHLIB-${RISCOS_RWLIMIT}}}
++EOF
++  fi
++
+   test -z "${NON_ALLOC_DYN}" || emit_dyn
+ 
+   emit_misc

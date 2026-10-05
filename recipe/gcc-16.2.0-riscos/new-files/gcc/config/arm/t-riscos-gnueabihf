@@ -1,0 +1,37 @@
+# Copyright (C) 2005-2012 Free Software Foundation, Inc.
+# Contributed by Nick Burrett (nick@sqrt.co.uk>),
+# John Tytgat (John.Tytgat@aaug.net) and Lee Noar (lee.noar@sky.com).
+#
+# This file is part of GCC.
+#
+# GCC is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3, or (at your option)
+# any later version.
+#
+# GCC is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GCC; see the file COPYING3.  If not see
+# <http://www.gnu.org/licenses/>.
+
+# vvv config/arm/t-bpabi
+EXTRA_HEADERS += $(srcdir)/ginclude/unwind-arm-common.h
+# ^^^
+
+# Prevents fixincludes from clobbering our otherwise correct limits.h
+# and therefore allows GCC to build successfully.
+LIMITS_H_TEST = true
+
+# -mthrowback: the diagnostics sink that sends errors and warnings to a text editor (linked into the compiler proper through extra_objs in config.gcc).
+riscos-throwback.o: $(srcdir)/config/arm/riscos-throwback.cc $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(DIAGNOSTIC_H) \
+  $(srcdir)/diagnostics/sink.h $(srcdir)/diagnostics/buffering.h
+	$(COMPILE) $<
+	$(POSTCOMPILE)
+
+# Make local_includedir relative to EXEC_PREFIX.  We don't want the RISC OS
+# compiler picking up UNIX system header files.
+local_includedir=$(exec_prefix)/include

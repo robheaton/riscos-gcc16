@@ -1,0 +1,26 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/signal/sleep.c
++++ b/gcc4/recipe/files/gcc/libunixlib/signal/sleep.c
+@@ -68,11 +68,19 @@
+     return 0;
+ 
+   /* alarm() does not work in a TaskWindow nor whilst running as a
+-     WIMP program.  */
+-  if (__get_taskhandle () != 0)
++     WIMP program.
++
++     Nor can several threads sleep with it: there is one alarm per process
++     and one 'sleeping' flag for sigsuspend to wait on, so when a second
++     thread starts to sleep its alarm replaces the first one, and when that
++     goes off every thread in sigsuspend wakes up, the longer sleepers too
++     early.  With other threads around, wait the same way as in a WIMP task
++     instead: let the other threads run until the time is up.  */
++  if (__get_taskhandle () != 0 || __ul_global.pthread_num_running_threads > 1)
+     {
+-      before = clock () + clockticks;
+-      while (clock () < before)
++      before = clock ();
++      while ((clock_t) ((unsigned long) clock () - (unsigned long) before)
++	     < clockticks)
+ 	pthread_yield ();
+       return 0;
+     }

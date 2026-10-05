@@ -1,0 +1,207 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt; the kernel part may also belong to the RISC OS Open
+         forums)
+Subject: ARMEABISupport / RISC OS 5.30: a store made by the OS in SVC mode to a
+         not-yet-mapped page of an EABI stack is lost (and a full-cache-line
+         USR-mode VSTM into such a page is not recovered)
+Attach:  repro/svc-abort/svc_abort_repro.c  svc_repro,e1f  svc_repro_probed,e1f
+         repro/svc-abort/readtest5.c  readtest6.c   (the VSTM table)
+
+Summary
+-------
+The 1 MB stack of an EABI program is created by ARMEABISupport (StackOp ALLOC:
+256 pages, 1 guard page).  Only the top page is mapped; the others are mapped
+one at a time from ARMEABISupport's data abort handler when they are first
+touched.  If the first touch of a page is made by the OS itself, in SVC mode,
+while it fills a buffer for the caller (OS_GSTrans, OS_GBPB, ...), the
+instruction that takes the page fault is NOT effectively repeated after the
+page has been mapped: its store is lost and the corresponding bytes of the
+caller's buffer are never written.  The same fault taken in USR mode is
+repeated correctly.
+
+The loss is silent: the SWI returns the correct length and no error.  Programs
+see wrong data in a big local array (or alloca area, or thread stack) that
+they have never used before, e.g. after read () / fread () / recv () into it.
+Touching the pages first (any user-mode access) makes the problem go away
+completely.
+
+I could not find the cause.  Below: the symptom, a 56-line reproducer, what I
+read in the kernel's data abort veneer and in ARMEABISupport's abort handler
+(both look right for SVC mode to me - which is why I am reporting instead of
+fixing), and the questions that I think decide it.
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30
+  (Boot$OSVersion 530), 3963 MB RAM, ARMEABISupport 1.08 (03 Jun 2025) (read
+  from the loaded module; the 1.05 source from GCCSDK trunk r7800 was read for
+  the code below; I do not have 1.06 - 1.08), SOManager 3.04.
+  libunixlib 5.0 (a GCCSDK GCC 10.2.0 build and a GCC 16.2.0 build: the same
+  behaviour; the bug is not in the C library or the compiler).  Test programs:
+  GCCSDK EABI hard-float (arm-riscos-gnueabihf), GCC 16.2.0.  Kernel sources
+  read: the RISC OS Open Kernel at the 5.30 tag (gitlab.riscosopen.org,
+  RiscOS/Sources/Kernel, master at commit f9f1aa20 "Get a tag for 5.30",
+  2024-04-24; s/Exceptions last changed 2021-07-28).  I did not verify that
+  the ROM on the machine is built from exactly that.
+
+Minimal reproducer (no file system involved)
+--------------------------------------------
+svc_abort_repro.c (56 lines): allocates 64 KB with alloca (pages never
+touched), lets OS_GSTrans copy a 64 KB string into it, compares.  A control
+repeats the call after writing to the buffer first.  OS_GSTrans is a plain
+byte loop, so the lost unit is exactly one byte:
+
+  *svc_repro
+    test (buffer never touched): buffer ..., OS_GSTrans delivered 65536 bytes
+      N bytes wrong, in N different memory pages; position in the page
+      (16-byte buckets, offset: bytes): 0x0:N-1 ...
+      => BUG PRESENT: the store that took the page fault was lost
+    control (buffer written first): ... 0 bytes wrong ... => no bytes lost
+
+N is about 16 (the 64 KB buffer touches 16 or 17 fresh pages; offset 0 = the
+FIRST byte of a page).  Measured with the same call inside a larger test
+program: buffer 0x66f56e78..0x66f66e78, 16 bytes wrong: the first byte of the
+buffer and of every page after it; a page can escape when the stale byte there
+happens to equal the right one.  Build it with -fno-stack-clash-protection
+(the GCC 16 default is -fstack-clash-protection, whose probes touch the pages
+first and make the bug unreachable); svc_repro_probed,e1f is the same built
+with -fstack-clash-protection and must report no bytes lost.
+
+Observations (all on the same machine)
+--------------------------------------
+ 1. OS_GSTrans (byte loop, ascending): exactly one byte, the first one stored
+    into each fresh page, is not written.  Its old contents stay (pages are
+    not cleared when mapped: zeros or data from an earlier program).  No later
+    byte is shifted or wrong: the destination pointer advanced as if the store
+    had happened.
+ 2. OS_GBPB read of a file (NVMe, and a copy on a LanMan98 share: not driver
+    specific): the 16-byte block being stored when the page fault happens is
+    lost - the block just before the page boundary when the OS copies
+    downwards, the first block after it when it copies upwards, 8 bytes when
+    the block straddles the boundary (the part in the old page is written, the
+    part in the fresh page is not) - and the last 16 bytes of the call.
+    Everything else is right.
+ 3. The same OS calls into memory that is already mapped (written first), into
+    fresh mmap or malloc memory, or into a static buffer: all right.
+ 4. Stores by the program itself, in USR mode, into a really fresh 64 KB stack
+    buffer: all right for strb, str, strd, ldm/stm of 8 registers, vstr and
+    vstmia of 4 d-registers.  See "Second problem" for the exception.
+ 5. Confirmed workarounds: (a) compiling the program with
+    -fstack-clash-protection (GCC probes every page of a big frame / alloca
+    area in user mode when the frame is created): every read / fread / OS
+    call into the buffer is then right; (b) a C library that touches the
+    destination pages with a user-mode load before the OS call (done in the
+    libunixlib of my GCC 16 forward port, 16.2.0-3 and later).
+
+What I read (UNVERIFIED as an explanation: it does not explain the symptom)
+---------------------------------------------------------------------------
+1. The OS code that does the lost store in the reproducer is the output loop
+   of OS_GSTrans (RISC OS Open Kernel, s/Arthur2, label GSTRANS): it enables
+   interrupts at its start ("WritePSRc SVC_mode" = SVC mode, IRQs on), and
+   then, for every character, makes a SWI from SVC mode (SWI XOS_GSRead) and
+   stores the result with a post-indexed STRB (STRB R1, [R3], #1) followed by
+   BCC to the top of the loop.  So the aborting instruction is a byte store
+   with base writeback, in SVC mode, with interrupts ENABLED, right after a
+   nested SWI.
+2. The kernel's data abort veneer (s/Exceptions, DAbPreVeneer): saves R0-R14 /
+   SPSR / DFAR / DFSR / ADFSR, tries the AMB lazy fix-up (which, when it
+   claims the fault, resumes with  SUB r8, r8, #8  = retries the instruction),
+   AbortTrap, and then calls the environment's data abort handler by  STR lr
+   (= DAbHan), [sp, #15*4] ; LDMIA sp, {r0-r15}  i.e. in ABT mode with r13_abt
+   as on entry, r14_abt = the aborted PC + 8 and SPSR_abt = the aborting CPSR
+   (restored by MSR SPSR_cxsf).  For SVC and USR aborts alike.
+3. ARMEABISupport's abort_handler (abort-asm.s, 1.05): saves r0, PC = r14_abt
+   - 8, the aborting SPSR; for a non-USR abort it switches the CPU to the
+   aborting CPSR (MSR CPSR_all, SPSR) and stores r1-r14 of that mode; goes to
+   SVC mode, pushes r14_svc ("No SWIs before this point"), calls the
+   registered handlers with r11 pointing at the saved registers;
+   stack_abort_handler claims one physical page and maps it (OS_DynamicArea
+   PhysicalOp, then LogicalOp: two SWIs from SVC mode, on the interrupted SVC
+   stack, with the interrupted code's interrupt state: I = 0 in the GSTRANS
+   case) and answers CLAIM; handler__exit pops r14_svc, writes the aborting
+   CPSR to SPSR_svc and returns with  LDMNEIA lr, {r0-pc}^  (SVC) or  LDMIA
+   lr, {r0-lr}^ ; LDR lr, [lr, #15*4] ; MOVS pc, lr  (USR) with PC = the
+   aborted instruction.  By reading, both paths return to the aborted
+   instruction with the aborting CPSR.
+4. The kernel's SWI dispatcher keeps the caller's PSR in r14 (not SPSR_svc)
+   across a SWI and rebuilds SPSR_svc at the exit (SLVK: MSR SPSR_cxsf, lr),
+   so the handler's clobbering of SPSR_svc and r14_svc (the nested SWIs do the
+   same) should not matter for the interrupted GSTRANS loop either: GSTRANS
+   keeps its own lr on the stack.
+Yet the observations are exactly those of an SVC-mode STRB whose store does
+not happen while its post-index update does (the loop does not shift later
+bytes), and the same code path in USR mode works.  A retry that works cannot
+lose the store; so either the return address for SVC-mode aborts is not the
+aborted instruction in practice (+4), or the store of the retry is lost
+afterwards (the page replaced or its cache lines discarded - but then more
+than one byte of a 64-byte line would go), or the instruction takes a second
+abort whose handling replaces the page (a second PhysicalOp/LogicalOp for the
+same page index would give a different physical page and the byte stored into
+the first one is gone).  I have no evidence for any of the three.
+Questions: does the abort handler run twice for the first store of a page when
+the store is made in SVC mode (a counter or log line in the handler would show
+it)?  Is the aborting instruction's address in registers_PC the STRB and the
+address that LDM ^ resumes at the same?  Is the base register of the aborted
+post-indexed STRB unchanged when the handler is entered (the ARM ARM leaves
+the writeback of an aborting load/store with base update to the implementation
+for some forms)? What do the SVC-mode abort handlers of other modules (the
+PMP-based dynamic area handlers, the Wimp's) do differently?
+I can run any test build of the module on the machine (a traced module needs
+only a log file on a network share: that is how I found the SharedUnixLibrary
+problem of report 01), if that helps.
+
+Second problem, found while looking for the first: a USR-mode VSTM of a whole
+cache line that is the first access to an unmapped stack page is not
+recovered (SIGSEGV)
+-----------------------------------------------------------------------------
+UnixLib's NEON memcpy () / memmove () (RISC OS Open / Ben Avison arm-mem: its
+main loop aligns the destination to 64 bytes and stores with vstmia {d0-d7})
+died with SIGSEGV every time they were the FIRST to touch a stack page.
+readtest5 / readtest6 (attached) narrow it down with user-mode kernels, one
+fresh pair of pages per line:
+
+  user-mode store into never-touched stack pages          result
+  strb, str, strd, vstr; ldm + stm of 8 registers (32 bytes)
+                                                          OK at every position
+  vstmia {d0-d3} (32 bytes), vst1.8 {d0-d3}, vst1.8 [:128]
+                                                          OK at every position
+  vstmia {d0-d7} (64 bytes), NOT 64-byte aligned (the
+    copy starts 8..48 bytes before a page boundary)       OK
+  vstmia {d0-d7} (64 bytes) aligned to 64 bytes (the
+    copy starts or ends at a page boundary)               SIGSEGV, every time
+
+  UnixLib memcpy / memmove of 512 bytes into fresh stack pages: SIGSEGV; the
+  same 512-byte copy into static or heap memory is right (12 of 12), into 12
+  fresh stack regions 0 of 12 survive.
+
+The reported fault address (si_addr) is the same stale value in every crash of
+one run and is not an address of either buffer (0x62d53d6c in one session,
+0x62d5352c in another: neither is near the stack 0x66e69000..0x66f69000): DFAR
+does not seem to be valid, as for an asynchronous (external / imprecise) abort
+of the full-line write rather than a precise data abort, which the stack abort
+handler cannot map because it works from DFAR.  UNVERIFIED.  Splitting every
+64-byte VSTM into two 32-byte ones makes all of the above right (readtest6:
+the same routines, split, are OK in all 12 cases per kernel, and a 64 KB copy
+into a fresh stack buffer comes out with every byte right).
+
+Mitigations for users of the GCCSDK toolchain
+---------------------------------------------
+  - build with -fstack-clash-protection (cost: three instructions per function
+    that has a stack frame, none for leaf functions; it is the DEFAULT of my
+    GCC 16 forward port of GCCSDK since 2026-10-03), or
+  - a libunixlib that touches stack buffers before read / fread / recv /
+    recvfrom and has memcpy / memmove without the 64-byte VSTM (the
+    libunixlib of my GCC 16 forward port, 16.2.0-5 and later; the two
+    patches are reports 15 and 16 of the second batch), or
+  - write to a big local array before handing it to the OS (memset), or use
+    malloc.
+A fix in ARMEABISupport / the kernel would make all of these unnecessary; a
+belt-and-braces alternative is to map the whole stack at creation (the
+NO_STACK_ABORT_HANDLER variant already in stack.c), at the price of 1 MB of
+memory per stack.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

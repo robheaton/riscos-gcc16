@@ -1,0 +1,105 @@
+--- a/libunixlib/pthread/cond.c
++++ b/libunixlib/pthread/cond.c
+@@ -43,12 +43,64 @@
+   return pthread_cond_timedwait (cond, mutex, NULL);
+ }
+ 
++/* The scheduler (__pthread_context_switch) ends a timed wait once clock ()
++   has passed the thread's condtimeout, and clock () counts centiseconds.
++   Turn ABSTIME, an absolute time on the clock CLOCK_ID of the condition
++   variable, into such a deadline.
++
++   The old code took the difference between ABSTIME and time (), which only
++   has a resolution of one second, so every wait overran by the fractional
++   part of the current second (up to a second); for a CLOCK_MONOTONIC
++   condition variable it even added clock () to a time that was already
++   absolute.  Both clocks have centisecond resolution, so the difference is
++   exact up to rounding, and it is rounded UP: a wait may be a little late
++   but is never early.
++
++   Returns 0 and stores the deadline in *DEADLINE, ETIMEDOUT if ABSTIME has
++   already passed, or EINVAL.  */
++static int
++cond_deadline (clockid_t clock_id, const struct timespec *abstime,
++               clock_t *deadline)
++{
++  struct timespec now;
++  long long secs;
++  long nsecs, cs;
++
++  if (abstime->tv_nsec < 0 || abstime->tv_nsec >= 1000000000L)
++    return EINVAL;
++
++  if (clock_gettime (clock_id, &now) != 0)
++    return EINVAL;
++
++  /* Time remaining: secs + nsecs / 10^9, with 0 <= nsecs < 10^9.  */
++  secs = (long long) abstime->tv_sec - now.tv_sec;
++  nsecs = abstime->tv_nsec - now.tv_nsec;
++  if (nsecs < 0)
++    {
++      secs--;
++      nsecs += 1000000000L;
++    }
++  if (secs < 0 || (secs == 0 && nsecs == 0))
++    return ETIMEDOUT;
++
++  /* Whole centiseconds, rounded up.  A wait of more than 10^7 seconds (115
++     days) is cut short rather than overflowing clock_t.  */
++  if (secs > 10000000)
++    cs = 1000000000L;
++  else
++    cs = (long) secs * 100 + (nsecs + 9999999) / 10000000;
++
++  *deadline = (clock_t) ((unsigned long) clock () + (unsigned long) cs);
++  return 0;
++}
++
+ /* Wait for a condition variable to be signalled, with a timeout */
+ int
+ pthread_cond_timedwait (pthread_cond_t *cond, pthread_mutex_t *mutex,
+                         const struct timespec *abstime)
+ {
+   pthread_t thread;
++  clock_t timeout = 0;
+ 
+   if (cond == NULL || mutex == NULL)
+     return EINVAL;
+@@ -56,6 +108,15 @@
+   if (mutex->owner != __pthread_running_thread)
+     return EINVAL;
+ 
++  if (abstime != NULL)
++    {
++      /* Nothing has been changed yet, so a deadline that has already
++         passed (or an invalid one) can fail with the mutex still held.  */
++      int err = cond_deadline (cond->clock_id, abstime, &timeout);
++      if (err)
++        return err;
++    }
++
+   __pthread_disable_ints ();
+ 
+   /* This call will not return an error unless mutex is NULL, which we've
+@@ -73,20 +134,8 @@
+     }
+   else
+     {
+-      clock_t diff;
+-
+       __pthread_running_thread->state = STATE_COND_TIMED_WAIT;
+-      if (cond->clock_id == CLOCK_MONOTONIC)
+-        {
+-          diff = (abstime->tv_sec * 100) + (abstime->tv_nsec / 10000000);
+-        }
+-      else
+-        {
+-          /* A bit crude, but... */
+-          diff = (100 * (abstime->tv_sec - time (NULL)))
+-               + (abstime->tv_nsec / 10000000);
+-	}
+-      __pthread_running_thread->condtimeout = clock () + diff;
++      __pthread_running_thread->condtimeout = timeout;
+     }
+ 
+   /* Add this thread to the linked list of threads that are waiting on

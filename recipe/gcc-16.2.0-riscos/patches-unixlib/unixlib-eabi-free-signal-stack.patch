@@ -1,0 +1,82 @@
+--- a/libunixlib/incl-local/internal/unix.h	2026-10-03 14:52:38.443563563 +0100
++++ b/libunixlib/incl-local/internal/unix.h	2026-10-03 18:53:14.329921772 +0100
+@@ -337,6 +337,7 @@
+ 
+ extern unsigned int __dynamic_area_refcount;
+ extern void __dynamic_area_exit (void);
++extern void __signalhandler_stack_free (void);	/* EABI: give back the signal stack (the last user of the program image only).  */
+ 
+ extern void __munmap_all (void);	/* Deallocate all mappings.  */
+ 
+--- a/libunixlib/unix/unix.c	2026-10-03 14:52:38.396225475 +0100
++++ b/libunixlib/unix/unix.c	2026-10-03 18:53:14.330022895 +0100
+@@ -362,6 +362,36 @@
+   _exit (__W_EXITCODE (status, 0));
+ }
+ 
++#ifdef __ARM_EABI__
++/* GCCSDK GCC 16 forward-port: give back the signal stack.  _syslib.s takes a one page stack for the signal handlers (and for the exit handler, the fatal error exit and the pthread
++   context switcher) from ARMEABISupport at start-up and keeps only its top address in __ul_global.signalhandler_sp; SharedUnixLibrary frees the main stack of a process when it ends
++   but not that one, so every process that ended left 4KB of the one range of address space ALL EABI stacks share (the "UnixLib stacks" dynamic area, 128MB with the OS clamp) in use
++   until the process at the root of its family (the one without a parent) ended, and a long make starts thousands.  Called when the UnixLib environment handlers have been taken off
++   again (nothing can run a signal handler any more), by the process that is the last user of the program image (__dynamic_area_refcount is zero after its own decrement: a vfork child
++   shares the image, and with it the signal stack, with its parent until it execs), and never from the signal stack itself (the exit handler, a fatal error and a signal handler that
++   ends the program all run on it: those leave the page, as before).  Nothing here can fail the exit: a SWI that fails leaves the page where it was.  */
++void
++__signalhandler_stack_free (void)
++{
++  struct ul_global *gbl = &__ul_global;
++  char *top = (char *) gbl->signalhandler_sp;
++  char *sp;
++  void *stack = NULL;
++
++  if (__dynamic_area_refcount != 0 || top == NULL || gbl->executing_signalhandler != 0)
++    return;
++
++  __asm__ volatile ("mov %0, sp" : "=r" (sp));
++  if (sp >= top - 4096 && sp <= top)		/* the stack is one 4KB page of ARMEABISupport's */
++    return;
++
++  if (_swix (ARMEABISupport_StackOp, _INR(0,1)|_OUT(1), ARMEABISUPPORT_STACKOP_GET_STACK, top - 4, &stack) != NULL || stack == NULL)
++    return;
++  if (_swix (ARMEABISupport_StackOp, _INR(0,1), ARMEABISUPPORT_STACKOP_FREE, stack) == NULL)
++    gbl->signalhandler_sp = NULL;
++}
++#endif
++
+ /* Final process termination. 'return_code' is a 16-bit
+    encoded quantity as defined by <sys/wait.h>.
+    Also called via __unixlib_fatal() so don't assume too much.  */
+@@ -436,6 +466,9 @@
+   __free_process (sulproc);
+   __dynamic_area_exit ();
+   __env_riscos ();
++#ifdef __ARM_EABI__
++  __signalhandler_stack_free ();
++#endif
+ 
+ #ifdef DEBUG
+   debug_printf ("-- __exit(): Calling sul_exit with return code=%d\n", status);
+--- a/libunixlib/sys/exec.c	2026-10-03 14:52:38.408230684 +0100
++++ b/libunixlib/sys/exec.c	2026-10-03 18:53:14.330048547 +0100
+@@ -455,6 +455,10 @@
+   /* Restore the RISC OS environment handlers.  This breaks us out
+      of the UnixLib world.  */
+   __env_riscos ();
++#ifdef __ARM_EABI__
++  /* The signal stack of this program image goes too, when this process was its last user.  */
++  __signalhandler_stack_free ();
++#endif
+ 
+   /* Call SUL to execute command.
+      (This function never returns, even for a RISC OS built-in
+--- a/libunixlib/vscript	2026-10-03 14:52:38.414857884 +0100
++++ b/libunixlib/vscript	2026-10-03 19:02:34.419486520 +0100
+@@ -97,6 +97,7 @@
+      __stdioexit;
+      __sigsetjmp_helper;
+      __siglongjmp_helper;
++     __signalhandler_stack_free;
+      __stop_itimers;
+      __stream_init;
+      __trim_stack;

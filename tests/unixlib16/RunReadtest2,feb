@@ -1,0 +1,33 @@
+| RunReadtest2 - how read() and fread() behave when the destination memory has never been touched.  Every case is its own program run, so its stack is fresh.
+| Output: ResultsReadtest2 in this directory.  (the first EABI program run changes <Obey$Dir>, so remember our directory first)
+Set RoTest$Dir <Obey$Dir>
+Dir <RoTest$Dir>
+Spool <RoTest$Dir>.ResultsReadtest2
+Echo ===================== what a missing pointer advance in fread() would look like (a simulation, nothing is read from the file system)
+Run <RoTest$Dir>.readtest2 model 64
+Echo ===================== read() into a fresh stack buffer
+Run <RoTest$Dir>.readtest2 read 8
+Run <RoTest$Dir>.readtest2 read 16
+Run <RoTest$Dir>.readtest2 read 32
+Run <RoTest$Dir>.readtest2 read 64
+Run <RoTest$Dir>.readtest2 read 128
+Run <RoTest$Dir>.readtest2 read 256
+Run <RoTest$Dir>.readtest2 read 512
+Echo ===================== fread() into a fresh stack buffer
+Run <RoTest$Dir>.readtest2 fread 8
+Run <RoTest$Dir>.readtest2 fread 16
+Run <RoTest$Dir>.readtest2 fread 32
+Run <RoTest$Dir>.readtest2 fread 64
+Run <RoTest$Dir>.readtest2 fread 128
+Run <RoTest$Dir>.readtest2 fread 256
+Run <RoTest$Dir>.readtest2 fread 512
+Echo ===================== fread() into a stack buffer that was written first
+Run <RoTest$Dir>.readtest2 touch 64
+Run <RoTest$Dir>.readtest2 touch 512
+Echo ===================== fresh mmap and malloc memory
+Run <RoTest$Dir>.readtest2 mmap 64
+Run <RoTest$Dir>.readtest2 mmap 512
+Run <RoTest$Dir>.readtest2 malloc 64
+Run <RoTest$Dir>.readtest2 malloc 1024
+Spool
+Echo Finished. Output is in <RoTest$Dir>.ResultsReadtest2

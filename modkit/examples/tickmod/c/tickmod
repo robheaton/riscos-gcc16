@@ -1,0 +1,185 @@
+/*
+ * tickmod - stage B1 of the GCC 16 EABI module work (modkit): what the vector and callback veneers do on the real machine, without sockets.
+ *
+ * The same architecture as cmdserv: a claimant of TickerV (called for every centisecond tick, in IRQ context, so it must stay minimal) asks for a transient callback with OS_AddCallBack if
+ * none is pending; the callback (called by the kernel when it next returns to user mode: SVC mode, IRQs enabled) does the work.  Here the work is counting, and the module keeps a record of
+ * what the processor looked like in each handler (mode, IRQ mask, r12, the stack pointer) so that the machine, not a model, tells whether the veneers do what they should.
+ *
+ *   *TickMod_Start       claim TickerV
+ *   *TickMod_Stop        release it, take a pending callback out
+ *   *TickMod_Status      the counters
+ *   *TickMod_Delay <cs>  wait in this command (SVC mode, IRQs on): the ticks then interrupt SVC mode code, and the callbacks wait until the command has returned
+ *   *TickMod_RemoveTest  queue a callback and take it out again with OS_RemoveCallBack: it must never run
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "kernel.h"
+#include "oslib/os.h"
+
+#include "header.h"
+
+#define VERSION "0.02"
+
+static void *private_word;
+static int claimed;
+static int start_time;
+
+static volatile unsigned callback_waiting;
+static volatile unsigned ticks, requests, request_errors, callbacks;
+static volatile unsigned req_tick, latency_max, latency_sum;
+static volatile unsigned tick_svc, tick_other, tick_irq_on, tick_pw_bad, tick_psr_last, tick_sp_lo, tick_sp_hi;
+static volatile unsigned cb_svc, cb_other, cb_irq_off, cb_pw_bad, cb_psr_last, cb_sp_lo, cb_sp_hi;
+static volatile unsigned removetest_stale, removetests;
+
+/* the callback of *TickMod_RemoveTest has a handle of its own, so that the one callback that must never run can be told from the callbacks that the ticks ask for (0.01 left a flag armed
+   and counted every later callback as stale: a flaw of the test, found by the first run on the machine) */
+#define TEST_HANDLE ((void *) 0x5E57A1E0)
+
+static inline unsigned read_psr (void) { unsigned r; __asm__ volatile ("mrs\t%0, cpsr" : "=r" (r)); return r; }
+static inline unsigned read_sp (void) { unsigned r; __asm__ volatile ("mov\t%0, sp" : "=r" (r)); return r; }
+
+static void reset_counters (void)
+{
+  callback_waiting = 0;
+  ticks = requests = request_errors = callbacks = 0;
+  req_tick = latency_max = latency_sum = 0;
+  tick_svc = tick_other = tick_irq_on = tick_pw_bad = tick_psr_last = tick_sp_hi = 0; tick_sp_lo = ~0u;
+  cb_svc = cb_other = cb_irq_off = cb_pw_bad = cb_psr_last = cb_sp_hi = 0; cb_sp_lo = ~0u;
+  removetest_stale = removetests = 0;
+}
+
+int tickerv_handler (_kernel_swi_regs *r, void *pw)
+{
+  unsigned psr = read_psr (), sp = read_sp ();
+
+  ticks++;
+  tick_psr_last = psr;
+  if ((psr & 0x1F) == 0x13) tick_svc++; else tick_other++;
+  if (!(psr & 0x80)) tick_irq_on++;
+  if (pw != private_word) tick_pw_bad++;
+  if (sp < tick_sp_lo) tick_sp_lo = sp;
+  if (sp > tick_sp_hi) tick_sp_hi = sp;
+
+  if (!callback_waiting)
+    {
+      if (!xos_add_call_back ((void *) callback, pw)) { callback_waiting = 1; requests++; req_tick = ticks; }
+      else request_errors++;
+    }
+  return VECTOR_PASSON;
+}
+
+int callback_handler (_kernel_swi_regs *r, void *pw)
+{
+  unsigned psr = read_psr (), sp = read_sp ();
+  unsigned lat = ticks - req_tick;
+
+  if (pw == TEST_HANDLE)                      /* the callback that *TickMod_RemoveTest queued and took out again: it must never be called */
+    {
+      removetest_stale++;
+      return 1;
+    }
+  callback_waiting = 0;
+  callbacks++;
+  cb_psr_last = psr;
+  if ((psr & 0x1F) == 0x13) cb_svc++; else cb_other++;
+  if (psr & 0x80) cb_irq_off++;
+  if (pw != private_word) cb_pw_bad++;
+  if (sp < cb_sp_lo) cb_sp_lo = sp;
+  if (sp > cb_sp_hi) cb_sp_hi = sp;
+  if (lat > latency_max) latency_max = lat;
+  latency_sum += lat;
+  return 1;                                   /* a callback must always return non-zero */
+}
+
+static void stop_ticker (void)
+{
+  if (claimed)
+    {
+      xos_release (TickerV, tickerv_entry, private_word);
+      claimed = 0;
+    }
+  if (callback_waiting)                       /* a tick may have queued the callback: the kernel must not call it when the module is gone */
+    {
+      xos_remove_call_back ((void *) callback, private_word);
+      callback_waiting = 0;
+    }
+}
+
+static _kernel_oserror err_claim = { 1, "TickMod: OS_Claim of TickerV failed" };
+static _kernel_oserror err_already = { 1, "TickMod: already started" };
+static _kernel_oserror err_remove = { 1, "TickMod: OS_RemoveCallBack failed" };
+
+_kernel_oserror *module_init (const char *tail, int podule_base, void *pw)
+{
+  private_word = pw;
+  claimed = 0;
+  reset_counters ();
+  return NULL;
+}
+
+_kernel_oserror *module_finalise (int fatal, int podule_base, void *pw)
+{
+  stop_ticker ();
+  return NULL;
+}
+
+static int now (void)
+{
+  int t = 0;
+  xos_read_monotonic_time ((os_t *) &t);
+  return t;
+}
+
+_kernel_oserror *command_handler (const char *arg_string, int argc, int cmdno, void *pw)
+{
+  switch (cmdno)
+    {
+    case CMD_TickMod_Start:
+      if (claimed) return &err_already;
+      reset_counters ();
+      start_time = now ();
+      if (xos_claim (TickerV, tickerv_entry, private_word)) return &err_claim;
+      claimed = 1;
+      printf ("TickMod: TickerV claimed\n");
+      break;
+
+    case CMD_TickMod_Stop:
+      stop_ticker ();
+      printf ("TickMod: TickerV released\n");
+      break;
+
+    case CMD_TickMod_Delay:
+      {
+        int cs = atoi (arg_string), t0 = now ();
+        while (now () - t0 < cs) ;
+      }
+      break;
+
+    case CMD_TickMod_RemoveTest:
+      {
+        os_error *e;
+        removetests++;
+        e = xos_add_call_back ((void *) callback, TEST_HANDLE);
+        if (e) return &err_remove;
+        e = xos_remove_call_back ((void *) callback, TEST_HANDLE);
+        if (e) return &err_remove;
+        printf ("TickMod: a callback was queued and removed again: it must not run (see 'stale' in the status)\n");
+      }
+      break;
+
+    case CMD_TickMod_Status:
+      printf ("TickMod %s (GCC 16 EABI, modkit)\n", VERSION);
+      printf ("  TickerV claimed: %s, %d cs since *TickMod_Start\n", claimed ? "yes" : "no", claimed ? now () - start_time : 0);
+      printf ("  ticks %u, callbacks requested %u (errors %u), callbacks run %u, pending %u\n", ticks, requests, request_errors, callbacks, callback_waiting);
+      printf ("  request to callback: longest %u ticks, mean %u ticks\n", latency_max, callbacks ? latency_sum / callbacks : 0);
+      printf ("  tick handler:     %u in SVC mode, %u in other modes, IRQs enabled in %u calls, wrong r12 in %u calls\n", tick_svc, tick_other, tick_irq_on, tick_pw_bad);
+      printf ("                    last CPSR &%08X, sp &%08X .. &%08X\n", tick_psr_last, tick_sp_lo == ~0u ? 0 : tick_sp_lo, tick_sp_hi);
+      printf ("  callback handler: %u in SVC mode, %u in other modes, IRQs disabled in %u calls, wrong r12 in %u calls\n", cb_svc, cb_other, cb_irq_off, cb_pw_bad);
+      printf ("                    last CPSR &%08X, sp &%08X .. &%08X\n", cb_psr_last, cb_sp_lo == ~0u ? 0 : cb_sp_lo, cb_sp_hi);
+      printf ("  remove test: %u run, callbacks that ran although removed: %u\n", removetests, removetest_stale);
+      break;
+    }
+  return NULL;
+}

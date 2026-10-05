@@ -1,0 +1,21 @@
+--- a/gcc/config.host	2026-10-03 09:23:14.848051331 +0100
++++ b/gcc/config.host	2026-10-03 09:23:14.848980515 +0100
+@@ -108,7 +108,7 @@
+ 	;;
+     esac
+     ;;
+-  arm*-*-freebsd* | arm*-*-netbsd* | arm*-*-linux* | arm*-*-fuchsia*)
++  arm*-*-freebsd* | arm*-*-netbsd* | arm*-*-linux* | arm*-*-fuchsia* | arm*-riscos*)
+     case ${target} in
+       arm*-*-*)
+ 	host_extra_gcc_objs="driver-arm.o"
+@@ -201,6 +201,9 @@
+ 
+ # Machine-specific settings.
+ case ${host} in
++  arm*-*-riscos | arm*-riscos*)	# ARM RISC OS with ELF: the compiler itself runs on RISC OS
++    host_xm_file="arm/xm-riscos.h"
++    ;;
+   hppa*64*-*-hpux11*)
+     out_host_hook_obj=host-hpux.o
+     host_xmake_file="${host_xmake_file} x-hpux"

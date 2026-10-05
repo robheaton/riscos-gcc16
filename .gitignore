@@ -1,0 +1,25 @@
+# The scripts work in the clone itself (it is meant to be ~/gccsdk-next): everything they generate is ignored
+/src/
+/build*/
+/env*/
+/hostlibs*/
+/binutils-2.45.1-install/
+/binutils-native-install*/
+/make-riscos/
+/unixlib*/
+/sul-build*/
+/native-stage*/
+/native-tree*/
+/native-spike/
+/release/
+/native5*/
+*.log
+*.o
+*.a
+*.pyc
+__pycache__/
+out/
+work/
+*,e1f
+*,ffa
+*,ff8

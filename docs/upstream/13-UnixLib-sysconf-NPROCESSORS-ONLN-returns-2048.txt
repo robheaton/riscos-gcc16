@@ -1,0 +1,83 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: sysconf (_SC_NPROCESSORS_ONLN) returns 2048 (and
+         _SC_PHYS_PAGES 99): the enumerators after _SC_PAGE_SIZE restart the
+         numbering
+Attach:  patches/unixlib-sysconf-nprocessors.patch
+
+Summary
+-------
+In include/unistd.h the enum of the sysconf names ends with
+
+    _SC_PAGE_SIZE = _SC_PAGESIZE,
+    _SC_PHYS_PAGES,
+    _SC_NPROCESSORS_ONLN
+
+An enumerator with an explicit value restarts the numbering: the two after
+_SC_PAGE_SIZE get _SC_PAGESIZE + 1 and + 2, which are 11 and 12 - the values of
+_SC_BC_BASE_MAX and _SC_BC_DIM_MAX. So sysconf (_SC_NPROCESSORS_ONLN) is
+sysconf (_SC_BC_DIM_MAX), which is 2048, and sysconf (_SC_PHYS_PAGES) is
+sysconf (_SC_BC_BASE_MAX), 99. And because they are enumerators and not macros,
+the test
+
+#ifdef  _SC_NPROCESSORS_ONLN
+      case _SC_NPROCESSORS_ONLN:
+        return 1;
+#endif
+
+in unix/sysconf.c is never true: the case that is meant to answer 1 is not
+compiled. A program that sizes a thread pool with
+std::thread::hardware_concurrency () is then told that the machine has 2048
+processors (that is what the GCC 10.2.0 libstdc++ gives on the machine: see
+below).
+
+The patch moves _SC_PHYS_PAGES and _SC_NPROCESSORS_ONLN in front of the
+assignment, so they get 27 and 28 and the alias _SC_PAGE_SIZE comes last, and
+adds #define _SC_PHYS_PAGES _SC_PHYS_PAGES and the same for
+_SC_NPROCESSORS_ONLN, which is the usual glibc way of making an enumerator
+visible to #ifdef. No change to sysconf.c is needed (the existing case then
+compiles and returns 1). 22 lines of patch, mostly the comment.
+
+Evidence
+--------
+  Values:  compiled with the GCC 16.2.0 EABI compiler against include/unistd.h
+           of trunk r7800: _SC_PAGESIZE 10, _SC_PAGE_SIZE 10, _SC_PHYS_PAGES
+           11, _SC_NPROCESSORS_ONLN 12, _SC_BC_BASE_MAX 11, _SC_BC_DIM_MAX 12,
+           and no macro. With the patch: 10, 10, 27, 28, 11, 12, and both are
+           macros. verify/run-verify.sh checks this with static assertions with
+           both compilers.
+  Machine:  std::thread::hardware_concurrency () is 2048 in the GCC 10.2.0
+            build of my threadtest program on RISC OS 5.30 (Cortex-A72) with
+            the stock library, in every run; I take it that libstdc++ gets it
+            from sysconf (_SC_NPROCESSORS_ONLN) with the old number 12, since I
+            cannot explain 2048 otherwise, but I did not trace the call. A
+            program of mine compiled against the patched header (ulinfo, which
+            prints sysconf (28)) answers 1 with the patched library.
+
+A binary that was compiled against the old header keeps passing 12 and keeps
+getting 2048, whichever library it runs on: the same GCC 10.2.0 threadtest
+build still prints 2048 with the patched library, because its libstdc++ was
+built with the old numbering. That is no worse than before, but the fix only
+helps programs and libraries that are built again with the new header. The
+numbers 27 and 28 are the next free values after the last name, so they cannot
+clash with an existing one.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* include/unistd.h (_SC_PHYS_PAGES, _SC_NPROCESSORS_ONLN): Move in
+	front of the _SC_PAGE_SIZE alias.  The alias restarted the numbering
+	so that they equalled _SC_BC_BASE_MAX and _SC_BC_DIM_MAX.  Define
+	them as macros, so that the #ifdef in unix/sysconf.c is true.
+
+What I did not do
+-----------------
+The patch does not add an answer for _SC_PHYS_PAGES: sysconf () then returns -1
+/ EINVAL for it, which is correct for the moment but not helpful; a real value
+could come from OS_ReadMemMapInfo. Nor does it count cores: it still answers 1,
+which I believe is right for RISC OS 5, where a program runs on one core.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

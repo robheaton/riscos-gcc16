@@ -1,0 +1,15 @@
+--- a/libstdc++-v3/src/c++11/thread.cc
++++ b/libstdc++-v3/src/c++11/thread.cc
+@@ -46,7 +46,11 @@
+ 
+ #ifdef _GLIBCXX_HAS_GTHREADS
+ 
+-#if defined(_GLIBCXX_USE_GET_NPROCS)
++#if defined(__riscos__)
++// RISC OS schedules everything on one core, and the sysconf (_SC_NPROCESSORS_ONLN)
++// of existing UnixLib releases returns an unrelated limit (2048): don't ask it.
++# define _GLIBCXX_NPROCS 1
++#elif defined(_GLIBCXX_USE_GET_NPROCS)
+ # include <sys/sysinfo.h>
+ # define _GLIBCXX_NPROCS get_nprocs()
+ #elif defined(_GLIBCXX_USE_PTHREADS_NUM_PROCESSORS_NP)

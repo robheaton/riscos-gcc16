@@ -1,0 +1,13 @@
+#define EXPECT_sha256 0x629b724c15242d74ULL
+#define EXPECT_crc32 0x0000000061e4c6ecULL
+#define EXPECT_sieve 0x0004520a003d08e3ULL
+#define EXPECT_qsort 0xfd219ab7929848c6ULL
+#define EXPECT_matmul_d 0x3e4d3a0000000000ULL
+#define EXPECT_matmul_f 0x859c9f6ef269d000ULL
+#define EXPECT_fft 0xcdb9bfa6a2bd6942ULL
+#define EXPECT_mandel 0x0000000004606aa7ULL
+#define EXPECT_nbody 0x4af3851ba41c91f5ULL
+#define EXPECT_divmod 0x00000000e85de845ULL
+#define EXPECT_ll64 0x801a2070b7f2718eULL
+#define EXPECT_bitops 0x000000000190cb66ULL
+#define EXPECT_strings 0x5a3c32839c7f1cfbULL

@@ -1,0 +1,40 @@
+--- a/bfd/opncls.c	2026-10-03 12:44:40.811044363 +0100
++++ b/bfd/opncls.c	2026-10-03 12:44:40.829922763 +0100
+@@ -24,6 +24,12 @@
+ #include "bfd.h"
+ #include "objalloc.h"
+ #include "libbfd.h"
++
++#ifdef __riscos__
++#include <limits.h>
++#include <kernel.h>
++#include <unixlib/local.h>
++#endif
+ #include "libiberty.h"
+ #include "elf-bfd.h"
+ 
+@@ -833,6 +839,24 @@
+ 	  chmod (bfd_get_filename (abfd),
+ 		 (0777
+ 		  & (buf.st_mode | ((S_IXUSR | S_IXGRP | S_IXOTH) &~ mask))));
++
++#ifdef __riscos__
++	  /* When it is ELF format and we're running on RISC OS, set the 0xE1F
++	     filetype: a new file is Text otherwise and cannot be run.  */
++	  if (bfd_get_flavour (abfd) == bfd_target_elf_flavour)
++	    {
++	      char robuf[_POSIX_PATH_MAX];
++
++	      if (__riscosify_std (bfd_get_filename (abfd), 0, robuf,
++				   sizeof (robuf), NULL))
++		{
++		  _kernel_osfile_block bl;
++
++		  bl.load = 0xE1F; /* ELF binary */
++		  _kernel_osfile (18, robuf, &bl);
++		}
++	    }
++#endif
+ 	}
+     }
+ }

@@ -1,0 +1,24 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-03 07:27:46.183278830 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-03 07:27:46.183495784 +0100
+@@ -130,6 +130,21 @@
+       case _SC_NPROCESSORS_ONLN:
+ 	return 1;
+ #endif
++
++      /* Private to the GCCSDK GCC 16 forward-port: which set of fixes this
++	 libunixlib carries (5: the thread fixes of SharedLibs-C-armeabihf
++	 10.2.0-5 and 16.2.0-1/-2; 6: 16.2.0-4, file and socket reads touch a
++	 stack buffer first; 7: 16.2.0-5 and later, memcpy/memmove without the
++	 64-byte vstm, everything built with -fstack-clash-protection).  Lets a
++	 test program tell the installed library apart from the stock one, for
++	 which sysconf fails with EINVAL.  */
++      case 0x4700:
++	return 7;
++
++      /* Private, likewise: the major version of the GCC that compiled this
++	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */
++      case 0x4701:
++	return __GNUC__;
+     }
+ 
+   return __set_errno (EINVAL);

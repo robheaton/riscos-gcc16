@@ -1,0 +1,188 @@
+--- a/gcc4/riscos/armeabisupport/memory.c
++++ b/gcc4/riscos/armeabisupport/memory.c
+@@ -1104,6 +1104,8 @@
+   return NULL;
+ }
+ 
++static void allocator_mmap_rollback(armeabisupport_allocator_mmap *allocator, int page, size_t num_pages);
++
+ _kernel_oserror *
+ allocator_mmap (armeabisupport_allocator_mmap *allocator,
+ 		const int required_page_count,
+@@ -1113,6 +1115,16 @@
+   mmap_block *current, *next, *new_block;
+ 
+   _kernel_oserror *err;
++
++  /* A block that is bigger than the whole dynamic area can never be claimed.  Only the
++   * end-of-list case below used to check the size, so the FIRST block of an empty area
++   * (always the case for a brand new allocator) was linked in and then failed to claim.  */
++  if (required_page_count <= 0 || (size_t)required_page_count > allocator->base.da.max_size)
++    {
++      *block_ret = NULL;
++      return armeabisupport_no_memory;
++    }
++
+   err = rma_claim(sizeof(mmap_block), (void **)&new_block);
+   if (err)
+     {
+@@ -1120,6 +1132,17 @@
+       return err;
+     }
+ 
++  /* rma_claim does not clear the block.  The caller sets the owner (and the rest) only
++   * when the allocation succeeds.  */
++  new_block->access = 0;
++  new_block->prot = 0;
++  new_block->flags = 0;
++  new_block->fd = -1;
++  new_block->offset = 0;
++  new_block->owner = NULL;
++
++  const size_t old_da_size = allocator->base.da.size;
++
+   current = linklist_first_mmap_block (&allocator->block_list);
+   if (!current || required_page_count <= current->start_page)
+     {
+@@ -1145,7 +1168,7 @@
+ 	    {
+ 	      /* This allocation would take us beyond the end of the DA, so
+ 	       * clean up and return an error.  */
+-	      free(new_block);
++	      rma_free(new_block);
+ 	      *block_ret = NULL;
+ 	      return armeabisupport_no_memory;
+ 	    }
+@@ -1185,16 +1208,61 @@
+   err = allocator_claim_pages(&allocator->base,
+ 			      block_address,
+ 			      required_page_count);
+-  if (err)
+-    return err;
++  if (!err)
++    {
++      if ((flags & ALLOCATOR_ALLOC_FLAGS_MASK) != ALLOCATOR_ALLOC_FLAG_MAP)
++	return NULL;
+ 
+-  if ((flags & ALLOCATOR_ALLOC_FLAGS_MASK) != ALLOCATOR_ALLOC_FLAG_MAP)
+-    return NULL;
++      err = allocator_map_pages(&allocator->base,
++				block_address,
++				required_page_count,
++				flags & ALLOCATOR_ALLOC_FLAGS_ACCESS_MASK);
++      if (!err)
++	return NULL;
++    }
++
++  /* The pages could not be claimed or mapped.  Take the block out of the list again and
++   * give back whatever was claimed or mapped before the error (a 129 MB request in a 128 MB
++   * window maps 128 MB and then fails): the block has no owner, so nothing would ever
++   * remove it again, it would keep the allocator - and so its dynamic area - alive for
++   * good, and its pages would stay in use.  */
++  allocator_mmap_rollback(allocator, new_block->start_page, new_block->end_page - new_block->start_page);
++  linklist_remove(&allocator->block_list, &new_block->link);
++  rma_free(new_block);
++  allocator->base.da.size = old_da_size;
++  *block_ret = NULL;
++  return err;
++}
+ 
+-  return allocator_map_pages(&allocator->base,
+-			     block_address,
+-			     required_page_count,
+-			     flags & ALLOCATOR_ALLOC_FLAGS_ACCESS_MASK);
++/* Best effort, errors ignored (this is the clean-up after an error): for every page of the range, unmap it if it is mapped and release it.  Releasing a page that was never claimed is an error
++ * of the OS call, which is ignored; that way nothing depends on how the OS reports a claimed page.  */
++static void
++allocator_mmap_rollback(armeabisupport_allocator_mmap *allocator, int page, size_t num_pages)
++{
++  while (num_pages--)
++    {
++      pmp_page_info_entry entry;
++      int page_entry[3];
++
++      entry.pmp_page_index = page;
++      entry.physical_page_number = -1;
++      entry.da_page_number = -1;
++      entry.flags = 0;
++      if (dynamic_pmp_page_info(allocator->base.da.number, &entry, 1) == NULL
++	  && entry.da_page_number != -1)
++	{
++	  page_entry[0] = page;
++	  page_entry[1] = PMP_PAGE_UNMAP;
++	  page_entry[2] = 0;
++	  dynamic_pmp_map_unmap(allocator->base.da.number, (pmp_log_page_entry *)page_entry, 1);
++	}
++
++      page_entry[0] = page;
++      page_entry[1] = PMP_PAGE_RELEASE;
++      page_entry[2] = 0;
++      dynamic_pmp_claim_release(allocator->base.da.number, (pmp_phy_page_entry *)page_entry, 1);
++      page++;
++    }
+ }
+ 
+ _kernel_oserror *
+@@ -1383,7 +1451,11 @@
+ 				      page_diff,
+ 				      0);
+ 	  if (err)
+-	    return err;
++	    {
++	      /* Give back the pages that were claimed or mapped for the extension.  */
++	      allocator_mmap_rollback(allocator, block->end_page, page_diff);
++	      return err;
++	    }
+ 
+ 	  /* Zero fill the new pages.  */
+ 	  memset(page_to_addr(&allocator->base, block->end_page),
+@@ -1447,7 +1519,11 @@
+ 				      page_diff,
+ 				      0);
+ 	  if (err)
+-	    return err;
++	    {
++	      /* Give back the pages that were claimed or mapped for the extension.  */
++	      allocator_mmap_rollback(allocator, block->end_page, page_diff);
++	      return err;
++	    }
+ 
+ 	  /* Zero fill the new pages.  */
+ 	  memset(page_to_addr(&allocator->base, block->end_page),
+--- a/gcc4/riscos/armeabisupport/mmap.c
++++ b/gcc4/riscos/armeabisupport/mmap.c
+@@ -357,8 +357,15 @@
+   *block_ret = NULL;
+ 
+   bool new_allocator = false;
++  armeabisupport_allocator *created = NULL;
+   uint32_t num_pages = bytes_to_pages(size);
+ 
++  /* No allocator can hold more than MMAP_MAX_DA_SIZE (and a size close to 4 GB rounds up to 0 pages): refuse such a request now.  Making an
++   * allocator (a dynamic area of 100 MB of address space) for a request that cannot succeed
++   * only to leave it behind is what leaked the address space.  */
++  if (num_pages == 0 || num_pages > bytes_to_pages(MMAP_MAX_DA_SIZE))
++    return armeabisupport_ENOMEM;
++
+   allocator = linklist_first_armeabisupport_allocator(&global.mmap_allocator_pool);
+   while (true)
+   {
+@@ -368,6 +375,10 @@
+ 	if (new_allocator)
+ 	  {
+ 	    LOG("armeabi_mmap: Failed to allocate %d pages after creating new allocator", num_pages);
++	    /* The allocator was made for this request and could not serve it (no memory left,
++	     * say): take it out of the pool again and give its dynamic area back.  */
++	    linklist_remove(&global.mmap_allocator_pool, &created->link);
++	    allocator_destroy_internal(created);
+ 	    break;
+ 	  }
+ 
+@@ -386,6 +397,7 @@
+ 	  return err;
+ 
+ 	new_allocator = true;
++	created = allocator;
+ 	linklist_add_to_end(&global.mmap_allocator_pool, &allocator->link);
+       }
+ 

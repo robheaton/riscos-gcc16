@@ -1,0 +1,738 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/incl-local/internal/os.h
++++ b/gcc4/recipe/files/gcc/libunixlib/incl-local/internal/os.h
+@@ -62,20 +62,41 @@
+ 
+ extern _kernel_oserror *__os_nl (void);		/* newline */
+ 
++/* The inline SWI wrappers.
++
++   GCC guarantees a local register variable (register T x __asm ("r1")) to be
++   in its register only where it is an operand of an asm statement; anywhere
++   else the variable IS the hard register, and a call between the asm and the
++   use of the variable has overwritten it.  So the registers of a SWI are
++   passed in as operands, and the results are copied out INSIDE the asm
++   (MOV %[out], rN at the end of the template, early clobber) into ordinary
++   variables.  A register that the SWI changes and that is not an operand is
++   a clobber; an input whose register the SWI changes is an in-out operand.
++   A result that is read in C after the asm is not safe: GCC 16 at -O2 made
++   __unixinit use the result of strlen () for the size of the DDEUtils
++   command line.  */
++
+ static __inline__ const _kernel_oserror * __attribute__ ((always_inline))
+ SWI_OS_Byte (int __a, int __xin, int __yin, int *__xoutp, int *__youtp)
+ {
+   register int a __asm ("r0") = __a;
+   register int xin __asm ("r1") = __xin;
+   register int yin __asm ("r2") = __yin;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register int xout __asm ("r1");
+-  register int yout __asm ("r2");
++  const _kernel_oserror * err;
++  int xout;
++  int yout;
+   __asm__ volatile ("SWI\t%[SWI_XOS_Byte]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (xout), "=r" (yout)
+-		    : "r" (a), "r" (xin), "r" (yin),
+-		      [SWI_XOS_Byte] "i" (OS_Byte | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[xout], r1\n\t"
++		    "MOV\t%[yout], r2\n\t"
++		    : [err] "=&r" (err),
++		      [xout] "=&r" (xout),
++		      [yout] "=&r" (yout),
++		      "+r" (a),
++		      "+r" (xin),
++		      "+r" (yin)
++		    : [SWI_XOS_Byte] "i" (OS_Byte | (1<<17))
+ 		    : "r14", "cc");
+   if (__xoutp && !err)
+     *__xoutp = xout;
+@@ -88,11 +109,13 @@
+ SWI_OS_CLI (const char *__cmd)
+ {
+   register const char *cmd __asm ("r0") = __cmd;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("SWI\t%[SWI_XOS_CLI]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (cmd), [SWI_XOS_CLI] "i" (OS_CLI | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err),
++		      "+r" (cmd)
++		    : [SWI_XOS_CLI] "i" (OS_CLI | (1<<17))
+ 		    : "r14", "cc");
+ 
+   return err;
+@@ -103,14 +126,18 @@
+ {
+   register unsigned reason __asm ("r0") = __reason;
+   register const char *filename __asm ("r1") = __filename;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register unsigned fhandle __asm ("r1");
++  const _kernel_oserror * err;
++  unsigned fhandle;
+   __asm__ volatile ("SWI\t%[SWI_XOS_Find]\n\t"
+ 		    "MOV\tr1, r0\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (fhandle)
+-		    : "r" (reason), "r" (filename),
+-		      [SWI_XOS_Find] "i" (OS_Find | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[fhandle], r1\n\t"
++		    : [err] "=&r" (err),
++		      [fhandle] "=&r" (fhandle),
++		      "+r" (reason),
++		      "+r" (filename)
++		    : [SWI_XOS_Find] "i" (OS_Find | (1<<17))
+ 		    : "r14", "cc");
+   *__fhandle = !err ? fhandle : 0;
+   return err;
+@@ -120,13 +147,14 @@
+ SWI_OS_Find_Close (unsigned __fhandle)
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #0\n\t"
+ 		    "SWI\t%[SWI_XOS_Find]\n\t"
+-		    : "=r" (err)
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
+ 		    : "r" (fhandle),
+ 		      [SWI_XOS_Find] "i" (OS_Find | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -140,14 +168,19 @@
+   register unsigned execaddr __asm ("r3") = __execaddr;
+   register unsigned start __asm ("r4") = __start;
+   register unsigned end __asm ("r5") = __end;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #0\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (filename), "r" (loadaddr), "r" (execaddr),
+-		      "r" (start), "r" (end), [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (filename),
++		      "r" (loadaddr),
++		      "r" (execaddr),
++		      "r" (start),
++		      "r" (end),
++		      [SWI_XOS_File] "i" (OS_File | (1<<17))
++		    : "r0", "r14", "cc");
+ 
+   return err;
+ }
+@@ -160,14 +193,18 @@
+   register unsigned loadaddr __asm ("r2") = __loadaddr;
+   register unsigned execaddr __asm ("r3") = __execaddr;
+   register unsigned attr __asm ("r5") = __attr;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #1\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (filename), "r" (loadaddr), "r" (execaddr),
+-		      "r" (attr), [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (filename),
++		      "r" (loadaddr),
++		      "r" (execaddr),
++		      "r" (attr),
++		      [SWI_XOS_File] "i" (OS_File | (1<<17))
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -176,14 +213,16 @@
+ {
+   register const char *filename __asm ("r1") = __filename;
+   register unsigned attr __asm ("r5") = __attr;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #4\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (filename), "r" (attr),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (filename),
++		      "r" (attr),
+ 		      [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -191,13 +230,15 @@
+ SWI_OS_File_DeleteObject (const char *__objectname)
+ {
+   register const char *objectname __asm ("r1") = __objectname;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #6\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (objectname), [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r2", "r3", "r4", "r5", "r14", "cc");
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (objectname),
++		      [SWI_XOS_File] "i" (OS_File | (1<<17))
++		    : "r0", "r2", "r3", "r4", "r5", "r14", "cc");
+   return err;
+ }
+ 
+@@ -206,14 +247,16 @@
+ {
+   register const char *dirname __asm ("r1") = __dirname;
+   register unsigned numentries __asm ("r4") = 0;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #8\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (dirname), "r" (numentries),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (dirname),
++		      "r" (numentries),
+ 		      [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -225,14 +268,18 @@
+   register unsigned filetype __asm ("r2") = __filetype;
+   register unsigned start __asm ("r4") = 0;
+   register unsigned end __asm ("r5") = __length;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #11\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (filename), "r" (filetype), "r" (start), "r" (end),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (filename),
++		      "r" (filetype),
++		      "r" (start),
++		      "r" (end),
+ 		      [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -242,20 +289,31 @@
+ 			 unsigned *__objlen, unsigned *__attr)
+ {
+   register const char *filename __asm ("r1") = __filename;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register unsigned objtype __asm ("r1");
+-  register unsigned loadaddr __asm ("r2");
+-  register unsigned execaddr __asm ("r3");
+-  register unsigned objlen __asm ("r4");
+-  register unsigned attr __asm ("r5");
++  const _kernel_oserror * err;
++  unsigned objtype;
++  unsigned loadaddr;
++  unsigned execaddr;
++  unsigned objlen;
++  unsigned attr;
+   __asm__ volatile ("MOV\tr0, #17\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOV\tr1, r0\n\t"
+                     "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (objtype), "=r" (loadaddr),
+-		      "=r" (execaddr), "=r" (objlen), "=r" (attr)
+-		    : "r" (filename), [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[objtype], r1\n\t"
++		    "MOV\t%[loadaddr], r2\n\t"
++		    "MOV\t%[execaddr], r3\n\t"
++		    "MOV\t%[objlen], r4\n\t"
++		    "MOV\t%[attr], r5\n\t"
++		    : [err] "=&r" (err),
++		      [objtype] "=&r" (objtype),
++		      [loadaddr] "=&r" (loadaddr),
++		      [execaddr] "=&r" (execaddr),
++		      [objlen] "=&r" (objlen),
++		      [attr] "=&r" (attr),
++		      "+r" (filename)
++		    : [SWI_XOS_File] "i" (OS_File | (1<<17))
++		    : "r5", "r4", "r3", "r2", "r0", "r14", "cc");
+   if (!err)
+     {
+       if (__objtype)
+@@ -281,14 +339,16 @@
+ {
+   register const char *filename __asm ("r1") = __filename;
+   register unsigned filetype __asm ("r2") = __filetype;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #18\n\t"
+ 		    "SWI\t%[SWI_XOS_File]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (filename), "r" (filetype),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (filename),
++		      "r" (filetype),
+ 		      [SWI_XOS_File] "i" (OS_File | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -299,15 +359,20 @@
+   register unsigned fhandle __asm ("r1") = __fhandle;
+   register void *buf __asm ("r2") = __buf;
+   register unsigned to_read __asm ("r3") = __to_read;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register unsigned not_read __asm ("r3");
++  const _kernel_oserror * err;
++  unsigned not_read;
+   __asm__ volatile ("MOV\tr0, #4\n\t"
+ 		    "SWI\t%[SWI_XOS_GBPB]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (not_read)
+-		    : "r" (fhandle), "r" (buf), "r" (to_read),
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[not_read], r3\n\t"
++		    : [err] "=&r" (err),
++		      [not_read] "=&r" (not_read),
++		      "+r" (buf),
++		      "+r" (to_read)
++		    : "r" (fhandle),
+ 		      [SWI_XOS_GBPB] "i" (OS_GBPB | (1<<17))
+-		    : "r4", "r14", "cc", "memory");
++		    : "r0", "r4", "r14", "cc", "memory");
+   if (__not_read && !err)
+     *__not_read = not_read;
+   return err;
+@@ -320,15 +385,20 @@
+   register unsigned fhandle __asm ("r1") = __fhandle;
+   register const void *buf __asm ("r2") = __buf;
+   register unsigned to_write __asm ("r3") = __to_write;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register unsigned not_written __asm ("r3");
++  const _kernel_oserror * err;
++  unsigned not_written;
+   __asm__ volatile ("MOV\tr0, #2\n\t"
+ 		    "SWI\t%[SWI_XOS_GBPB]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (not_written)
+-		    : "r" (fhandle), "r" (buf), "r" (to_write),
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[not_written], r3\n\t"
++		    : [err] "=&r" (err),
++		      [not_written] "=&r" (not_written),
++		      "+r" (buf),
++		      "+r" (to_write)
++		    : "r" (fhandle),
+ 		      [SWI_XOS_GBPB] "i" (OS_GBPB | (1<<17))
+-		    : "r4", "r14", "cc");
++		    : "r0", "r4", "r14", "cc");
+   if (__not_written && !err)
+     *__not_written = not_written;
+   return err;
+@@ -340,15 +410,20 @@
+ {
+   register int fh_in __asm ("r0") = __fh_in;
+   register int fh_out __asm ("r1") = __fh_out;
+-  register int prev_fh_in __asm ("r0");
+-  register int prev_fh_out __asm ("r1");
++  int prev_fh_in;
++  int prev_fh_out;
+   register const _kernel_oserror *err;
+   __asm__ volatile ("SWI\t%[SWI_XOS_ChangeRedirection]\n\t"
+ 		    "MOVVS\t%[err], r0\n\t"
+ 		    "MOVVC\t%[err], #0\n\t"
+-		    : "=r" (prev_fh_in), "=r" (prev_fh_out), [err] "=r" (err)
+-		    : "r" (fh_in), "r" (fh_out),
+-		      [SWI_XOS_ChangeRedirection] "i" (OS_ChangeRedirection | (1<<17))
++		    "MOV\t%[prev_fh_in], r0\n\t"
++		    "MOV\t%[prev_fh_out], r1\n\t"
++		    : [prev_fh_in] "=&r" (prev_fh_in),
++		      [prev_fh_out] "=&r" (prev_fh_out),
++		      [err] "=&r" (err),
++		      "+r" (fh_in),
++		      "+r" (fh_out)
++		    : [SWI_XOS_ChangeRedirection] "i" (OS_ChangeRedirection | (1<<17))
+ 		    : "r14", "cc");
+   if (__prev_fh_in && !err)
+     *__prev_fh_in = prev_fh_in;
+@@ -361,11 +436,13 @@
+ SWI_DDEUtils_SetCLSize (size_t __len)
+ {
+   register size_t len __asm ("r0") = __len;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("SWI\t%[SWI_XDDEUtils_SetCLSize]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (len), [SWI_XDDEUtils_SetCLSize] "i" (DDEUtils_SetCLSize | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err),
++		      "+r" (len)
++		    : [SWI_XDDEUtils_SetCLSize] "i" (DDEUtils_SetCLSize | (1<<17))
+ 		    : "r14", "cc");
+   return err;
+ }
+@@ -374,11 +451,13 @@
+ SWI_DDEUtils_SetCL (const char *__cli)
+ {
+   register const char *cli __asm ("r0") = __cli;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("SWI\t%[SWI_XDDEUtils_SetCL]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (cli), [SWI_XDDEUtils_SetCL] "i" (DDEUtils_SetCL | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err),
++		      "+r" (cli)
++		    : [SWI_XDDEUtils_SetCL] "i" (DDEUtils_SetCL | (1<<17))
+ 		    : "r14", "cc");
+   return err;
+ }
+@@ -386,14 +465,16 @@
+ static __inline__ const _kernel_oserror * __attribute__ ((always_inline))
+ SWI_DDEUtils_GetCLSize (size_t *__len)
+ {
+-  register size_t len __asm ("r0");
++  size_t len;
+   register const _kernel_oserror *err;
+   __asm__ volatile ("SWI\t%[SWI_XDDEUtils_GetCLSize]\n\t"
+ 		    "MOVVS\t%[err], r0\n\t"
+ 		    "MOVVC\t%[err], #0\n\t"
+-		    : [err] "=r" (err), "=r" (len)
++		    "MOV\t%[len], r0\n\t"
++		    : [len] "=&r" (len),
++		      [err] "=&r" (err)
+ 		    : [SWI_XDDEUtils_GetCLSize] "i" (DDEUtils_GetCLSize | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   if (__len && !err)
+     *__len = len;
+   return err;
+@@ -403,12 +484,13 @@
+ SWI_DDEUtils_GetCL (char *__cli)
+ {
+   register char *cli __asm ("r0") = __cli;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("SWI\t%[SWI_XDDEUtils_GetCL]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (cli),
+-		      [SWI_XDDEUtils_GetCL] "i" (DDEUtils_GetCl | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err),
++		      "+r" (cli)
++		    : [SWI_XDDEUtils_GetCL] "i" (DDEUtils_GetCl | (1<<17))
+ 		    : "r14", "cc", "memory");
+   return err;
+ }
+@@ -417,12 +499,13 @@
+ SWI_DDEUtils_Prefix (const char *__dir)
+ {
+   register const char *dir __asm ("r0") = __dir;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("SWI\t%[SWI_XDDEUtils_Prefix]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (dir),
+-		      [SWI_XDDEUtils_Prefix] "i" (DDEUtils_Prefix | (1<<17))
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err),
++		      "+r" (dir)
++		    : [SWI_XDDEUtils_Prefix] "i" (DDEUtils_Prefix | (1<<17))
+ 		    : "r14", "cc");
+   return err;
+ }
+@@ -431,14 +514,16 @@
+ SWI_DDEUtils_ReadPrefix (int __ao, const char **__prefix)
+ {
+   register int ao __asm ("r0") = __ao;
+-  register const char *prefix __asm ("r0");
++  const char * prefix;
+   register const _kernel_oserror *err;
+   __asm__ volatile ("SWI\t%[SWI_XDDEUtils_ReadPrefix]\n\t"
+ 		    "MOVVS\t%[err], r0\n\t"
+ 		    "MOVVC\t%[err], #0\n\t"
+-		    : [err] "=r" (err), "=r" (prefix)
+-		    : "r" (ao),
+-		      [SWI_XDDEUtils_ReadPrefix] "i" (DDEUtils_ReadPrefix | (1<<17))
++		    "MOV\t%[prefix], r0\n\t"
++		    : [prefix] "=&r" (prefix),
++		      [err] "=&r" (err),
++		      "+r" (ao)
++		    : [SWI_XDDEUtils_ReadPrefix] "i" (DDEUtils_ReadPrefix | (1<<17))
+ 		    : "r14", "cc");
+   if (__prefix && !err)
+     *__prefix = prefix;
+@@ -450,14 +535,16 @@
+ {
+   register const char *oldfn __asm ("r1") = __oldfn;
+   register const char *newfn __asm ("r2") = __newfn;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #25\n\t"
+ 		    "SWI\t%[SWI_XOS_FSControl]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (oldfn), "r" (newfn),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (oldfn),
++		      "r" (newfn),
+ 		      [SWI_XOS_FSControl] "i" (OS_FSControl | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -465,14 +552,15 @@
+ SWI_OS_FSControl_SetCurDir (const char *__dirname)
+ {
+   register const char *dirname __asm ("r1") = __dirname;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #0\n\t"
+ 		    "SWI\t%[SWI_XOS_FSControl]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
+ 		    : "r" (dirname),
+ 		      [SWI_XOS_FSControl] "i" (OS_FSControl | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -490,16 +578,22 @@
+   register char *buf __asm ("r2") = __buf;
+   register const char *pathvar __asm ("r3") = __pathvar;
+   register size_t bufsize __asm ("r5") = __bufsize;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register int xtrabufsize __asm ("r5");
++  const _kernel_oserror * err;
++  int xtrabufsize;
+   __asm__ volatile ("MOV\tr0, #37\n\t"
+ 		    "MOV\tr4, #0\n\t"
+ 		    "SWI\t%[SWI_XOS_FSControl]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (xtrabufsize)
+-		    : "r" (pathname), "r" (buf), "r" (pathvar), "r" (bufsize),
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[xtrabufsize], r5\n\t"
++		    : [err] "=&r" (err),
++		      [xtrabufsize] "=&r" (xtrabufsize),
++		      "+r" (bufsize)
++		    : "r" (pathname),
++		      "r" (buf),
++		      "r" (pathvar),
+ 		      [SWI_XOS_FSControl] "i" (OS_FSControl | (1<<17))
+-		    : "r4", "r14", "cc", "memory");
++		    : "r0", "r4", "r14", "cc", "memory");
+   if (__req_xtrabufsize && !err)
+     *__req_xtrabufsize = xtrabufsize < 1 ? 1 - xtrabufsize : 0;
+   return err;
+@@ -510,15 +604,18 @@
+ SWI_OS_Args_GetFilePtr (unsigned __fhandle, __off_t *__fileptr)
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register int fileptr __asm ("r2");
++  const _kernel_oserror * err;
++  int fileptr;
+   __asm__ volatile ("MOV\tr0, #0\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (fileptr)
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[fileptr], r2\n\t"
++		    : [err] "=&r" (err),
++		      [fileptr] "=&r" (fileptr)
+ 		    : "r" (fhandle),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc");
++		    : "r2", "r0", "r14", "cc");
+   if (__fileptr && !err)
+     *__fileptr = fileptr;
+   return err;
+@@ -530,14 +627,16 @@
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+   register int fileptr __asm ("r2") = __fileptr;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #1\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (fhandle), "r" (fileptr),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (fhandle),
++		      "r" (fileptr),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }  
+ 
+@@ -546,15 +645,18 @@
+ SWI_OS_Args_GetExtent (unsigned __fhandle, __off_t *__extent)
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register int extent __asm ("r2");
++  const _kernel_oserror * err;
++  int extent;
+   __asm__ volatile ("MOV\tr0, #2\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (extent)
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[extent], r2\n\t"
++		    : [err] "=&r" (err),
++		      [extent] "=&r" (extent)
+ 		    : "r" (fhandle),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc");
++		    : "r2", "r0", "r14", "cc");
+   if (__extent && !err)
+     *__extent = extent;
+   return err;
+@@ -566,14 +668,16 @@
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+   register int extent __asm ("r2") = __extent;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #3\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (fhandle), "r" (extent),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
++		    : "r" (fhandle),
++		      "r" (extent),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }  
+ 
+@@ -585,15 +689,20 @@
+   register unsigned fhandle __asm ("r1") = __fhandle;
+   register char *buf __asm ("r2") = __buf;
+   register size_t bufsize __asm ("r5") = __bufsize;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register int xtrabufsize __asm ("r5");
++  const _kernel_oserror * err;
++  int xtrabufsize;
+   __asm__ volatile ("MOV\tr0, #7\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (xtrabufsize)
+-		    : "r" (fhandle), "r" (buf), "r" (bufsize),
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[xtrabufsize], r5\n\t"
++		    : [err] "=&r" (err),
++		      [xtrabufsize] "=&r" (xtrabufsize),
++		      "+r" (bufsize)
++		    : "r" (fhandle),
++		      "r" (buf),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc", "memory");
++		    : "r0", "r14", "cc", "memory");
+   if (__req_xtrabufsize && !err)
+     *__req_xtrabufsize = xtrabufsize < 1 ? 1 - xtrabufsize : 0;
+   return err;
+@@ -603,16 +712,19 @@
+ SWI_OS_Args_GetFileHandleStatus (unsigned __fhandle, int *__status)
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+-  register const _kernel_oserror *err __asm ("r0");
+-  register int status __asm ("r2");
++  const _kernel_oserror * err;
++  int status;
+   __asm__ volatile ("MOV\tr0, #254\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOV\tr2, r0\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err), "=r" (status)
++		    "MOV\t%[err], r0\n\t"
++		    "MOV\t%[status], r2\n\t"
++		    : [err] "=&r" (err),
++		      [status] "=&r" (status)
+ 		    : "r" (fhandle),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc", "memory");
++		    : "r2", "r0", "r14", "cc", "memory");
+   if (__status && !err)
+     *__status = status;
+   return err;
+@@ -623,14 +735,15 @@
+ SWI_OS_Args_Flush (unsigned __fhandle)
+ {
+   register unsigned fhandle __asm ("r1") = __fhandle;
+-  register const _kernel_oserror *err __asm ("r0");
++  const _kernel_oserror * err;
+   __asm__ volatile ("MOV\tr0, #255\n\t"
+ 		    "SWI\t%[SWI_XOS_Args]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err)
+ 		    : "r" (fhandle),
+ 		      [SWI_XOS_Args] "i" (OS_Args | (1<<17))
+-		    : "r14", "cc");
++		    : "r0", "r14", "cc");
+   return err;
+ }
+ 
+@@ -642,11 +755,14 @@
+   register int territory __asm ("r0") = __territory;
+   register const unsigned int *ro_time __asm ("r1") = __ro_time;
+   register unsigned int *ordinals __asm ("r2") = __ordinals;
+-  register _kernel_oserror *err __asm ("r0");
++  _kernel_oserror * err;
+   __asm__ volatile ("SWI\t%[SWI_Territory_ConvertTimeToOrdinals]\n\t"
+ 		    "MOVVC\tr0, #0\n\t"
+-		    : "=r" (err)
+-		    : "r" (territory), "r" (ro_time), "r" (ordinals),
++		    "MOV\t%[err], r0\n\t"
++		    : [err] "=&r" (err),
++		      "+r" (territory)
++		    : "r" (ro_time),
++		      "r" (ordinals),
+ 		      [SWI_Territory_ConvertTimeToOrdinals] "i" (Territory_ConvertTimeToOrdinals | (1<<17))
+ 		    : "r14", "cc", "memory");
+   return err;

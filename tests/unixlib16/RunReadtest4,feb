@@ -1,0 +1,46 @@
+| RunReadtest4 - what exactly goes wrong on stack pages that have never been touched: a table of small copies (which instruction, which size, which page position crashes
+| or corrupts) and the operating system filling a fresh buffer with data it has in memory (no file system involved).  Every command is its own program run (fresh stack).
+| Output: ResultsReadtest4 in this directory (long).  Installs and changes nothing.  If it stops with an error, type  *Spool  to close the output file.
+| (the first EABI program run changes <Obey$Dir>, so remember our directory first)
+Set RoTest$Dir <Obey$Dir>
+Dir <RoTest$Dir>
+Spool <RoTest$Dir>.ResultsReadtest4
+Echo ===================== 1. UnixLib memcpy (NEON): sizes 1-63, 64-257, 512-4096; copies that straddle, start at and end at a page boundary
+Run <RoTest$Dir>.readtest4 mem memcpy 0
+Run <RoTest$Dir>.readtest4 mem memcpy 1
+Run <RoTest$Dir>.readtest4 mem memcpy 2
+Echo ===================== 2. UnixLib memmove (the backwards copy) and memset
+Run <RoTest$Dir>.readtest4 mem memmove 0
+Run <RoTest$Dir>.readtest4 mem memmove 1
+Run <RoTest$Dir>.readtest4 mem memmove 2
+Run <RoTest$Dir>.readtest4 mem memset 0
+Run <RoTest$Dir>.readtest4 mem memset 1
+Run <RoTest$Dir>.readtest4 mem memset 2
+Echo ===================== 3. user-mode stores written like memcpy's: vldmia/vstmia of d0-d7 (64 bytes), of d0-d3, NEON vld1/vst1, lane stores, vstmdb, strd, stm
+Run <RoTest$Dir>.readtest4 mem vstm8 0
+Run <RoTest$Dir>.readtest4 mem vstm8 1
+Run <RoTest$Dir>.readtest4 mem vstm8 2
+Run <RoTest$Dir>.readtest4 mem vstm4 1
+Run <RoTest$Dir>.readtest4 mem vst1q 1
+Run <RoTest$Dir>.readtest4 mem vlane 0
+Run <RoTest$Dir>.readtest4 mem vstmdb 1
+Run <RoTest$Dir>.readtest4 mem strd 1
+Run <RoTest$Dir>.readtest4 mem stm 1
+Echo ===================== 4. the operating system fills a fresh 64 KB buffer: from a file, from a system variable (OS_ReadVarVal), from OS_GSTrans; controls: UnixLib memcpy, buffer written first
+Run <RoTest$Dir>.readtest4 fill read 64
+Run <RoTest$Dir>.readtest4 fill varval 64
+Run <RoTest$Dir>.readtest4 fill gstrans 64
+Run <RoTest$Dir>.readtest4 fill memcpy 64
+Run <RoTest$Dir>.readtest4 fill touch 64
+Echo ===================== 5. the same with the buffer start moved against the memory page (4th number = bytes) and with smaller and bigger buffers
+Run <RoTest$Dir>.readtest4 fill varval 64 1000
+Run <RoTest$Dir>.readtest4 fill varval 64 2048
+Run <RoTest$Dir>.readtest4 fill gstrans 64 1000
+Run <RoTest$Dir>.readtest4 fill read 64 1000
+Run <RoTest$Dir>.readtest4 fill varval 8
+Run <RoTest$Dir>.readtest4 fill varval 256
+Run <RoTest$Dir>.readtest4 fill gstrans 8
+Run <RoTest$Dir>.readtest4 fill read 8
+Unset RT4$Long
+Spool
+Echo Finished. Output is in <RoTest$Dir>.ResultsReadtest4

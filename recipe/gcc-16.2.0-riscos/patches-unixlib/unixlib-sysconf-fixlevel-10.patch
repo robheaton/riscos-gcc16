@@ -1,0 +1,18 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-03 20:52:38.456618969 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-03 20:52:38.467978844 +0100
+@@ -142,11 +142,13 @@
+ 	 mremap request of 2GB or more, or over the OS clamp on the size of a
+ 	 dynamic area, is refused (ENOMEM) before ARMEABISupport makes an area
+ 	 for it that it would never give back, and the one page signal stack is
+-	 freed when the process ends).  Lets a
++	 freed when the process ends; 10: 16.2.0-8 and later, the _exit of a
++	 vfork child that does not exec no longer frees the RMA block of its
++	 parent's program image).  Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 9;
++	return 10;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

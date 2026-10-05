@@ -1,0 +1,15 @@
+--- a/libstdc++-v3/src/c++11/random.cc
++++ b/libstdc++-v3/src/c++11/random.cc
+@@ -85,6 +85,12 @@
+ # define USE_MT19937 1
+ #endif
+ 
++#if defined __riscos__ && defined _GLIBCXX_USE_DEV_RANDOM && !defined USE_LCG
++// RISC OS: /dev/urandom is provided by UnixLib through the CryptRand module, which a system may lack.  Where it cannot be opened the
++// default device falls back to a time-seeded linear congruential engine, as the x86 code does without rdrand, instead of throwing.
++# define USE_LCG 1
++#endif
++
+ #ifdef USE_LCG
+ # include <chrono>
+ #endif

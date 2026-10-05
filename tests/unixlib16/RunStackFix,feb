@@ -1,0 +1,22 @@
+| RunStackFix - the fresh-stack problem, with the two fixes.  Installs nothing.  Output: ResultsStackFix in this directory.
+|   A. readtest2-scp is readtest2 built with the compiler option -fstack-clash-protection: the compiler touches every page of a big local array when the function starts, in
+|      user mode, so RISC OS never takes the page fault itself.  It must say "every byte right" with ANY libunixlib (16.2.0-1, -2 or -3).
+|   B. readtest2 (built without it) is the same program as before: it says "every byte right" only with libunixlib 16.2.0-3 or later (which touches the pages itself).
+| (the first EABI program run changes <Obey$Dir>, so remember our directory first)
+Set RoTest$Dir <Obey$Dir>
+Dir <RoTest$Dir>
+Spool <RoTest$Dir>.ResultsStackFix
+Echo ===================== which libunixlib is loaded (fix level 6 = 16.2.0-3 or later) and whether fread into a fresh stack buffer works
+Run <RoTest$Dir>.ulinfo
+Echo ===================== A. built with -fstack-clash-protection: read() and fread() into fresh stack buffers (every byte must be right)
+Run <RoTest$Dir>.readtest2-scp read 64
+Run <RoTest$Dir>.readtest2-scp read 512
+Run <RoTest$Dir>.readtest2-scp fread 64
+Run <RoTest$Dir>.readtest2-scp fread 512
+Echo ===================== B. built normally (right only with libunixlib 16.2.0-3 or later)
+Run <RoTest$Dir>.readtest2 read 64
+Run <RoTest$Dir>.readtest2 read 512
+Run <RoTest$Dir>.readtest2 fread 64
+Run <RoTest$Dir>.readtest2 fread 512
+Spool
+Echo Finished. Output is in <RoTest$Dir>.ResultsStackFix

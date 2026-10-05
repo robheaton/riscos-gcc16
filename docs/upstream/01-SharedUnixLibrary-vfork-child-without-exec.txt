@@ -1,0 +1,302 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: SharedUnixLibrary 1.16: a vfork child that ends without exec kills
+         its parent, resizes its parent's Wimp slot and - when the parent was
+         started by exec - frees the parent's SOManager client (hard freeze)
+Attach:  patches/sul-all-vfork-child.patch   (or sul-1 / sul-2 / sul-3, below)
+         repro/sul/*.c
+
+Summary
+-------
+sul_fork copies the parent's process structure into the vfork child's, and the
+copy has three fields that must not be inherited.  Nobody has noticed because
+a vfork child that ends with _exit () WITHOUT having exec'd - the usual
+reaction to an exec that failed - could never work on EABI: the first bug
+below kills the parent at once.  With it fixed, the next two show up.
+
+  1. PROC_STACK (the ARMEABISupport handle of the main stack) is copied, and
+     sul_exit frees it: the child frees the stack it shares with its PARENT.
+     The parent dies ("Internal error: abort on data transfer").
+  2. PROC_INITIALAPPSPACE is cleared in the child and nothing records it, so
+     restore_wimpslot asks Wimp_SlotSize for 0 - 0x8000 = 0xFFFF8000 bytes.
+     RISC OS 5.30 answers by growing the slot of the PARENT to its maximum (96
+     MB -> 512 MB measured; the application space limit follows).
+  3. The status word is copied with IS_EXECED.  A program that was itself
+     started by exec (everything under make or a shell) has the flag set for
+     its whole life, so ITS vfork children have it too, and sul_exit takes a
+     child that ends without exec of its own for a new client: it calls
+     SOM_DeregisterClient for the client that the child SHARES with its
+     parent.  SOManager frees the parent's client record and the GOTT array
+     behind the parent's PIC register; the next client that registers (the
+     next exec'd child) is handed the memory; the parent's PIC register is
+     then garbage, and __env_unixlib installs garbage environment handlers
+     between OS_IntOff and OS_IntOn: the machine hangs with interrupts off
+     (pointer, desktop clock and network stack all dead; reset needed).
+
+Each fix is a few lines in module/sul.s.  The patches are attached, they apply
+to trunk r7800 (sul.s is unchanged since r7299), and the result was run on a
+Raspberry Pi CM4 / RISC OS 5.30 (details below): 8 stages of loops that froze
+the machine five times with the module without the third fix run clean with
+it, and the fixed module has been installed as System:Modules.SharedULib on
+that machine since 2026-10-04, with the same regression results as the stock
+module.
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30
+  (Boot$OSVersion 530), 3963 MB RAM, boot drive NVMe.  ARMEABISupport 1.08 (03
+  Jun 2025), SOManager 3.04 (20 Dec 2021), SharedUnixLibrary 1.16 (3 Apr
+  2020).  The module image in memory was compared with a build of trunk's
+  unpatched sul.s: byte for byte the same (3192 bytes). Programs: GCCSDK EABI
+  hard-float, built with GCC 16.2.0 (and 10.2.0).  The libunixlib is the
+  GCCSDK r7800 source built with GCC 16.2.0 plus a few fixes of my own that
+  have nothing to do with fork/exec (the code involved - sys/vfork.c,
+  sys/_vfork.s, sys/exec.c and unix/unix.c - is the r7800 code, except for the
+  small patches of my reports 02 and 03).
+
+Problem 1: the main stack of the parent is freed
+------------------------------------------------
+sul_fork builds the child's process structure with sul_memmove from the
+parent's: everything below PROC_FORK_STORAGE, PROC_STACK (offset 124)
+included. The block "Clear various fields that are only valid for the parent"
+clears PROC_OLDEXIT, PROC_CLI, PROC_PARENTADDR ... but not PROC_STACK.  A
+vfork child runs on the stack of its parent until it execs.  When it ends
+without exec, libunixlib's _exit () calls sul_exit, which does
+ARMEABISupport_StackOp FREE (PROC_STACK) for every ARMEABI process, and
+sul_exit then resumes the parent ("Restore registers and return with a1 =
+child pid") ON the stack that was just freed.
+
+Measured (RISC OS 5.30, stock module, 4 of 4 runs of each):
+    vforkbare: pid = vfork (); if (pid == 0) _exit (0); waitpid (pid, ...);
+    -> "Internal error: abort on data transfer at &5EF081A0"
+       (the first stack write of libunixlib's fork_common after the call of
+        sul_fork; &5EF0819C with an earlier libunixlib build)
+The same with the module image dumped from the running machine, which is
+byte-identical to the unpatched sul.s build.  Typical case: the idiom
+    pid = vfork (); if (pid == 0) { ...; execv (...); _exit (127); }
+whenever execv returns an error that UnixLib detects BEFORE it starts anything
+(a NULL name, E2BIG, ENOMEM, EOPSYS) or anything between vfork and exec fails:
+a make or shell that meets such a failure dies instead of reporting it. (An
+exec of a program that does not exist is not affected: SharedUnixLibrary runs
+the command with OS_CLI and RISC OS reports "File not found".) Related: a
+process that ends before its start-up code recorded the handle has PROC_STACK
+= 0, and sul_exit then calls StackOp FREE with 0, which ARMEABISupport follows
+as a pointer (stack_free_internal does not check it).
+
+Fix (sul-1): sul_fork clears PROC_STACK in the child (a child that execs a
+UnixLib program records the handle of ITS stack in its start-up code), and
+sul_exit calls StackOp FREE only when PROC_STACK is not 0.
+
+Problem 2: the Wimp slot of the parent is resized
+-------------------------------------------------
+With problem 1 fixed, a probe (repro/sul/vforkrma.c) that reads Wimp_SlotSize
+(-1, -1) and OS_ChangeEnvironment 14 / 0 around ONE such child measured, on
+RISC OS 5.30:
+    Wimp slot  100139008 -> 536838144 (0x1FFF8000, 512 MB)
+    application space limit and memory limit  05f88000 -> 20000000
+Cause: sul_fork clears PROC_INITIALAPPSPACE and PROC_INITIALHIMEM in the child
+(copy_up_parent records them for a child that EXECS, and
+SharedUnixLibrary_Initialise for a new process).  A vfork child that ends
+without exec still goes through sul_exit, which ends with BL restore_wimpslot,
+and restore_wimpslot (no check) does Wimp_SlotSize (PROC_INITIALAPPSPACE -
+0x8000, -1) = Wimp_SlotSize (0xFFFF8000, -1).  The Wimp takes that for a huge
+request and grants the maximum.  The slot is the PARENT's: the child never had
+one.  Afterwards every vfork + exec in that parent copies up and down an
+application space of that size.  (The machine code of the unpatched module
+issues exactly that call for INITIALAPPSPACE = 0: run on an ARM interpreter,
+see Verification.)
+
+Fix (sul-2): restore_wimpslot returns at once when PROC_INITIALAPPSPACE is 0
+(nothing was recorded, so there is nothing to restore).
+
+Problem 3: the vfork child of an exec'd program deregisters its parent's
+SOManager client
+-------------------------------------------------------------------------
+Symptom: with problems 1 and 2 fixed, a LOOP of such children froze the
+machine, reproducibly, in one place: a program P that was itself started by
+exec (under a small launcher that does vfork + execv, "seqtest") vforks a
+child that ends with _exit (0) without exec, prints a line, then vforks and
+execs a second child (any dynamically linked UnixLib program).  The second
+child runs, prints its output, goes through its whole sul_exit - and P never
+gets control back.  Pointer, desktop clock and the network stack are all dead
+(a hard freeze: an SVC-mode loop or interrupts off).  Without the first child
+nothing freezes (the control, a child that execs, ran clean); by the code a P
+that was not started by exec is not affected either (I have not run that case).
+
+How it was found: I built a traced SharedUnixLibrary (a line appended to a log
+file with raw SWIs - OS_Find 0xC0, OS_Args 2 and 1, OS_GBPB 2, OS_Find 0 -
+from a private stack, at every step of sul_fork / sul_exec / sul_exit, so that
+the last line survives a freeze) and a traced libunixlib (the same at the
+steps of the parent's resume), and added to every line four words of the
+program's own application space: p = [0x8038] (SOManager's GOTT array pointer
+of this client, the one libunixlib's PIC_LOAD uses), g = [p], c = [0x8040]
+(SOManager's client record) and h = a checksum of 0x8000..0x80FF.  The last
+lines of the log of the frozen run (columns shortened; "UL" lines are
+libunixlib's, the others the module's):
+    X1 sul_exit enter       the child that ends WITHOUT exec
+                            p=5ED67188 g=00009878 c=5ED67DB0
+    X3 before stack free    p=5ED67188 g=00009878 c=00000000      <- c freed
+         ... the parent resumes and goes on (c stays 0); it vforks the second
+         child, which execs: the module's checksums of the parent's image
+         before and after copy_up_parent (E2s, E2c): 5DDFF996, 5DDFF996; the
+         exec'd program starts and registers ITS OWN client: p=5ED67158
+         g=0000A0D0
+    X3 before stack free    p=5ED67158 g=0000A0D0 c=00000000      its exit
+    C1s checksum of the saved image before copy_down_parent:    5DDFF996
+    C2 bottom section moved p=5ED67188 g=00000018 c=00000000      <- g trashed
+         (the parent's image is back; checksum after copy_down, X6s: 5DDFF996)
+    UL1 / UL2 fork_common: sul_fork returned / VFP context reactivated: fine
+    the next trace line, written at the start of __fork_post, has a garbage
+         text address: it prints the string of the low memory page,
+         "!!!!NULL.POINTER.DEREFERENCE!!!!"      then nothing, ever
+Reading: c = [0x8040] goes from 5ED67DB0 to 0 at the sul_exit of the child
+that ended without exec: SOM_DeregisterClient ran for the client it shares
+with the parent.  The parent's saved image (the four checksums above, all
+5DDFF996) is intact: only SOManager's tables are not.  After the exec'd
+child's exit the parent's [[0x8038]] is 0x18 (heap free-list data) where it
+was 0x9878 (the PIC base of the program): the block had been freed by the
+first child and re-used by SOManager for the second child's client.  In the
+control (the child execs) c and g stay as they were until the parent's own
+exit.
+The code: sul_exit, "if (sulproc->status.execed || !sulproc->status.forked)"
+(the comment: a child of a fork () that is not exec'd is the same client as
+its parent and must not be deregistered).  libunixlib's execve sets
+sulproc->status.execed = 1 in the process structure of the process that execs
+(sys/exec.c, "Record the fact that the new process was the result of exec ()")
+and the program that is started KEEPS that structure; __fork_post only ADDS
+status.forked = 1 in the child (sys/vfork.c).  sul_fork copies the status
+word, IS_EXECED included, so a vfork child of an exec'd program has execed =
+1.
+
+Fix (sul-3): sul_fork clears IS_EXECED in the child's status word (LDR a1,
+[v2, #PROC_STATUS]; BIC a1, a1, #SULPROC_STATUS_FLAG_IS_EXECED; STR a1, [v2,
+#PROC_STATUS]).  A child that execs sets the flag itself, in execve, before it
+calls sul_exec.  By the code, a program that was not started by exec is not
+affected (the child then has execed = 0, forked = 1).
+
+The patches (attached; code and comments only: no ChangeLog hunk)
+------------------------------------------------------------------
+  patches/sul-all-vfork-child.patch    the three changes in one patch
+  patches/sul-1-vfork-child-main-stack.patch   problem 1 (and StackOp FREE 0)
+  patches/sul-2-vfork-child-wimp-slot.patch    problem 2
+  patches/sul-3-vfork-child-execed-flag.patch  problem 3
+Each applies to trunk r7800 (module/sul.s) on its own; 1 and 3 insert after
+the same line, so take sul-all if you take more than one.  The module becomes
+28 bytes bigger (3192 -> 3220); SWI interface, process structure and version
+number are unchanged (you may want to bump the version: the behaviour
+changes). The patched source assembles with the GCCSDK 10.2.0 tool chain (the
+commands of the build tree: xgcc -xassembler-with-cpp, strip -O binary); the
+unpatched source rebuilds byte for byte to the module of that tree.
+Suggested ChangeLog entry (the date and name are yours):
+	* module/sul.s (sul_fork): Clear PROC_STACK in the child.  It is
+	copied from the parent, but a vfork child runs on the stack of its
+	parent until it execs, so it is not the child's stack.  Clear
+	SULPROC_STATUS_FLAG_IS_EXECED in the child.  The status word is
+	copied from the parent, and a program that was itself started by exec
+	has the flag set, so a vfork child of such a program that ended
+	without exec of its own made sul_exit call SOM_DeregisterClient for
+	the client that it shares with its parent.
+	(sul_exit): Only call ARMEABISupport_StackOp FREE for the main stack
+	when PROC_STACK is not 0.
+	(restore_wimpslot): Do nothing when PROC_INITIALAPPSPACE is 0:
+	sul_fork clears the INITIAL* fields and only copy_up_parent records
+	them, so for a vfork child that ended without exec the code asked
+	Wimp_SlotSize for 0xFFFF8000 bytes, which RISC OS 5.30 answers by
+	growing the parent's slot.
+
+Verification
+------------
+Offline (build machine).  The module's own machine code was run on a small ARM
+(A32) interpreter (a Python script, available on request), unpatched against
+patched, for every combination of the process flags FORKED / EXECED / DYNAMIC
+/ ARMEABI:
+  * sul_exit: 32 scenarios.  Patched: StackOp FREE exactly when ARMEABI is set
+    and PROC_STACK is not 0, with the process's own handle, never FREE of 0.
+    Unpatched: FREE whenever ARMEABI is set, also of 0 and of the handle a
+    forked child copied from its parent.
+  * restore_wimpslot: 7 scenarios.  INITIALAPPSPACE = 0: patched makes no SWI;
+    unpatched calls Wimp_SlotSize (0xFFFF8000, -1).  Otherwise exactly the
+    three SWIs of the original, with the same arguments.
+  * sul_fork: 48 parent statuses (every flag combination, with and without a
+    return code, the zombie bit and a signal number): the child's status word
+    is the parent's with IS_EXECED cleared and nothing else; every other word
+    of the child's process structure, every other memory write, every SWI and
+    every register at the end are identical to the unpatched module.
+On the machine (RISC OS 5.30, Cortex-A72), in a fresh boot, as the first thing
+after it, with libunixlib 16.2.0-8 (report 02):
+  * stock module: the probe of problem 1 crashes the parent (4 of 4).
+  * module with sul-1 (RMLoaded for the test, nothing replaced): vforkbare
+    "parent resumed", PASS; vforkfail early and missing PASS; exittest
+    (return, exit, _Exit, _exit, abort, a fatal fault, a caught fault, exit in
+    a signal handler, exit by another thread, vfork + exec, exec in place):
+    same results and same stack-range accounting as with the stock module.
+  * module with sul-1 + sul-2: ONE child that ends without exec: the Wimp
+    slot, application space limit and memory limit unchanged (120061952 /
+    07288000 before and after; with sul-1 alone 96 MB -> 512 MB), RMA free
+    space back to where it was.
+  * module with sul-1 + sul-2: the loops FROZE the machine (5 times: stage "a
+    child that ends without exec, a printf, then a vfork + exec of a
+    dynamically linked program", under a launcher); in the three runs with the
+    traced module the last line of the log was as above.
+  * module with all three (sul-all): the same 8 stages - 1 and 2 children that
+    end without exec, 6 children, 6 children whose exec fails at once, 6
+    children that exec, six processes with one such child each, every way a
+    process can end - completed with NO freeze, with identical output in two
+    runs (the module RMLoaded, and then installed as System:Modules.SharedULib
+    and loaded on demand).  In the log of each run p, g, c and h are the same
+    on all 255 lines of the six test programs, 46 of them written by vfork
+    children. "UnixLib stacks N KB" stays at the same value after every round.
+  * regression with the stock module and with the fixed one: the same results,
+    the same check counts: C test programs (34541 checks each,
+    -O0/-O2/-O3/-fPIC, dynamic libgcc), C++ (139 x 4, with and without
+    threads), thread tests (24 + 19), Fortran programs (122 / 54 / 26 / 30 / 9
+    checks), shared libstdc++ / libgfortran, and a native gcc, g++ and
+    gfortran (cc1, as, collect2, ld started by vfork + exec) driven by GNU
+    make.
+
+Reproducers (repro/sul/; build: arm-riscos-gnueabihf-gcc -O2 X.c -o X,e1f)
+-----------------------------------------------------------------------
+  vforkbare.c   vfork; the child does _exit (0); the parent prints "parent
+                resumed" - it does not get there with the unpatched module.
+  vforkfail.c   "early": the exec in the child fails at once (execv (NULL, ...)
+                returns -1 / EINVAL), then _exit (127); "missing": execv of a
+                program that does not exist (works before and after).
+  seqtest.c     the launcher: runs  seqtest N PROG ARGS  = PROG started N times
+                one after the other by vfork + exec, so that PROG is a program
+                that was started by exec (problem 3 needs that).
+  vforkloop.c   ONE process, N vfork children (bare: _exit (0) without exec;
+                fail: the exec fails at once; exec: the child execs daprobe
+                -m), a vfork + exec of daprobe -m after each.  Problem 3:
+                    seqtest 1 vforkloop 2 bare       (needs sul-1: see above)
+                !!! NOT to be run on a machine you care about with a module
+                that has problem 3: it freezes the machine.  It refuses on a
+                libunixlib without the private sysconf (0x4700) query unless
+                --force is its third argument.
+  vforkrma.c    the Wimp slot / memory limit / RMA probe (problem 2, report 02)
+  daprobe.c, dautil.h   the exec target (prints the mmap pool and the shared
+                stack range: "UnixLib stacks N KB in use").
+
+Side notes (not part of the patches)
+------------------------------------
+  * UnixLib's _exit () is not the POSIX function: it takes an already encoded
+    wait status (unix/unix.c: "'return_code' is a 16-bit encoded quantity"),
+    so _exit (127) - the usual child after a failed exec - is seen by the
+    parent as exit code 0 (and _exit (4) as "killed by signal 4"); _Exit ()
+    encodes the status.  A make that relies on exit code 127 to tell a failed
+    exec from a command that ran would see success.
+  * An exec in place (no fork) leaves the old image's main stack allocated
+    until the root process ends (the new image's start-up code overwrites
+    PROC_STACK with its own handle).  Measured: 8 KB per exec.
+  * Problems 1 and 2 are not practical to work around in libunixlib.  Problem
+    3 could be (clear status.execed next to status.forked = 1 in the child
+    branch of __fork_post), but the module is where the flag is wrongly
+    inherited.
+
+Related reports: 02 (libunixlib _exit frees the RMA block of the shared
+program image of a vfork child that ends without exec), 03 (the signal stack).
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

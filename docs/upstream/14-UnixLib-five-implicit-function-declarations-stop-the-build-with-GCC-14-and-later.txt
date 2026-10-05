@@ -1,0 +1,83 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: five source files call functions that no header they include
+         declares; GCC 14 and later reject that, so libunixlib cannot be built
+         with them
+Attach:  patches/unixlib-gcc14-implicit-declarations.patch
+
+Summary
+-------
+Since GCC 14 a call to a function without a declaration is an error, not a
+warning. Five files of libunixlib in trunk r7800 do that. With the GCCSDK
+10.2.0 compiler they give 'implicit declaration' warnings; with GCC 16.2.0
+(arm-riscos-gnueabihf) they stop the build. The patch adds the missing
+declarations (3 includes and 2 one-line prototypes). It changes no code.
+
+The five
+--------
+unix/stat.c:31      __get_riscosify_control      -> #include <unixlib/local.h>
+unix/lstat.c:32     __get_riscosify_control      -> #include <unixlib/local.h>
+unix/ul_close.c:80  __errno_from_armeabisupport  -> #include <internal/local.h>
+                                                   (EABI build only: the
+                                                   call is under __ARM_EABI__)
+string/strndup.c:43 __strnlen                    -> extern size_t __strnlen
+                                                   (const char *, size_t);
+stdlib/msort.c:162  __mempcpy                    -> extern void *__mempcpy
+                                                   (void *, const void *,
+                                                    size_t);
+
+__get_riscosify_control is declared in include/unixlib/local.h;
+__errno_from_armeabisupport in incl-local/internal/local.h. The two glibc-style
+aliases __strnlen and __mempcpy are defined in string/strnlen.c and
+string/mempcpy.c but are not declared in any header; strndup.c and msort.c come
+from glibc, which gets them from its internal headers. I declared them in the
+two files rather than add them to a header, to keep the patch from touching
+anything else.
+
+The messages with GCC 16.2.0, from the flags of the UnixLib build:
+
+stat.c:31:41: error: implicit declaration of function
+  '__get_riscosify_control' [-Wimplicit-function-declaration]
+ul_close.c:80:38: error: implicit declaration of function
+  '__errno_from_armeabisupport' [-Wimplicit-function-declaration]
+strndup.c:43:16: error: implicit declaration of function '__strnlen';
+  did you mean 'strnlen'?
+msort.c:162:30: error: implicit declaration of function '__mempcpy';
+  did you mean 'mempcpy'?
+
+(lstat.c has the same message as stat.c.) These are the only five that stopped
+my build of libunixlib with GCC 16.2.0; they are not the only places in the
+GCCSDK tree that GCC 14 and later complain about, but I have not looked at the
+rest of the tree for this report.
+
+Are the old implicit declarations harmful?
+------------------------------------------
+On 32-bit ARM an implicit 'int f ()' is compatible with what these functions
+take and return (pointers and size_t are 32 bits), so the code that GCC 10.2.0
+produced was right. The patch only makes the declarations explicit; I compiled
+the five files before and after with GCC 10.2.0 (-O2, the flags of the UnixLib
+build) and compared the disassembly with relocations: it is identical for all
+five (verify/run-verify.sh does this).
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* unix/stat.c, unix/lstat.c: Include <unixlib/local.h> for
+	__get_riscosify_control.
+	* unix/ul_close.c: Include <internal/local.h> for
+	__errno_from_armeabisupport.
+	* string/strndup.c: Declare __strnlen.
+	* stdlib/msort.c: Declare __mempcpy.
+
+Verification
+------------
+verify/run-verify.sh compiles the five files of trunk with GCC 16.2.0 and
+checks that all five fail with 'error: implicit declaration'; and compiles the
+patched files with GCC 10.2.0 and with GCC 16.2.0 with the flags of the UnixLib
+build: all ten compile. The patched files are in libunixlib 16.2.0-9 of my
+port, which passes my regression suites.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

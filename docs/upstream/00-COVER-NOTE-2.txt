@@ -1,0 +1,56 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: Ten smaller UnixLib patches from the GCC 16 forward-port of GCCSDK
+         (reports follow, one per mail)
+Attach:  none
+
+Hello,
+
+This is the second batch from the same work as my earlier mails (the eight
+problems in SharedUnixLibrary, UnixLib and ARMEABISupport). The forward port of
+the GCCSDK EABI tool chain to GCC 16.2.0, tested on a Raspberry Pi Compute
+Module 4 running RISC OS 5.30, needed ten more changes to UnixLib; each is
+small and separate, each is against the trunk r7800 sources, and each can be
+taken or left on its own. They are not urgent. I will send them as separate
+mails in three groups:
+
+  Bug fixes
+   9  fread () / fwrite () do not advance the data pointer after a short
+      read () / write ().  Latent: found by reading the code, shown on a host
+      model of the real functions; not seen on the machine.
+  10  pthread_once () holds one global mutex across the init routine:
+      std::async deadlocks, and an exception from the routine terminates the
+      program.  Seen on the machine; fixed.
+  11  pthread_cond_timedwait () computes its deadline from time () (whole
+      seconds) and, for CLOCK_MONOTONIC, from the wrong base: timed waits
+      overrun by up to a second.  Measured on the machine; fixed.
+  12  sleep () and friends with several threads outside the Wimp: one shared
+      alarm and flag.  From reading the code; the machine tests cannot show it.
+  13  sysconf (_SC_NPROCESSORS_ONLN) returns 2048: the enum numbering
+      restarts.  Measured; fixed.
+  14  Five implicit function declarations that stop the build with GCC 14 and
+      later.  No change in the generated code.
+
+  Workarounds for the RISC OS problem of report 07
+  15  Touch stack buffers before read / fread / recv / recvfrom.
+  16  Split the 64-byte VSTM of the NEON memcpy / memmove.
+      Both are unnecessary if report 07 is fixed in the OS or in
+      ARMEABISupport.
+
+  Features
+  17  A main stack bigger than 1 MB for EABI programs (__stack_size), with a
+      fallback when the shared stack range has no room.
+  18  A heap dynamic area that does not fit into the address space is retried
+      at half the maximum size instead of ending the program.
+
+Each mail says what was measured on the machine and what was only read from the
+code or run on a host model, and where it did not run at all. I can run a test
+build on the machine if that helps.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Thanks,
+
+Rob Heaton

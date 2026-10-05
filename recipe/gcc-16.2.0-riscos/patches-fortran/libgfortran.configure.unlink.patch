@@ -1,0 +1,10 @@
+--- a/libgfortran/configure
++++ b/libgfortran/configure
+@@ -32238,6 +32238,7 @@
+ 
+ case "${target}" in
+   *mingw*) libgfor_cv_have_unlink_open_file=no ;;
++  *-riscos*) libgfor_cv_have_unlink_open_file=no ;;      # UnixLib: a file that is still open cannot be deleted
+   *) libgfor_cv_have_unlink_open_file=yes;;
+ esac
+ else

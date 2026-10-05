@@ -1,0 +1,17 @@
+--- a/gcc/config/arm/arm.cc
++++ b/gcc/config/arm/arm.cc
+@@ -3706,6 +3706,14 @@
+      the user said otherwise (-fno-stack-clash-protection).  */
+   if (!OPTION_SET_P (flag_stack_clash_protection))
+     flag_stack_clash_protection = 1;
++
++  /* -mthrowback: also send the errors and warnings to the text editor
++     (riscos-throwback.cc).  */
++  if (TARGET_THROWBACK)
++    {
++      extern void riscos_throwback_init (void);
++      riscos_throwback_init ();
++    }
+ #endif
+ 
+   /* If stack checking is disabled, we can use r10 as the PIC register,

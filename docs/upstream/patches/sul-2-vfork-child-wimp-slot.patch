@@ -1,0 +1,15 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/module/sul.s
++++ b/gcc4/recipe/files/gcc/libunixlib/module/sul.s
+@@ -1081,6 +1081,12 @@
+ @ sp may not be valid
+ restore_wimpslot:
+ 	LDR	a1, [v2, #PROC_INITIALAPPSPACE]
++	@ Nothing was recorded, so there is nothing to restore: this is the exit of a vfork child that did not exec (sul_fork clears the INITIAL* fields of a child, and only
++	@ copy_up_parent, for a child that execs, and SharedUnixLibrary_Initialise record them).  With the 0 the code below asks Wimp_SlotSize for 0 - 0x8000 = 0xFFFF8000
++	@ bytes, which the Wimp takes for a huge request and answers by growing the slot of the PARENT, the task that child shares, to its maximum (96MB to 512MB, measured on a
++	@ Cortex-A72 / RISC OS 5.30; the application space and memory limits follow).
++	TEQ	a1, #0
++	MOVEQ	pc, lr
+ 	SUB	a1, a1, #0x8000
+ 	MOV	a2, #-1
+ 	SWI	XWimp_SlotSize

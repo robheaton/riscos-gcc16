@@ -1,0 +1,10 @@
+#include <stdio.h>
+
+int twice (int);
+
+int main (void)
+{
+  int r = twice (21);
+  printf ("lto: %d\n", r);
+  return r == 42 ? 0 : 1;
+}

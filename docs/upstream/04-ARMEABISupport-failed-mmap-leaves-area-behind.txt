@@ -1,0 +1,247 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: ARMEABISupport: a failed mmap leaves its "mmap#N" dynamic area - and
+         the pages it claimed - behind until the next reboot
+Attach:  patches/armeabisupport-mmap-failure-cleanup.patch   (against 1.05)
+         patches/unixlib-mmap-refuse-impossible.patch  (UnixLib side, optional)
+         repro/armeabisupport/mmap_leak_repro.c
+         repro/armeabisupport-model/   (host model of memory.c and mmap.c)
+
+Summary
+-------
+ARMEABISupport_MMapOp MAP creates a new "mmap#N" dynamic area (a page-mapped
+area) when no existing one can serve a request.  If the request then FAILS -
+because it is bigger than the area, or its pages cannot be mapped (the OS
+clamps the maximum size of dynamic areas to 128 MB on the machine used here,
+OS_DynamicArea 8) - the call returns ENOMEM but the area stays: nothing ever
+removes it, not the end of the program and not the end of its parent.  It
+holds address space (100-150 MB of the ~2 GB the machine has for dynamic
+areas) and, when the pages had been claimed before the failure, the physical
+memory as well: a 129 MB request left an area with all 129 MB "in use".  It is
+gone only at a reboot.
+
+A C++ regression test that checks that new char[SIZE_MAX / 2] throws bad_alloc
+made UnixLib's malloc issue two such requests per run (the direct mmap of 2 GB
+- 1, then the "mmap as MORECORE" fallback after brk fails): eight runs of the
+test program left 16 areas = 1.6 GB of address space; the free address space
+for dynamic areas was ~480 MB instead of ~2.08 GB afterwards and later
+programs fell back to smaller heaps ("Unable to allocate logical address
+space" when even the minimum did not fit).
+
+A patch is attached: it is confirmed on the real machine (unpatched 1.05 leaks
+as predicted, patched 1.05 leaves nothing behind, everything else identical)
+and by a host model of the module's own code (the unmodified code fails 30
+checks, the patched code none).  An optional UnixLib-side mitigation, which
+stops the worst requests before ARMEABISupport is asked, is attached too.
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30
+  (Boot$OSVersion 530), 3963 MB RAM.  The OS clamp on the maximum size of
+  dynamic areas is 128 MB (OS_DynamicArea 8 returns 128 MB for both classes);
+  the "UnixLib stacks" area asks for 256 MB but has a 128 MB window.
+  ARMEABISupport: the module loaded on the machine is 1.08 (help string
+  "ARMEABISupport 1.08 (03 Jun 2025)", read from the loaded module).  It sizes
+  the mmap area by the request (a 150 MB request made an area of 150 MB),
+  unlike the 1.05 sources, which use a fixed MMAP_MAX_DA_SIZE of 100 MB. The
+  sources I have are 1.05 (svn trunk r7800: gcc4/riscos/armeabisupport, last
+  changed by r7734, 2023-01-07, "Bump version to v1.05"); 1.06 - 1.08 are not
+  in trunk, so I do NOT have them.  I read the 1.05 code for the causes and
+  wrote the patch against it; it has to be rebased on the current sources
+  before it can be applied there.  The leak itself is the same in the versions
+  I could look at: measured on the machine with 1.08 (the table below) and on
+  test builds of 1.05; the 1.05 code has the sequence that explains it (link
+  the block, claim and map the pages, return the error with the block still
+  linked). UnixLib 5.0 from the GCCSDK sources (trunk r7800) built with GCC
+  16.2.0.
+
+Measurements (1.08 on the machine)
+----------------------------------
+Reproducer: repro/armeabisupport/mmap_leak_repro.c ("a [MB]"): it prints the
+dynamic areas named mmap#N before and after one anonymous mmap.  The pool of
+areas was empty before each request:
+
+  request                      result
+  mmap 1 MB, no munmap         1 area during the run, 0 after the program
+                               ended (normal)
+  mmap 1 MB, then munmap       0 areas after the munmap (normal)
+  mmap 128 MB (the clamp),     works; 0 areas afterwards (normal)
+    touched, then munmap
+  mmap 129 MB                  ENOMEM, but 1 area (max 129 MB, 132096 KB IN
+                               USE) stays: after the program has ended and
+                               after everything that runs later, until a
+                               reboot
+  mmap 150 MB                  ENOMEM; 1 area (max 150 MB) stays after the
+                               program has ended
+  malloc (2 GB - 1)            2 areas of 100 MB (the maximum), 0 KB in use,
+    (= new char[SIZE_MAX / 2]  per call (UnixLib's malloc makes two mmap
+    on this 32-bit system)     calls)
+
+A day of regression runs (the pool read after every program): the pool grew by
+exactly 2 areas at each of the eight runs of the C++ test and at no other
+step: 16 areas, all with 0 KB in use.  Physical memory was not affected in
+that case (the claim of a 2 GB request fails at once); with a request just
+above the window it is (129 MB held).
+
+Cause (1.05 sources; memory.c / mmap.c)
+---------------------------------------
+  a. allocator_mmap links the new mmap_block into the allocator's list, raises
+     da.size, and only then claims and maps the pages.  When
+     allocator_claim_pages or allocator_map_pages fails it returns the error
+     WITHOUT unlinking the block and without giving back the pages that were
+     claimed or mapped.  The caller (armeabi_mmap) sets block->owner only on
+     success, so the block's owner is whatever rma_claim left in the memory.
+     mmap_cleanup_app removes a block only when block->owner == app, and
+     armeabi_munmap / mmap_cleanup_app destroy an allocator only when its
+     block list is empty: the ownerless block keeps the allocator - and its
+     dynamic area - for ever.
+  b. In allocator_mmap only the "end of the list" case checks the size against
+     da.max_size; the case "no blocks yet" (always the case for a new
+     allocator) does not, so a request bigger than the area is linked in and
+     then fails at the claim/map step (and leaves the leak described in a.).
+  c. armeabi_mmap leaves the allocator it has just made in the pool when the
+     request then cannot be served.
+  d. (side effect) dump_mmap_list prints current->owner->ID for every block;
+     with ownerless blocks that is a wild pointer in the *ARMEABISupport_Info
+     / MMapOp 16 dump.
+  e. (cosmetic) allocator_mmap frees new_block with free () where it was
+     claimed with rma_claim (harmless only if malloc is the RMA in -mmodule
+     builds).
+
+The patch (patches/armeabisupport-mmap-failure-cleanup.patch: memory.c, mmap.c)
+-------------------------------------------------------------------------------
+  * allocator_mmap: refuse a block bigger than da.max_size before anything is
+    linked; initialise the new block; on a claim or map failure call a new
+    allocator_mmap_rollback (for every page of the range that has a physical
+    page: unmap it if it is mapped, then release it - errors ignored), unlink
+    and free the block and restore da.size; rma_free instead of free.
+  * armeabi_mmap: refuse num_pages > bytes_to_pages (MMAP_MAX_DA_SIZE) before
+    an allocator is made; destroy an allocator that was made for the request
+    when the request then fails.
+  * allocator_mremap: when extending a block in place fails (claim or map),
+    give back the pages that were claimed or mapped for the extension (a retry
+    of the same mremap could not claim them again).
+  (For a module that sizes the area by the request, like the installed 1.08,
+  the first check should be against the largest area the OS will give: the
+  clamp.)
+Applies to trunk r7800 (1.05).  Suggested ChangeLog entry (date and name
+yours):
+	* memory.c (allocator_mmap): Refuse a block that is bigger than the
+	dynamic area before it is linked in: only the end-of-list case
+	checked the size, so the first block of an empty allocator (always
+	the case for a new one) was linked in and then failed to claim.
+	Initialise the new block (rma_claim does not clear it).  When the
+	pages cannot be claimed or mapped, give back what was claimed or
+	mapped, unlink and free the block and restore the allocator size,
+	instead of leaving a block that has no owner: nothing ever removed
+	it, so the allocator (a dynamic area of up to 100 MB of address
+	space, and the pages that were claimed) stayed until the next reboot.
+	(allocator_mmap_rollback): New.  Unmaps the pages of the range that
+	are mapped and tries to release every page; errors are ignored.
+	(allocator_mremap): Use it to give back the pages that were claimed
+	or mapped when extending a block in place fails.  Use rma_free, not
+	free, for a block that came from rma_claim.
+	* mmap.c (armeabi_mmap): Refuse a request that rounds up to 0 pages
+	(a size close to 4 GB) or is bigger than MMAP_MAX_DA_SIZE before an
+	allocator is made for it.  Destroy an allocator that was made for a
+	request and then could not serve it.
+
+Host model (repro/armeabisupport-model/; no RISC OS needed)
+-----------------------------------------------------------
+The module's own memory.c and mmap.c are compiled unchanged on a Linux host
+and run against a model of the little of RISC OS they use - dynamic areas with
+page-mapped pools (OS_DynamicArea 0/1/21/22/25: a claim above the pool size
+fails, a page can only be mapped inside the window = the maximum size cut down
+to the OS clamp, a failing list is applied up to the failing entry), the RMA,
+a few helpers - with real protected address space behind the areas.  Ten
+scenarios: normal use, over-size requests (101 MB, 129 MB, 150 MB, 2 GB - 1, 2
+GB + 4 KB, 3 GB, 4 GB - 1: two calls each, as malloc makes), a window smaller
+than the area, physical memory running out half way through a claim (partial
+and atomic), RMA exhausted, a failure in an existing area, a failure in a gap
+between two live blocks, mremap that must move and cannot, mremap in place
+with the claim failing, and a 300-step random mmap/munmap sequence.
+  Unmodified r7800 sources: 30 failed checks (a left-over area, claimed pages,
+  a block that keeps its gap; also at ordinary sizes whenever a claim fails
+  because memory is short).  Patched: 0 failed checks; the random sequence
+  gives the same addresses in both.  The model reproduces what was measured on
+  the machine (2 areas with 0 pages for a 2 GB request, 2 calls per malloc,
+  areas full of claimed pages when the window is smaller than the request).
+  Run:  cd armeabisupport-model; ./build-and-run.sh SRCDIR original|patched
+  (SRCDIR: a directory with the module's .c / .h files.  The recorded outputs
+  are results-original-1.05.txt and results-patched-1.05.txt.)
+
+The patch on the real machine (RISC OS 5.30, Cortex-A72, clamp 128 MB)
+----------------------------------------------------------------------
+Two builds of the 1.05 sources (GCCSDK 4.7.4 + CMunge, the Makefile.am flags)
+were loaded with *RMLoad right after a boot, before any EABI program had run
+(the module is loaded on demand by SharedLibs:SOM1stRun, so there was nothing
+to replace): "1.05-orig" = the unmodified sources, "1.05-mmapfix1" = with the
+patch.  The same script ran against both (mmaptest's raw modes call
+ARMEABISupport_MMapOp directly, so UnixLib cannot hide anything; daprobe -m
+shows the pool of "mmap#N" areas after every step).  The pool after each
+request:
+
+  request (each asked twice)     unpatched 1.05           patched 1.05
+  raw 100 MB (one whole area)    given, unmapped cleanly, the same
+                                 pool empty
+  raw 101 MB                     ENOMEM + an area with    ENOMEM, pool empty
+                                 100 MB claimed (102400
+                                 KB in use)
+  raw 129 MB, raw 150 MB         ENOMEM + an area with    ENOMEM, pool empty
+                                 100 MB claimed per call
+  raw 2 GB - 1 (what malloc      ENOMEM + an EMPTY area   ENOMEM, pool empty
+  asks for)                      per call
+  raw 4 GB - 1 (0 pages)         SUCCESS: an address for  ENOMEM
+                                 a block of 0 pages
+  C++ regression program         passes, leaves 2 more    passes, leaves
+  (139 ok)                       empty areas              nothing
+  after everything               10 areas = 1000 MB of    0 areas
+                                 address space, 600 MB
+                                 of RAM pinned
+
+Unchanged by the patch (identical output in both runs): 1 MB mmap with and
+without munmap, 2 x 60 MB, a root with three children holding 1, 2, 3 MB until
+the root ends (report 05), the 64 MB stack program, gcc and g++ -O2 compiles
+of GCC 16 (return code 0).
+
+The UnixLib-side mitigation (patches/unixlib-mmap-refuse-impossible.patch,
+sys/mman-armeabi.c; optional)
+---------------------------------------------------------------------------
+A request that can never be served is refused in UnixLib's mmap () / mremap ()
+before ARMEABISupport is asked: half of the 32-bit address space (2 GB) or
+more can never be served, and nor can more than the OS clamp on the size of
+one dynamic area (OS_DynamicArea 8 with R1 = R2 = 0 only reads the clamps; 0
+or -1 means no clamp; an OS without that reason has none).  Such a request
+failed anyway, with the same errno ENOMEM; now it leaves nothing behind.
+Requests below 16 MB do not even make the SWI.  Verified on the machine:
+mmaptest "guard" mode, 23 checks: mmap of 2 GB, 2 GB + 4 KB, 3 GB, 4 GB - 4
+KB, SIZE_MAX, the clamp + 4 KB, + 1 MB and 1 GB, malloc (2 GB - 1) and malloc
+(1 GB) all fail with ENOMEM and the pool of mmap areas is exactly as it was
+after each one (without it: 2 empty areas for malloc (2 GB - 1), 131076 KB and
+132096 KB pinned for the two over-clamp requests); mremap of a 1 MB mapping to
+3 GB and to the clamp + 1 MB is refused with the mapping intact; mmap of 1 MB,
+60 MB and exactly the clamp are still served and the pool is empty after.
+Suggested ChangeLog entry:
+	* sys/mman-armeabi.c (mmap_too_big): New.  (__mmap, __mremap): Refuse
+	a request of 2 GB or more, or bigger than the OS clamp on the size of
+	one dynamic area, with ENOMEM before ARMEABISupport makes a dynamic
+	area for it.
+
+Observation that is NOT part of the patch
+-----------------------------------------
+With both 1.05 builds a recursion that touches 64 MB of fresh stack (16128
+page faults, one claim + one map per fault in stack_abort_handler) took 7.2 -
+7.5 s, whereas ten earlier runs of the same program on the installed module
+(1.08) took 0.04 - 0.10 s.  The patched build leaves nothing claimed and is as
+slow as the unpatched one, so it is not an effect of the leak.  Cause not
+known: most likely a change between 1.05 and 1.08, or my build of the sources;
+I do not have 1.06 - 1.08 and the ChangeLog of 1.05 does not mention the stack
+code.
+
+Related: report 05 (mmap memory of children), 06 (unloading under SOManager).
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

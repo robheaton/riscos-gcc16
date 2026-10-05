@@ -1,0 +1,259 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib / SharedUnixLibrary: the heap of a vfork + exec child (heap in
+         the Wimp slot) can grow over the copy of its parent that SUL keeps at
+         the top of the slot - the parent resumes destroyed
+Attach:  patches/unixlib-vfork-exec-heap-limit.patch
+         repro/heap/vforkheap.c  repro/heap/seqtest.c   (the launcher)
+         repro/heap-model/   (host model of the real brk.c and stackalloc.c)
+
+Summary
+-------
+A program started with vfork () + exec () runs after SharedUnixLibrary has
+copied its parent (its image and heap, and what lies above its stack) up to
+the top of the Wimp slot: sul_exec -> copy_up_parent.  When the child exits,
+SUL copies the parent back.  Nothing in UnixLib keeps the child's heap away
+from that copy: if the child keeps its malloc heap in the Wimp slot (the
+default: no <program>$Heap variable, no __dynamic_da_name) and needs more heap
+than lies between the end of its image and the saved copy, the heap simply
+grows over the copy.  Nothing reports it at the time: the child finishes,
+writes all its output and exits normally.  SUL then copies the overwritten
+copy back, and the parent resumes with a destroyed image and dies at its next
+system call with a bad pointer ("Internal error: abort on data transfer at
+&XXXXXXXX").
+
+It shows up as soon as a child needs more heap than the room it has, i.e. with
+big programs: first seen with the native C++ compiler, where the g++ driver
+(2.2 MB image) started cc1plus (30 MB image, about 60 MB of heap for a 20-line
+program at -O2) in a 64 MB slot.  The failure depends on the size of the job,
+not on the program: smaller jobs worked.  A 100-line program reproduces it
+(below).  Putting the heap of the child in a dynamic area removes it.
+
+The attached patch (UnixLib only, 76 lines) makes UnixLib stop at the memory
+limit that the program was started with: the heap then falls back to mmap and
+the parent is not touched.  It is checked on a host model of the real brk.c
+and stackalloc.c, on an ARM interpreter, and on the machine.
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30,
+  TaskWindow; ARMEABISupport 1.08, SOManager 3.04, SharedUnixLibrary 1.16 (3
+  Apr 2020) - also with the fixes of report 01 installed: the behaviour is the
+  same; UnixLib 5.0 (GCCSDK EABI hard-float, trunk r7800 built with GCC
+  16.2.0; the code involved is unchanged from the 10.2.0 sources).
+
+Measured (RISC OS 5.30, Cortex-A72, TaskWindow, *WimpSlot -min 64M -max 64M)
+----------------------------------------------------------------------------
+First observation, with the native compiler: g++ -O2 of a 20-line C++ program.
+cc1plus (31.6 MB image, a heap of about 60 MB) ran to the end and wrote a
+complete assembly file; then the g++ driver died when it resumed: "Internal
+error: abort on data transfer at &FC289110" (the same address in two runs).
+g++ -E (a heap of about 10 MB) was fine.  The C compiler cc1 (28 MB image)
+compiled a test program in a 100 MB slot, and the same job did not fit in
+less.  With the heap of every program in a dynamic area (<program>$Heap and
+<program>$HeapMax set for gcc, g++, cc1, cc1plus, as, ld and collect2) there
+was no failure, the compiler's output was byte-identical to the cross
+compiler's, and the native C++ regression test (139 checks) built and passed.
+
+The reproducer (repro/heap/vforkheap.c), started as  seqtest 1 vforkheap N  in
+a 64 MB slot: the parent holds 2 MB of heap blocks and a 64 KB static array,
+the child allocates N MB in 64 KB blocks and writes every byte.
+
+  N (MB)       result
+  1 ... 61     "parent: image intact" (0 of 2097152 heap bytes and 0 of 65536
+               static bytes differ from what was written)
+  62, 63       the child holds its N MB and exits 0; the parent never gets to
+               its next line: "Internal error: abort on data transfer at
+               &5EF081B8" (the same address every time, three runs); seqtest
+               reports "child 1 returned 1"
+  64           the stage left an empty result file and the script did not go
+               on; I did not repeat it
+  62, 100      with the heap of the CHILD in a dynamic area (the child is a
+               copy of the program under another name, vforkheapc, with
+               vforkheapc$Heap and vforkheapc$HeapMax = 120 set; the parent's
+               heap stays in the slot): "parent: image intact", and the child
+               holds 62 / 100 MB (more than the slot) in the dynamic area
+
+vforkheap also asks UnixLib for its heap limit - the largest address that an
+external brk () accepts, which is __ul_memory.stack, appspace_himem - 4 for an
+EABI program - and the parent works out where SharedUnixLibrary will save it
+(copy_up_parent: stack - (break - 0x8000)).  From the run with N = 62:
+
+  parent  heap limit 03fd0ff8, break 0024e000: its copy will be at 03d8aff8
+          (its own limit is 0x37004 below the end of the slot, 04008000,
+          because it was started by seqtest, whose copy sits there)
+  child   heap limit 03d8aff4 = 03d8aff8 - 4: the limit that UnixLib read at
+          start-up is the lowered one
+  child   N = 61: the last 64 KB block is at 0x3d3fd40, the heap ends about
+          240 KB below 03d8aff8: intact
+          N = 62: the last block is at 0x3e4b060, i.e. the heap runs about 830
+          KB over 03d8aff8, over the start of the saved parent (its image)
+
+The mechanism (trunk r7800)
+---------------------------
+ 1. module/sul.s  sul_exec -> copy_up_parent (a vfork child about to exec):
+    the parent's two parts [0x8000, stack_limit) and [stack, end of the slot)
+    are copied up to the top of the slot (PROC_PARENTADDR = stack -
+    (stack_limit - 0x8000) when the slot does not have to grow) and the memory
+    limit (OS_ChangeEnvironment 0) is set to PARENTADDR ("Set himem if called
+    for a vfork-exec").  The application space limit (OS_ChangeEnvironment 14)
+    is not changed: it is still the end of the slot.
+ 2. sys/_syslib.s, in the new program: appspace_himem = the permitted RAM limit
+    that OS_GetEnv returns = PARENTADDR; appspace_limit = OS_ChangeEnvironment
+    14 = the end of the slot; for an EABI program __ul_memory.stack =
+    appspace_himem - 4 (measured above: the child's limit is PARENTADDR - 4).
+    SharedUnixLibrary_Initialise, which the start-up code calls later, "resets
+    himem to appspace", so a program that asks for the memory limit in main ()
+    sees the end of the slot (the reproducer prints 04008000 for it in every
+    stage); UnixLib has read the lowered limit by then.
+ 3. sys/brk.c  __internal_sbrk (malloc's MORECORE): while rwbreak + incr is
+    below __ul_memory.stack, the heap grows below the stack, i.e. below
+    PARENTADDR.  From the first request that would reach it, it hands out
+    memory starting at appspace_himem and calls brk_rw (oldbrk + incr, 1),
+    which calls __stackalloc_incr_wimpslot (addr - appspace_himem).
+ 4. sys/stackalloc.c  __stackalloc_incr_wimpslot:
+        if (mem->appspace_himem + incr <= mem->appspace_limit)
+          { mem->appspace_himem += incr; return mem->appspace_himem; }
+    i.e. it treats [appspace_himem, appspace_limit) as spare slot memory the
+    program may use (the room left over when the slot grows in 32 KB steps).
+    For the exec'd child that range is exactly the saved copy of its parent:
+    himem is raised across it and malloc is handed memory that starts at
+    PARENTADDR.  Beyond appspace_limit the slot is grown with sul_wimpslot, a
+    plain Wimp_SlotSize, which does not move the saved parent either.
+ 5. On exit SUL's copy_down_parent copies [PARENTADDR, ...) back to 0x8000...:
+    whatever the child wrote there.
+(A detail of the probe output: sbrk (0) in the child still says 03d80000 after
+the heap loop, although the heap is above 03d8aff8.  sbrk returns min (rwbreak,
+stack_limit), and stack_limit is not moved when the heap goes through
+__stackalloc_incr_wimpslot.)
+
+Fix (patches/unixlib-vfork-exec-heap-limit.patch, 76 lines)
+-----------------------------------------------------------
+Files: incl-local/internal/unix.h, incl-local/internal/asm_dec.s,
+sys/_syslib.s, sys/stackalloc.c.
+The permitted RAM limit that the program was started with is a limit:
+appspace_himem should never be raised above it.
+  * struct ul_memory gets a field appspace_himem_max (at the end, offset 52).
+    The start-up code in _syslib.s sets it right after it has read the
+    application space limit: appspace_himem when that is below the limit (a
+    vfork + exec child), -1 otherwise.  Four instructions:
+        ldr a3, [fp, #MEM_APPSPACE_HIMEM]; cmp a3, a2; mvncs a3, #0;
+        str a3, [fp, #MEM_APPSPACE_HIMEM_MAX]
+  * __stackalloc_incr_wimpslot returns 0 when
+        incr > mem->appspace_himem_max - mem->appspace_himem
+    brk_rw then fails with ENOMEM, __internal_sbrk returns -1, and malloc falls
+    back to mmap (dlmalloc's MMAP_AS_MORECORE), which does not use the slot:
+    the parent is not touched.  Nothing changes for a program whose limit is
+    the end of the slot (appspace_himem_max is -1), nor for a fork () child:
+    its appspace_himem (__fork_post sets it to the new application space limit)
+    is already above the value, and the unsigned difference wraps.
+Simply setting appspace_limit = appspace_himem would not do: the heap is
+contiguous, so growing the slot past the saved parent would still put the
+break above it.  A cleaner design would keep the saved parent outside the
+slot, in a dynamic area, so that the slot is the child's alone; this patch is
+the small one, and it needs no change in SharedUnixLibrary.
+Suggested ChangeLog entry (date and name are yours):
+	* incl-local/internal/unix.h (struct ul_memory): Add
+	appspace_himem_max.
+	* incl-local/internal/asm_dec.s: Add MEM_APPSPACE_HIMEM_MAX.
+	* sys/_syslib.s: Set it at start-up: the permitted RAM limit when that
+	is below the application space limit, -1 otherwise.
+	* sys/stackalloc.c (__stackalloc_incr_wimpslot): Do not raise
+	appspace_himem above it.  A program that was started by vfork () +
+	exec () is told to stay below the copy of its parent, which
+	SharedUnixLibrary keeps between that limit and the end of the slot;
+	the heap used to grow over it.
+
+Verification
+------------
+  * Host model (repro/heap-model/): the REAL sys/brk.c and sys/stackalloc.c
+    compiled on a Linux host against a mock of sul_wimpslot, with the numbers
+    measured above (a 64 MB slot, the parent saved at 03d8aff8), eight
+    scenarios: a program that was not started by exec (100 MB in 64 KB
+    requests, and one request of 80 MB), an exec child with 64 KB and with 1
+    MB requests, with another slot size, a fork () child, external brk ().
+    Unpatched: 7 failed checks (2548 KB of the memory that malloc is handed
+    lies inside the saved parent [03d8aff8, 04008000); himem goes to 0645aff8).
+    Patched: 0 failed checks, every byte below the limit is used (62656 of
+    62711 KB), then the requests fail, and keep failing, even for 1 byte.  For
+    the programs that were not started by exec the sequence of requests and
+    the slot sizes are identical with and without the patch.  7 deliberate
+    breakages of the new condition are all caught.
+  * The machine code of the four new start-up instructions, taken from the
+    built library, on a small ARM (A32) interpreter (verify/tools/
+    sim-startup-loops.py): 12 combinations of limit and application space
+    limit, including the unsigned edges (24 checks); 9 deliberate breakages of
+    the instructions (flipped condition, swapped operands, wrong offsets,
+    signed compare, ...) are all caught (verify/tools/mutate-himem-max.py).
+  * On the machine (RISC OS 5.30, Cortex-A72; a private copy of libunixlib
+    with the patch, found through the loader's search path: nothing was
+    installed), the same 64 MB slot and the same program: EVERY stage gives
+    "parent: image intact" and the child still holds the N MB it asked for.
+      vforkheap N, started directly (the parent is a root program; its saved
+      copy is at 03dc0ffb, the child's limit 03dc0ff6):
+        N = 10, 61   the memory comes from the heap in the slot (N = 61: last
+                     block 0x3d3fe80, break 03d50000)
+        N = 62, 63, 100   the heap in the slot stops at the limit (break
+                     03dc0000) and malloc goes on with mmap: the last blocks
+                     are at 0x6eee7048, 0x6eff7050 and 0x71777010, in
+                     ARMEABISupport's dynamic areas.  Nothing is handed out
+                     over the saved parent.
+      seqtest 1 vforkheap 62: the case of the table above that killed the
+        parent: intact; the last block is at 0x6ef27068 (mmap).
+      seqtest 1 vforkheap 64: the stage that left an empty result file and
+        ended the script before: the child holds its 64 MB, the parent is
+        intact, and the script ran on to the end.
+    The patched library passes my UnixLib check program (48 checks).
+    The same stages again with the patched library INSTALLED as the system's
+    libunixlib (my port's 16.2.0-9): all intact again, and the other checks of
+    that run pass too (the mmap guard 23 / 23, exit paths 12 / 12, the stack
+    accounting).  As report 05 describes, what the child took through mmap is
+    not given back until the root process ends: after seqtest 1 vforkheap 62
+    and 64 the pool of mmap areas shows 1024 KB and 3072 KB in use, the part of
+    the heap that no longer fits below the limit.
+    The regression suites of my port with the patched library installed (C
+    34541 checks in six variants, C++ 139 / 142, threads, Fortran, programs
+    that use the shared libstdc++ and libgfortran, the stack and heap
+    fallbacks, and the native gcc / g++ / gfortran driven by GNU make): all 50
+    summary lines have the same check counts as in the run before the patch,
+    and none fails.
+
+Workaround
+----------
+  Put the heap of every program that may be started by vfork + exec and can
+  use a lot of memory in a dynamic area: set <program>$Heap (any value) and
+  <program>$HeapMax (MB) for it, or define __dynamic_da_name and
+  __dynamic_da_max_size in the program (UnixLib README, "Link-time features").
+  What matters is the CHILD's heap: the parent's heap placement only changes
+  how much of the parent is saved.
+
+Reproducer (repro/heap/)
+------------------------
+  vforkheap.c  vforkheap N [CHILDPROG]: the parent allocates 32 blocks of 64
+               KB (2 MB, below UnixLib's mmap threshold, so they are in the
+               heap in the Wimp slot) and fills them and a 64 KB static array
+               with patterns, then vforks and execs the child, which is the
+               same program (or CHILDPROG: a copy of it under another name, so
+               that <name>$Heap can be set for the child only).  The child
+               mallocs 64 KB blocks until it holds N MB, writes every byte and
+               exits 0; the parent checks its patterns when it resumes.
+  seqtest.c    seqtest 1 vforkheap N: starts the program as an exec'd child
+               and goes on when it dies (it also tries to run "daprobe -m"
+               afterwards: "File 'daprobe' not found" is harmless).
+  heap-model/  the host model of the verification below:
+               build-and-run.sh SRCDIR original|patched [mutate], SRCDIR = a
+               libunixlib directory (unpatched, or with the patch applied).
+               Needs only a host gcc.
+  Build: arm-riscos-gnueabihf-gcc -O2 vforkheap.c -o vforkheap,e1f
+  Run, in a TaskWindow:  *WimpSlot -min 64M -max 64M
+                         *seqtest 1 vforkheap 61     (intact)
+                         *seqtest 1 vforkheap 62     (the parent dies)
+  A damaged parent is an ordinary application crash (the child's memory is
+  filled with 0xC3C3C3C3 words, which are harmless instructions): do not run
+  it with unsaved work in the TaskWindow.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

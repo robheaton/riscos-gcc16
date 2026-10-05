@@ -1,0 +1,130 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: __get_dde_prefix () never returns when a DDEUtils prefix is
+         set (the loop tests *prefix instead of *end_prefix): every program
+         start, vfork, getcwd and chdir in such a task hangs
+Attach:  patches/unixlib-ddeutils-prefix-loop.patch (one word)
+         verify/tools/sim-get-dde-prefix.py a32.py (the compiled function run
+         on an A32 interpreter)
+
+Summary
+-------
+common/prefix.c measures the string that SWI DDEUtils_ReadPrefix returns with
+
+      const char *end_prefix;
+      for (end_prefix = prefix; (unsigned char)*prefix >= ' '; ++end_prefix)
+        /* */;
+
+The condition reads *prefix, which never changes, not *end_prefix. If the
+prefix is not empty (its first character is a space or more) the condition is
+true for ever, the loop never ends, and the program hangs in user mode;
+end_prefix is never dereferenced, so nothing faults when it runs through the
+address space. The patch is one word: *end_prefix.
+
+__get_dde_prefix () is called by __unixinit () for every program at start-up
+(unix/unix.c:208), by vfork () and fork () (sys/vfork.c:59, a snapshot of the
+prefix that the parent restores when the child ends), by getcwd ()
+(unix/getcwd.c:33) and by chdir () (unix/chdir.c:52). So in a task that has a
+DDEUtils prefix, every UnixLib program that is started hangs before main () is
+reached, and so does the vfork, getcwd or chdir of a program that is already
+running. DDEUtils_ReadPrefix returns NULL for a task without a prefix, and
+__get_dde_prefix () returns before the loop; most tasks have none.
+
+A prefix is set by *Prefix <dir> (the DDEUtils command) and by anything else
+that calls DDEUtils_Prefix. UnixLib itself sets one only when it is built with
+__UNIXLIB_SET_DDEPREFIX (0 in include/unixlib/buildoptions.h), and chdir ()
+keeps using DDEUtils_Prefix once a prefix exists; it does not set the first
+one.
+
+How I found it
+--------------
+By reading the code that only runs when the DDEUtils module is loaded, while
+looking for the cause of report 19. The task that I was testing in had no
+prefix (a test program that calls DDEUtils_ReadPrefix said so), so this was not
+the cause of that problem; it was a second one.
+
+Environment
+-----------
+As for report 19: Raspberry Pi Compute Module 4, RISC OS 5.30, DDEUtils 1.75,
+SOManager 3.04, ARMEABISupport 1.08, UnixLib 5.0 from trunk r7800 built with
+GCC 16.2.0. The function is the same in trunk r7800 and in the GCCSDK 10.2.0
+build I have; it does not depend on the compiler.
+
+What I measured, and what I did not
+-----------------------------------
+I did NOT see the hang on the machine. I did not run a program with a DDEUtils
+prefix set against an unpatched library; I found the loop by reading the code,
+and I fixed it in the same build as report 19, so the machine tests of the
+library that I have all have the patch. What I have from the machine is the
+patched library: with a prefix set by *Prefix <dir> in a Task window, three
+programs started one after the other ran normally (my fixlevel and argtest
+programs, and a vfork + exec of one of them). My test program did not print the
+prefix in that run, so that run alone does not prove that DDEUtils_ReadPrefix
+returned a non-empty string; I can repeat it with the prefix printed if that is
+useful. The machine code of the function is what shows the loop:
+
+verify/tools/sim-get-dde-prefix.py compiles the real common/prefix.c, from
+trunk and with the patch (GCC 16.2.0, -O2, the flags of the UnixLib build, the
+same rewritten os.h of report 19 for both so that only prefix.c differs), links
+each into a static image with trampolines for malloc, free, memcpy and
+__getenv_from_os, and runs __get_dde_prefix () on the A32 interpreter with a
+model of DDEUtils_ReadPrefix that returns a prefix string, none or an error. A
+call that has not returned after 50000 instructions is an endless loop (the
+real work takes a few hundred):
+
+  case                                  trunk              patched
+  no prefix (NULL)                      NULL               NULL
+  "ADFS::HardDisc4.$.Work" + NUL        ENDLESS LOOP       the string
+  "Disc.$.Dir" + CR                     ENDLESS LOOP       "Disc.$.Dir"
+  "Disc.$.Dir" + LF + junk              ENDLESS LOOP       "Disc.$.Dir"
+  "ADFS::Disc.$.My Dir" (a space)       ENDLESS LOOP       the whole string
+  "@"                                   ENDLESS LOOP       "@"
+  empty string / only a CR              NULL               NULL
+  ReadPrefix gives an error:
+    Prefix$Dir = "Fallback.Dir"         "Fallback.Dir"     "Fallback.Dir"
+    Prefix$Dir not set / empty          NULL               NULL
+
+11 cases: the trunk file is endless in the 5 that have a prefix and as the
+patched one in the other 6; the patched file is right in all 11. (The DDEUtils
+sources that I read store the prefix NUL terminated, and its own SWI Prefix
+stops copying at the first character <= ' ', so DDEUtils never returns the CR,
+LF or space cases; they test the loop condition as the comment in prefix.c
+states it, and the breakages below.) Five deliberate breakages of the patched
+file (the loop tests *prefix again, stops at a space, the zero-length filter
+removed, one character too few copied, the terminator not written) are each
+caught by at least one case; the simulated heap hands out junk, not zeros, so a
+missing terminator shows.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* common/prefix.c (__get_dde_prefix): Test *end_prefix, not *prefix,
+	in the loop that measures the prefix.  With a prefix set the loop
+	never ended.
+
+Verification
+------------
+  Source:  the patch applies to trunk r7800 with patch -p1; the patched file
+           compiles with GCC 10.2.0 and 16.2.0; with the other patches of this
+           bundle it gives the sources of the release build of my port
+           (verify/run-verify.sh, fidelity check).
+  Interpreter:  as above; the machine code of the trunk file loops, the machine
+                code of the patched file does not. The model of
+                DDEUtils_ReadPrefix is mine, from the module's source
+                (s/ddeutils, doswi_readprefix: 'R0 = pointer to prefix dir for
+                that task or 0 if none'; the string is stored NUL terminated).
+  Machine:  the patched library (16.2.0-10 of my port, installed) runs programs
+            normally with a prefix set; see above for what that run does not
+            show. The seven regression suites give the same counts as before
+            the patch.
+
+What I did not do
+-----------------
+I did not run the unpatched function with a prefix set on the machine (above).
+I did not look at the history of the file in svn, nor search the mailing list
+or the bug tracker for it, so I do not know since when the loop has been there
+or whether it is known. I did not test getcwd () and chdir () with a prefix set
+on the machine either; they only call the function. I read the DDEUtils sources
+only for the behaviour of DDEUtils_ReadPrefix and DDEUtils_Prefix.
+
+Rob Heaton

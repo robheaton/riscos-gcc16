@@ -1,0 +1,116 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: a program whose heap dynamic area does not fit into the
+         address space dies at start-up; retry with half the maximum size, down
+         to 2 MB
+Attach:  patches/unixlib-da-heap-fallback.patch
+         repro/unixlib-models/chain.c repro/unixlib-models/dautil.h
+         verify/tools/sim-startup-loops.py verify/tools/mutate-stack-da.py
+
+Summary
+-------
+When a program is set up to keep its heap in a dynamic area (<program>$Heap
+set, or __dynamic_da_name defined), the start-up code creates the area with
+OS_DynamicArea 0, giving the MAXIMUM size that the heap may grow to
+(__dynamic_da_max_size, or <program>$HeapMax in MB). The maximum is only a
+reservation of logical address space; the memory is mapped as the heap grows.
+But the reservations of all the programs that are alive at the same time add
+up, and when one does not fit the SWI fails ('Unable to allocate logical
+address space') and, because the call is made without the X bit, the error goes
+to the parent's error handler and the program ends before main (). The native
+GCC of my port is the example: make starts gcc, gcc starts collect2, collect2
+starts ld, and each of them asks for a 512 MB maximum, so the depth of such a
+chain is limited by the address space.
+
+The patch makes the start-up try again with half the maximum, and so on down to
+2 MB, before the plain (non-X) SWI at the end, which reports the error as
+before. The biggest size that fits is as good as the size asked for, which the
+program may well not need. 44 lines of patch, assembler only.
+
+Measured on the machine
+-----------------------
+Raspberry Pi Compute Module 4, RISC OS 5.30, ARMEABISupport 1.08, UnixLib 5.0
+from trunk r7800 built with GCC 16.2.0 (my port; the patch is in it since
+16.2.0-6). chain.c (repro/unixlib-models/) does vfork + exec of itself, N
+levels deep; every level has a heap dynamic area with a 512 MB maximum
+(-DHEAPMAX_MB=512), allocates and checks 1 MB of heap, and stays alive while
+the next level runs; -DDEEP=1 makes it 24 levels, enough to use up the address
+space. On this machine the operating system also clamps the maximum size of a
+dynamic area to 128 MB (OS_DynamicArea 8; since the last boot: before it, 512
+MB and 1 GB were granted), so the first 16 levels got 128 MB each:
+
+  levels 1 - 16    heap area maximum 128 MB (asked 512 MB: the OS clamp)
+  level 17         the kernel refused 128, 128, 128 and 64 MB; the retry
+                   loop got a 32 MB maximum:
+                   'heap area maximum 32 MB (asked 512 MB: HEAP FALLBACK)'
+  level 18         not even 2 MB left: 'Unable to allocate logical address
+                   space', reported to the parent as before (the last try
+                   is the plain SWI)
+  verdict          fallback seen at level 17, chain ended at 18 of 24
+                   where even the minimum does not fit: PASS
+  address space used by the areas: about 16 x 128 MB + 32 MB = 2.08 GB
+
+Without the patch there is no retry, so I expect the chain to end at level 17
+with the same error; I do not have that control from the machine (the control
+run that I made loaded the wrong library file). Because of the clamp on this
+machine a single area never fails, so the loop is only used when many areas
+have used the address space up, as here. The fallback loop runs on every start
+of a program that has a heap area; the normal case (the first try succeeds) was
+exercised by every program of my regression suites with the patch installed (C
+34541 checks in six variants, C++ 139 / 142, threads, Fortran, the native gcc /
+g++ / gfortran building programs with GNU make): the same check counts as
+before the patch.
+
+The patch
+---------
+In sys/_syslib.s, around the OS_DynamicArea that creates the heap area: the
+registers that the SWI needs (the maximum size, the name, the saved PIC
+register, fp, ip) are saved in a five-word frame on the stack and loaded again
+before every try, because nothing is trusted to survive a failing SWI. If the
+maximum is above 2 MB, the X form of the SWI is used and, when it fails, the
+maximum is halved (in the frame) and the loop goes round; at 2 MB or less the
+plain SWI is used, so that a failure is reported the old way.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* sys/_syslib.s (heap dynamic area creation): If OS_DynamicArea
+	fails, retry with half the maximum size, down to 2MB; the last try
+	is the non-X SWI, as before.
+
+Verification
+------------
+  Machine:  the chain above, and the regression runs.
+  Assembler:  sys/_syslib.s assembles with GCC 10.2.0 and 16.2.0 with the flags
+              of the UnixLib build.
+  Interpreter:  verify/tools/sim-startup-loops.py runs the machine code of
+                da_try .. da_done out of a built libunixlib.so on an A32
+                interpreter, with OS_DynamicArea modelled (a capacity of
+                address space: sizes above it fail with V set and with the
+                registers scrambled): 13 combinations of maximum size (1 MB to
+                1 GB, including sizes that are not a power of two) and capacity
+                (4096 MB down to 1 MB), and three of them again with every
+                register scrambled after a success. Each one makes the sequence
+                of tries that the model predicts (maximum, half, ... down to 2
+                MB, then the plain SWI), ends with an area of the size that the
+                model predicts, leaves the stack pointer balanced, hands the
+                area number and base to the following code in r1 and r3, and
+                restores the saved PIC register, fp and ip.
+                verify/tools/mutate-stack-da.py breaks every instruction of the
+                loop (nop, flipped condition, immediate changed): all the 76
+                breakages of the two start-up loops (this one and report 17)
+                make the interpreter fail.
+
+What I did not do
+-----------------
+On the machine the clamp meant the fallback ran only at the end of a chain of
+17 programs, never on a single program; the other sizes of the interpreter's
+table are not machine runs. I do not know why the clamp was not in force before
+my last reboot. The last try uses the plain SWI, which reports an error to the
+parent's error handler: a chain that ends this way does so with the old
+message, which is the intended behaviour but not an improvement.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

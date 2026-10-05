@@ -1,0 +1,111 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib (EABI): the one-page signal stack that every program takes at
+         start-up is never freed - 4 KB of the shared stack range per process
+         until the root process ends
+Attach:  patches/unixlib-free-signal-stack.patch
+         repro/sul/seqtest.c  repro/sul/daprobe.c  repro/sul/exittest.c
+
+Summary
+-------
+libunixlib's start-up code (sys/_syslib.s) takes a one page stack for the
+signal handlers from ARMEABISupport (StackOp ALLOC, 1 page, no guard) and
+keeps only its top address (__ul_global.signalhandler_sp).  SharedUnixLibrary
+frees the main stack of a process when it ends (sul_exit: StackOp FREE of
+PROC_STACK) but not that one.  So every process that has ended leaves 4 KB of
+the one range of address space that ALL EABI stacks share (the "UnixLib
+stacks" dynamic area: 128 MB of window on the machine used here, because of
+the OS clamp on dynamic area sizes) in use until the process at the root of
+its family - the one without a parent, which is where ARMEABISupport_Cleanup
+runs - ends.  A long make or a configure script starts thousands of programs:
+10 000 of them use 40 MB of the 128 MB.  The patch frees the page at exit and
+at exec.
+
+Measured (RISC OS 5.30, Cortex-A72; the "UnixLib stacks N KB in use" line of
+daprobe -m, read by another child while the root is alive):
+  a root that starts 6 children one after the other (seqtest 6 modver),
+  daprobe -m after each = 12 short processes under one root:
+      unpatched:  36, 44, 52, 60, 68, 76 KB   (+8 KB per two processes)
+                  and all gone when the root ended (20 KB)
+      patched:    32, 32, 32, 32, 32, 32 KB
+  exittest (every way a process can end; growth of the stack range in use over
+  the last 3 of 4 runs of each kind, unpatched -> patched):
+      main returns 0, exit (3), _Exit (4), _exit (0), abort ():   12 KB -> 0
+      vfork child that execs a program:                            24 KB -> 0
+      a fatal fault (ends ON the signal stack):                    12 KB -> 12
+                  (4 KB per run: skipped on purpose, see below)
+      exec in place (no fork):                                     48 KB -> 24
+                  (what is left, 8 KB per exec, is the old image's main stack,
+                   which an exec in place does not free: pre-existing, not
+                   part of this patch)
+      exit () called by another thread:                            24 KB -> 12
+                  (the thread's own stack stays, the signal stack goes)
+
+The patch (patches/unixlib-free-signal-stack.patch; unix/unix.c, sys/exec.c,
+incl-local/internal/unix.h, vscript)
+------------------------------------------------------------------------------
+New function __signalhandler_stack_free () (EABI only):
+  * called at the end of _exit () right after __env_riscos () (the UnixLib
+    environment handlers are off: nothing can run a signal handler any more),
+    and in execve () right after __env_riscos () before it hands over to
+    sul_exec;
+  * only for the LAST user of the program image: __dynamic_area_refcount is 0
+    after the process's own decrement.  A vfork child shares the image - and
+    with it the signal stack - with its parent until it execs;
+  * never when the exit runs ON the signal stack: the exit handler, a fatal
+    error and a signal handler that ends the program all run on it
+    (executing_signalhandler is set, or the stack pointer is inside the page):
+    those leave the page as before;
+  * it asks ARMEABISupport for the stack object that contains top - 4 (StackOp
+    GET_STACK) and frees it (StackOp FREE); if either SWI fails it leaves
+    everything as it was: nothing here can make an exit fail.
+Suggested ChangeLog entry (date and name are yours):
+	* unix/unix.c (__signalhandler_stack_free): New (EABI).  Give back
+	the signal stack of the program, if this process is the last user of
+	the program image and is not running on it.
+	(_exit): Call it after __env_riscos.
+	* sys/exec.c (execve): Likewise before calling sul_exec.
+	* incl-local/internal/unix.h: Declare it.
+	* vscript: Export it.
+The same could be done in SharedUnixLibrary if the handle of the signal stack
+were kept in the process structure; this way needs no change to the module.
+
+Verification
+------------
+  * On the machine, with libunixlib 16.2.0-7 and later (which contain the code
+    of this patch): the numbers above; the accounting steady at 32 KB per
+    round of two processes; no mmap area or main stack affected.
+  * exittest 1.1 (repro/sul/exittest.c): 12 checks, 0 failed: every way a
+    process can end gives its status (0, 3, 4, 0, SIGABRT, SIGSEGV...), a
+    caught fault returns normally with the handler running on the signal
+    stack, exit () in a signal handler gives its code, exit () by another
+    thread gives its code, vfork + exec and exec in place work; the stack
+    range in use after N runs is steady (or +4 KB per fatal fault, as
+    designed).
+  * Regression suites (C, C++, threads, Fortran, shared libstdc++ and
+    libgfortran, native gcc / g++ / gfortran driven by make): the same results
+    and check counts as without the patch, with the stock SharedUnixLibrary
+    and with the module of report 01.
+
+Reproducers (repro/sul/)
+------------------------
+  seqtest.c    seqtest N PROG ARGS: PROG started N times, one after the
+               other, by vfork + exec; prints the shared stack range after
+               each.
+  daprobe.c    daprobe -m: prints "UnixLib stacks N KB in use" (and the pool of
+               mmap areas) as seen by this child while its root is alive.
+  exittest.c   every way a process can end.
+  Run:  seqtest 6 modver ARMEABISupport  (modver.c: prints a module's title).
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30
+  (Boot$OSVersion 530), ARMEABISupport 1.08 (03 Jun 2025), SharedUnixLibrary
+  1.16 (3 Apr 2020).  UnixLib 5.0 from the GCCSDK trunk r7800 sources built
+  with GCC 16.2.0 (16.2.0-6 = unpatched, 16.2.0-7 = patched).
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

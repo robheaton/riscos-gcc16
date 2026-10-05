@@ -1,0 +1,167 @@
+--- a/gcc/collect2.cc	2026-10-05 18:43:26.595872214 +0100
++++ b/gcc/collect2.cc	2026-10-05 18:43:26.598872246 +0100
+@@ -604,6 +604,9 @@
+       char *lto_wrapper = getenv ("COLLECT_LTO_WRAPPER");
+       struct pex_obj *pex;
+       const char *prog = "lto-wrapper";
++#ifdef __riscos__
++      char *list_file;
++#endif
+       int lto_ld_argv_size = 0;
+       char **out_lto_ld_argv;
+       int out_lto_ld_argv_size;
+@@ -634,16 +637,37 @@
+       *lto_c_ptr = NULL;
+ 
+       /* Run the LTO back end.  */
++#ifdef __riscos__
++      /* RISC OS: the stdout of a child process is redirected with OS_ChangeRedirection, and that redirection does not survive the processes that
++	 lto-wrapper starts itself (the driver, lto1, as): the temporary file or pipe that takes the output is closed behind our back, and the child
++	 fails without a message (its messages go to the same file).  lto-wrapper therefore writes its list to the file named in the environment,
++	 and its stdout stays where it is.  */
++      list_file = make_temp_file (".lto_list");
++      putenv (concat ("COLLECT_LTO_OUTPUT_LIST=", list_file, NULL));
++      pex = collect_execute (prog, lto_c_argv, NULL, NULL,
++			     PEX_LAST | PEX_SEARCH, at_file_supplied,
++			     "lto_args");
++      do_wait (prog, pex);
++      pex = NULL;
++#else
+       pex = collect_execute (prog, lto_c_argv, NULL, NULL, PEX_SEARCH,
+ 			     at_file_supplied, "lto_args");
++#endif
+       {
+ 	int c;
+ 	FILE *stream;
+ 	size_t i;
+ 	char *start, *end;
+ 
++#ifdef __riscos__
++	stream = fopen (list_file, "r");
++	if (!stream)
++	  fatal_error (input_location, "cannot read the list of files of "
++		       "lto-wrapper %s: %m", list_file);
++#else
+ 	stream = pex_read_output (pex, 0);
+ 	gcc_assert (stream);
++#endif
+ 
+ 	num_files = 0;
+ 	while ((c = getc (stream)) != EOF)
+@@ -672,9 +696,15 @@
+ 	  }
+ 
+ 	obstack_free (&temporary_obstack, temporary_firstobj);
++#ifdef __riscos__
++	fclose (stream);
++	maybe_unlink (list_file);
++#endif
+       }
++#ifndef __riscos__
+       do_wait (prog, pex);
+       pex = NULL;
++#endif
+ 
+       /* Compute memory needed for new LD arguments.  At most number of original arguments
+ 	 plus number of partitions.  */
+--- a/gcc/lto-wrapper.cc	2026-10-05 18:43:26.596872225 +0100
++++ b/gcc/lto-wrapper.cc	2026-10-05 18:43:26.615807842 +0100
+@@ -93,6 +93,29 @@
+ 
+ const char tool_name[] = "lto-wrapper";
+ 
++/* The list of the output files goes to stdout, unless the environment names a file for it: collect2 on RISC OS does that (see collect2.cc), because the
++   redirection of the stdout of a child process does not work there when the child starts processes itself.  */
++
++static FILE *
++list_stream (void)
++{
++  static FILE *stream;
++
++  if (!stream)
++    {
++      const char *name = getenv ("COLLECT_LTO_OUTPUT_LIST");
++
++      stream = stdout;
++      if (name && *name)
++	{
++	  stream = fopen (name, "w");
++	  if (!stream)
++	    fatal_error (input_location, "cannot open %s: %m", name);
++	}
++    }
++  return stream;
++}
++
+ /* Auxiliary function that frees elements of PTR and PTR itself.
+    N is number of elements to be freed.  If PTR is NULL, nothing is freed.
+    If an element is NULL, subsequent elements are not freed.  */
+@@ -1126,7 +1149,7 @@
+ 	else
+ 	  crtoffloadtable = concat (dumppfx, "crtoffloadtable.o", NULL);
+ 	copy_file (crtoffloadtable, paths[i]);
+-	printf ("%s\n", crtoffloadtable);
++	fprintf (list_stream (), "%s\n", crtoffloadtable);
+ 	XDELETEVEC (crtoffloadtable);
+ 	break;
+       }
+@@ -1709,6 +1732,15 @@
+ 	}
+     }
+ 
++#ifdef __riscos__
++  /* RISC OS: -flto=N, -flto=auto and a make jobserver are served like plain -flto, one LTRANS job after the other.  A process cannot run alongside another one inside
++     a task (a child that is started with vfork () and exec () runs while its parent waits), so make -jN would run the jobs one after the other anyway, and the makefile
++     that is written for it does not survive RISC OS path names: the "$" of "/Disc::Name.$/Dir/gcc" is a make variable reference ("File ':Name.Dir/gcc' not found").  */
++  jobserver = 0;
++  auto_parallel = 0;
++  parallel = 0;
++#endif
++
+   /* We need make working for a parallel execution.  */
+   if (parallel && !make_exists ())
+     parallel = 0;
+@@ -1843,7 +1875,7 @@
+ 	{
+ 	  find_crtoffloadtable (save_temps, pie_or_shared, dumppfx);
+ 	  for (i = 0; offload_names[i]; i++)
+-	    printf ("%s\n", offload_names[i]);
++	    fprintf (list_stream (), "%s\n", offload_names[i]);
+ 	  free_array_of_ptrs ((void **) offload_names, i);
+ 	  offload_names = NULL;
+ 	}
+@@ -1949,12 +1981,12 @@
+ 
+   if (lto_mode == LTO_MODE_LTO)
+     {
+-      printf ("%s\n", flto_out);
++      fprintf (list_stream (), "%s\n", flto_out);
+       if (!skip_debug)
+ 	{
+ 	  for (i = 0; i < ltoobj_argc; ++i)
+ 	    if (early_debug_object_names[i] != NULL)
+-	      printf ("%s\n", early_debug_object_names[i]);
++	      fprintf (list_stream (), "%s\n", early_debug_object_names[i]);
+ 	}
+       /* These now belong to collect2.  */
+       free (flto_out);
+@@ -2238,8 +2270,8 @@
+ 
+       for (i = 0; i < nr; ++i)
+ 	{
+-	  fputs (output_names[i], stdout);
+-	  putc ('\n', stdout);
++	  fputs (output_names[i], list_stream ());
++	  putc ('\n', list_stream ());
+ 	  free (input_names[i]);
+ 	}
+ 
+@@ -2250,7 +2282,7 @@
+ 	{
+ 	  for (i = 0; i < ltoobj_argc; ++i)
+ 	    if (early_debug_object_names[i] != NULL)
+-	      printf ("%s\n", early_debug_object_names[i]);
++	      fprintf (list_stream (), "%s\n", early_debug_object_names[i]);
+ 	}
+       nr = 0;
+       free (ltrans_priorities);

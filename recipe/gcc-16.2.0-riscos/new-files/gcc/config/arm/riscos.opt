@@ -1,0 +1,37 @@
+; Specific options for the RISC OS ARM port of the compiler.
+
+; Copyright (C) 2005-2010 Free Software Foundation, Inc.
+; Contributed by Nick Burrett (nick@sqrt.co.uk>)
+; and John Tytgat (John.Tytgat@aaug.net).
+;
+; This file is part of GCC.
+;
+; GCC is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation; either version 3, or (at your option) any later
+; version.
+;
+; GCC is distributed in the hope that it will be useful, but WITHOUT ANY
+; WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+; for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with GCC; see the file COPYING3.  If not see
+; <http://www.gnu.org/licenses/>.
+
+mthrowback
+Target RejectNegative Mask(THROWBACK)
+Send errors and warnings to a text editor as well (DDEUtils throwback; a cross compiler sends it to the SysLogD of the host named by THROWBACK_HOST)
+
+mlibscl
+Target RejectNegative Negative(mmodule) InverseMask(UNIXLIB,LIBSCL)
+Compile with the RISC OS SharedCLibrary headers
+
+munixlib
+Target RejectNegative Negative(mlibscl) Mask(UNIXLIB)
+Compile with the RISC OS UnixLib headers (default)
+
+mmodule
+Target RejectNegative Negative(munixlib) Mask(MODULE)
+Target for RISC OS modules

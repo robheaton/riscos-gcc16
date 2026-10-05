@@ -1,0 +1,4 @@
+#include "util.h"
+
+int util_add (int a, int b) { return a + b; }
+int util_square (int a) { return a * a; }

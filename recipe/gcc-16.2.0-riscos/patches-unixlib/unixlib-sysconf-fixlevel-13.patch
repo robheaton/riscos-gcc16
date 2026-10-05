@@ -1,0 +1,19 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-05 18:40:33.975020675 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-05 18:40:33.994639951 +0100
+@@ -147,12 +147,13 @@
+ 	 parent's program image; 11: the heap of a vfork + exec child no
+ 	 longer grows over the copy of its parent; 12: the inline SWI wrappers
+ 	 no longer read a register variable after the asm, so that the
+-	 arguments of a program survive the DDEUtils module being loaded).
+-	 Lets a
++	 arguments of a program survive the DDEUtils module being loaded;
++	 13: scanf understands ll, hh, j, z, t and q, and %Lf stores a long
++	 double).  Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 12;
++	return 13;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

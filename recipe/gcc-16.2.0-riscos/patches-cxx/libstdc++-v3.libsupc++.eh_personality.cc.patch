@@ -1,0 +1,11 @@
+--- a/libstdc++-v3/libsupc++/eh_personality.cc
++++ b/libstdc++-v3/libsupc++/eh_personality.cc
+@@ -94,7 +94,7 @@
+ 
+   i *= size_of_encoded_value (info->ttype_encoding);
+   read_encoded_value_with_base (
+-#if __FDPIC__
++#if __FDPIC__ || defined(__riscos__)
+ 				/* Force these flags to make sure to
+ 				   take the GOT into account.  */
+ 				(DW_EH_PE_pcrel | DW_EH_PE_indirect),

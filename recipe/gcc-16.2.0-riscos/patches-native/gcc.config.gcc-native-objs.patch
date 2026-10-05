@@ -1,0 +1,35 @@
+--- a/gcc/config.gcc	2026-10-03 09:26:47.044685650 +0100
++++ b/gcc/config.gcc	2026-10-03 09:26:47.045789819 +0100
+@@ -1591,6 +1591,9 @@
+ 	# static cases.
+ 	tmake_file="arm/t-arm arm/t-riscos-gnueabihf t-slibgcc"
+ 	extra_options="${extra_options} arm/riscos.opt"
++	# the compiler itself runs on RISC OS: heap size (riscos.c, linked into cc1 ...) and driver hooks (riscos-gcc.c)
++	extra_objs="${extra_objs} riscos.o"
++	extra_gcc_objs="riscos-gcc.o"
+ 	;;
+ avr-*-*)
+ 	tm_file="elfos.h avr/elf.h avr/avr-arch.h avr/avr.h avr/specs.h avr/avr-stdint.h"
+--- a/gcc/config/arm/t-riscos-gnueabihf	2026-10-03 09:26:47.047353154 +0100
++++ b/gcc/config/arm/t-riscos-gnueabihf	2026-10-03 09:26:47.065098191 +0100
+@@ -29,3 +29,20 @@
+ # Make local_includedir relative to EXEC_PREFIX.  We don't want the RISC OS
+ # compiler picking up UNIX system header files.
+ local_includedir=$(exec_prefix)/include
++
++# When compiling GCC for native RISC OS, the C library headers are the ones of the UnixLib that goes with the compiler (copied into the installation), found
++# relative to EXEC_PREFIX like local_includedir above.
++NATIVE_SYSTEM_HEADER_DIR = $(exec_prefix)/arm-riscos-gnueabihf/include
++STANDARD_INCLUDE_DIR = $(exec_prefix)/arm-riscos-gnueabihf/include
++
++# UnixLib reads __dynamic_da_max_size (riscos.c) to size the heap.  Nothing in the compilers proper refers to it, and riscos.o sits in libbackend.a:
++# force the archive member in.
++BACKENDLIBS += -Wl,-u,__dynamic_da_max_size
++
++riscos.o: $(srcdir)/config/arm/riscos.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H)
++	$(COMPILE) $<
++	$(POSTCOMPILE)
++
++riscos-gcc.o: $(srcdir)/config/arm/riscos-gcc.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H)
++	$(COMPILE) $<
++	$(POSTCOMPILE)

@@ -1,0 +1,10 @@
+program hellof
+  implicit none
+  real :: a(4)
+  integer :: i
+  do i = 1, 4
+    a(i) = real (i) ** 2
+  end do
+  print '(a, f6.1)', 'hello from Fortran, sum of squares = ', sum (a)
+  if (abs (sum (a) - 30.0) > 0.001) stop 1
+end program hellof

@@ -1,0 +1,506 @@
+--- a/libunixlib/module/sul.s	2026-10-04 08:46:29.280010930 +0100
++++ b/libunixlib/module/sul.s	2026-10-04 11:55:05.908424087 +0100
+@@ -8,6 +8,51 @@
+ 	.text
+ 	.fpu fpa
+ 
++@ ---------------------------------------------------------------------------------------------------------------------------------------------------------
++@ TRACE (a debugging aid for the test builds only: assemble with -DSULTRACE).  TRACE "text", reg  appends the line
++@     text v=<reg> sp=<the caller's sp> ctx=<VFPSupport_ActiveContext> t=<monotonic time> p=<[0x8038]> g=<[[0x8038]]> c=<[0x8040]> h=<sum of the words 0x8000-0x80FF>      (all in hex)
++@ p, g, c, h describe the application space as it is at that moment: p is the word that PIC_LOAD reads (the runtime workspace: the pointer to the client's GOTT array), g what it points at (the GOT of the
++@ library with index 0: ffffffff when p cannot be read), c SOManager's client structure of this application space, h a checksum of the first 256 bytes (ELF header and runtime workspace).
++@ TRACESUM "text", base, size  logs the sum of the words [base, base+size) as the value (nothing summed when base is 0).
++@ to the file named in trace_name, with raw SWIs (OS_Find 0xC0 open for update, OS_Args 2 and 1 to go to the end, OS_GBPB 2, OS_Find 0 close), from a PRIVATE stack and a static save area: the code
++@ that calls it may have no valid sp (sul_exit after ARMEABISupport_StackOp FREE) and every register except the flags is preserved.  Not re-entrant (nothing here is: one task runs at a time).  The file
++@ must exist (*Create it first).  If a step left the IRQs masked, the NEXT trace write (it needs the network) would hang: the last line then names the last step that ran with IRQs on.
++@ ---------------------------------------------------------------------------------------------------------------------------------------------------------
++@ ADRFAR: ADR for a label that the TRACE code may have moved out of the range of a single ADR (two instructions in a SULTRACE build, the plain ADR otherwise: the normal module is unchanged).
++#ifdef SULTRACE
++	.macro	ADRFAR reg, lab
++	ADRL	\reg, \lab
++	.endm
++#else
++	.macro	ADRFAR reg, lab
++	ADR	\reg, \lab
++	.endm
++#endif
++#ifdef SULTRACE
++	.macro	TRACE text, reg=r0
++	STR	\reg, trace_val
++	STR	r0, trace_r0
++	STR	lr, trace_lr
++	ADR	r0, 98f
++	BL	sul_trace
++	B	99f
++98:	.asciz	"\text"
++	.align
++99:	LDR	r0, trace_r0
++	LDR	lr, trace_lr
++	.endm
++	.macro	TRACESUM text, base, size
++	STR	\base, trace_sum_a
++	STR	\size, trace_sum_n
++	TRACE	"\text", r0
++	.endm
++#else
++	.macro	TRACE text, reg=r0
++	.endm
++	.macro	TRACESUM text, base, size
++	.endm
++#endif
++
+ @ Structure for clients written for SUL 1.04 and earlier
+ @ These clients call SharedUnixLibrary_RegisterUpCall to initialise, while
+ @ later clients call SharedUnixLibrary_Initialise and use the process
+@@ -663,7 +708,7 @@
+ 	STR	a1, [v2, #PROC_FREE]
+ 	ADRL	a1, sul_exit
+ 	STR	a1, [v2, #PROC_EXIT]
+-	ADR	a1, sul_fork
++	ADRFAR	a1, sul_fork
+ 	STR	a1, [v2, #PROC_FORK]
+ 	ADRL	a1, sul_exec
+ 	STR	a1, [v2, #PROC_EXEC]
+@@ -781,6 +826,172 @@
+ 	MOV	pc, lr
+ 
+ 
++
++#ifdef SULTRACE
++	.set	XOS_Find_T, 0x2000D
++	.set	XOS_Args_T, 0x20009
++	.set	XOS_GBPB_T, 0x2000C
++	.set	XOS_ReadMonotonicTime_T, 0x20042
++	.set	XVFPSupport_ActiveContext_T, 0x78EC6
++	.set	XOS_ValidateAddress_T, 0x2003A
++trace_tag:	.word	0
++trace_p:	.word	0
++trace_g:	.word	0
++trace_c:	.word	0
++trace_h:	.word	0
++trace_regs:	.space	16*4
++trace_line:	.space	256
++trace_stack:	.space	256
++trace_stack_top:
++trace_name:	.asciz	"LanMan98::MyShare.$.SulLog"
++trace_sfx_v:	.asciz	" v="
++trace_sfx_sp:	.asciz	" sp="
++trace_sfx_ctx:	.asciz	" ctx="
++trace_sfx_t:	.asciz	" t="
++trace_sfx_p:	.asciz	" p="
++trace_sfx_g:	.asciz	" g="
++trace_sfx_c:	.asciz	" c="
++trace_sfx_h:	.asciz	" h="
++	.align
++
++	@ entry: r0 = the text (NUL terminated), lr = where to return, trace_val = the value to show.  Preserves r1-r12, sp, lr; corrupts r0 and the flags (the macro restores r0 and lr).
++sul_trace:
++	STR	r0, trace_tag
++	ADRL	r0, trace_regs
++	STMIA	r0, {r1-r12, sp, lr}
++	LDR	r11, [r0, #12*4]	@ r11 = the caller's sp
++	ADRL	sp, trace_stack_top
++	@ the checksum of a region, when TRACESUM asked for one: the sum replaces the value
++	LDR	r1, trace_sum_n
++	LDR	r2, trace_sum_a
++	MOV	r3, #0
++	STR	r3, trace_sum_n
++	TEQ	r1, #0
++	TEQNE	r2, #0
++	BEQ	tr_nosum
++tr_sumloop:
++	LDR	r0, [r2], #4
++	ADD	r3, r3, r0
++	SUBS	r1, r1, #4
++	BHI	tr_sumloop
++	STR	r3, trace_val
++tr_nosum:
++	@ the PIC chain and the first page of the application space (see the comment at the top)
++	MOV	r0, #0x8000
++	LDR	r6, [r0, #0x38]		@ r6 = p
++	STR	r6, trace_p
++	LDR	r1, [r0, #0x40]
++	STR	r1, trace_c
++	MOV	r2, r0
++	MOV	r3, #0
++	ADD	r4, r0, #0x100
++tr_hloop:
++	LDR	r5, [r2], #4
++	ADD	r3, r3, r5
++	TEQ	r2, r4
++	BNE	tr_hloop
++	STR	r3, trace_h
++	MVN	r7, #0			@ g = ffffffff when [p] cannot be read
++	MOV	r0, r6
++	ADD	r1, r6, #4
++	SWI	XOS_ValidateAddress_T
++	BVS	tr_nog
++	LDRCC	r7, [r6]
++tr_nog:
++	STR	r7, trace_g
++	SWI	XVFPSupport_ActiveContext_T
++	MOVVS	r0, #-1
++	MOV	r12, r0			@ r12 = the active VFP context (-1 when VFPSupport is not there)
++	SWI	XOS_ReadMonotonicTime_T
++	MOV	r8, r0			@ r8 = time
++	LDR	r9, trace_val		@ r9 = value
++	ADRL	r4, trace_line		@ r4 = start of the line, r1 = write pointer
++	MOV	r1, r4
++	LDR	r2, trace_tag
++	BL	trace_puts
++	ADRL	r2, trace_sfx_v
++	BL	trace_puts
++	MOV	r0, r9
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_sp
++	BL	trace_puts
++	MOV	r0, r11
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_ctx
++	BL	trace_puts
++	MOV	r0, r12
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_t
++	BL	trace_puts
++	MOV	r0, r8
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_p
++	BL	trace_puts
++	LDR	r0, trace_p
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_g
++	BL	trace_puts
++	LDR	r0, trace_g
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_c
++	BL	trace_puts
++	LDR	r0, trace_c
++	BL	trace_hex8
++	ADRL	r2, trace_sfx_h
++	BL	trace_puts
++	LDR	r0, trace_h
++	BL	trace_hex8
++	MOV	r3, #10
++	STRB	r3, [r1], #1
++	SUB	r5, r1, r4		@ r5 = length of the line
++	MOV	r0, #0xC0
++	ADRL	r1, trace_name
++	SWI	XOS_Find_T
++	BVS	tr_done
++	MOVS	r6, r0			@ r6 = handle
++	BEQ	tr_done
++	MOV	r0, #2
++	MOV	r1, r6
++	SWI	XOS_Args_T		@ r2 = extent
++	MOV	r0, #1
++	MOV	r1, r6
++	SWI	XOS_Args_T		@ pointer := extent
++	MOV	r0, #2
++	MOV	r1, r6
++	MOV	r2, r4
++	MOV	r3, r5
++	SWI	XOS_GBPB_T
++	MOV	r0, #0
++	MOV	r1, r6
++	SWI	XOS_Find_T		@ close
++tr_done:
++	ADRL	r0, trace_regs
++	LDMIA	r0, {r1-r12, sp, lr}
++	MOV	pc, lr
++
++	@ r2 = NUL terminated string, r1 = write pointer: the string is copied without its NUL, r1 advanced; corrupts r2, r3
++trace_puts:
++	LDRB	r3, [r2], #1
++	TEQ	r3, #0
++	STRNEB	r3, [r1], #1
++	BNE	trace_puts
++	MOV	pc, lr
++
++	@ r0 = value, r1 = write pointer: 8 hex digits, r1 advanced; corrupts r0, r2, r3, r7
++trace_hex8:
++	MOV	r7, #8
++tr_hex_loop:
++	MOV	r0, r0, ROR #28
++	AND	r2, r0, #15
++	CMP	r2, #10
++	ADDLT	r2, r2, #'0'
++	ADDGE	r2, r2, #'A' - 10
++	STRB	r2, [r1], #1
++	SUBS	r7, r7, #1
++	BNE	tr_hex_loop
++	MOV	pc, lr
++#endif
++
+ @
+ @ pid_t sul_fork (pid_t pid, struct __sul_process **proc, void *stacklimit, void *stack);
+ @
+@@ -793,6 +1004,7 @@
+ @ Returns -1 if unable to allocate memory.
+ @
+ sul_fork:
++	TRACE	"F1 sul_fork enter", a1
+ 	@ Allocate the new child process structure
+ 	MOV	ip, sp
+ 	MOV	a1, a1, LSL #2 @ expand pid to 32-bits
+@@ -928,6 +1140,7 @@
+ 
+ 	@ Return as the child
+ 	@ a1 will already be 0 from copy_up_parent
++	TRACE	"F2 sul_fork returns as the child", v2
+ 	ADD	a2, v2, #PROC_FORK_STORAGE
+ 	LFM	f4, 4, [a2], #4*12
+ 	LDMIA	a2, {v1-v6, sl, fp, sp, pc}
+@@ -1050,12 +1263,19 @@
+ @ sp may not be valid
+ copy_down_parent:
+ 	MOV	ip, lr
++	TRACE	"C1 copy_down_parent enter", v2
++#ifdef SULTRACE
++	LDR	a1, [v2, #PROC_PARENTADDR]
++	LDR	a2, [v2, #PROC_PARENTSIZE1]
++	TRACESUM "C1s sum of the saved copy PARENTADDR+size1 before copy_down (v = sum)", a1, a2
++#endif
+ 
+ 	@ Move the bottom section
+ 	MOV	a1, #0x8000
+ 	LDR	a2, [v2, #PROC_PARENTADDR]
+ 	LDR	a3, [v2, #PROC_PARENTSIZE1]
+ 	BL	sul_memmove
++	TRACE	"C2 bottom section moved", v2
+ 
+ 	@ Move the top section
+ 	LDR	a1, [v2, #PROC_PARENTSTACK]
+@@ -1064,6 +1284,7 @@
+ 	ADD	a2, a2, a4
+ 	LDR	a3, [v2, #PROC_PARENTSIZE2]
+ 	BL	sul_memmove
++	TRACE	"C3 top section moved", v2
+ 
+ 	@ Flush instruction cache
+ 	MOV	a1, #1
+@@ -1093,9 +1314,11 @@
+ 	@ Cortex-A72 / RISC OS 5.30; the application space and memory limits follow) (GCCSDK GCC 16 forward-port).
+ 	TEQ	a1, #0
+ 	MOVEQ	pc, lr
++	TRACE	"R1 restore_wimpslot appspace", a1
+ 	SUB	a1, a1, #0x8000
+ 	MOV	a2, #-1
+ 	SWI	XWimp_SlotSize
++	TRACE	"R2 after Wimp_SlotSize", a1
+ 
+ 	MOV	a1, #14
+ 	LDR	a2, [v2, #PROC_INITIALAPPSPACE]
+@@ -1104,9 +1327,19 @@
+ 	MOV	a1, #0
+ 	LDR	a2, [v2, #PROC_INITIALHIMEM]
+ 	SWI	XOS_ChangeEnvironment
++	TRACE	"R3 after the limits restored", a2
+ 
+ 	MOV	pc, lr
+ 
++#ifdef SULTRACE
++	@ The three words that the TRACE macro uses are here, in the middle of the module: the macro reaches them with pc-relative loads and stores (+-4095 bytes) from every site.
++trace_r0:	.word	0
++trace_lr:	.word	0
++trace_val:	.word	0
++trace_sum_a:	.word	0
++trace_sum_n:	.word	0
++#endif
++
+ runpath_str:
+ 	.asciz	"Run$Path"
+ 	.align
+@@ -1122,6 +1355,7 @@
+ @ Never returns, so all registers can be corrupted
+ @ FIXME: we're assuming sp is valid (sul_malloc, sul_free, etc), is that ok ?
+ sul_exec:
++	TRACE	"E1 sul_exec enter", a1
+ 	MOV	v3, a1, LSL #2	@ expand pid to 32-bits
+ 	MOV	v4, a3		@ v4 = stacklimit
+ 	MOV	v5, a4		@ v5 = stack
+@@ -1255,7 +1489,7 @@
+ 	@ Set up exit and error handlers so we get control back when
+ 	@ the program exits
+ 	MOV	a1, #11
+-	ADR	a2, exit_handler
++	ADRFAR	a2, exit_handler
+ 	MOV	a3, v2
+ 	SWI	XOS_ChangeEnvironment
+ 	STR	a2, [v2, #PROC_OLDEXIT]
+@@ -1264,7 +1498,7 @@
+ 	@ We can use the bottom of the wimpslot for the error buffer as we
+ 	@ know that the parent will be at least MIN_EXEC_MEM above 0x8000
+ 	MOV	a1, #6
+-	ADR	a2, error_handler
++	ADRFAR	a2, error_handler
+ 	MOV	a3, v2
+ 	MOV	a4, #0x8000
+ 	SWI	XOS_ChangeEnvironment
+@@ -1281,15 +1515,34 @@
+ 	BNE	no_copy_needed	@ The parent is already copied
+ 
+ 	@ We have a parent that needs copying, i.e. we were created by a vfork
++	TRACE	"E2 before copy_up_parent", v4
+ 	MOV	a1, #MIN_EXEC_MEM
+ 	MOV	a2, v4
+ 	MOV	a3, v5
++#ifdef SULTRACE
++	MOV	v6, #0x8000
++	SUB	v7, v4, #0x8000
++	TRACESUM "E2s sum of the parent image 0x8000..stacklimit before copy_up (v = sum)", v6, v7
++#endif
+ 	BL	copy_up_parent
++	TRACE	"E2b after copy_up_parent", v2
++#ifdef SULTRACE
++	LDR	v6, [v2, #PROC_PARENTADDR]
++	LDR	v7, [v2, #PROC_PARENTSIZE1]
++	TRACESUM "E2c sum of the saved copy PARENTADDR+size1 after copy_up (v = sum)", v6, v7
++#endif
+ 	TEQ	a1, #0
++#ifdef SULTRACE
++	BEQ	do_exec				@ (the same, with the far ADRL: it has no condition in this assembler)
++	ADRL	a1, error_no_mem
++	MOV	ip, v2
++	B	print_error
++#else
+ 	ADRNE	a1, error_no_mem
+ 	MOVNE	ip, v2
+ 	BNE	print_error
+ 	B	do_exec
++#endif
+ 
+ no_copy_needed:
+ 	@ Restore the old wimpslot value, as we don't need the extra memory
+@@ -1298,6 +1551,7 @@
+ 	BL	restore_wimpslot
+ 
+ do_exec:
++	TRACE	"E3 do_exec", v2
+ 	@ Ensure the new program doesn't inherit any VFP context
+ 	MOV	a1, #0
+ 	MOV	a2, #0
+@@ -1310,6 +1564,7 @@
+ 	SWI	XOS_Write0
+ 	SWI	XOS_NewLine
+ #endif
++	TRACE	"E4 before OS_CLI", v2
+ 	LDR	a1, [v2, #PROC_CLI]
+ 	SWI	OS_CLI
+ 
+@@ -1331,6 +1586,7 @@
+ 	B       exit_error_handler_common
+ 
+ error_handler: @ r0 = __ul_global.sulproc
++	TRACE	"H2 error_handler", a1
+ 	MOV	ip, a1
+ 	MOV	a1, #0x8000
+ 	ADD	a1, a1, #8
+@@ -1351,11 +1607,12 @@
+ 
+ 	@ r12 = __ul_global.sulproc
+ exit_handler:
++	TRACE	"H1 exit_handler", ip
+ 	@ Read the return code and convert to an integer (why on earth doesn't
+ 	@ RISC OS store it as a numeric variable?)
+ 	@ We can use the bottom of the wimpslot as a temporary buffer as the
+ 	@ program has finished with it
+-	ADR	a1, sysretcode
++	ADRFAR	a1, sysretcode
+ 	MOV	a2, #0x8000
+ 	MOV	a3, #4
+ 	MOV	a4, #0
+@@ -1396,11 +1653,13 @@
+ sul_exit:
+ 	MOV	v2, a1, LSL #2 @ expand pid to 32-bits
+ 	MOV	v3, a2
++	TRACE	"X1 sul_exit enter", v2
+ 
+ 	@ Disable any active VFP context
+ 	MOV	a1, #0
+ 	MOV	a2, #0
+ 	SWI	XVFPSupport_ChangeContext
++	TRACE	"X2 after VFP context off", v2
+ 
+ 	LDR	a1, [v2, #PROC_STATUS]
+ 
+@@ -1427,6 +1686,7 @@
+ 1:
+ 	SWI	XSOM_DeregisterClient
+ 0:
++	TRACE	"X3 before stack free", v2
+ 	TST	a1, #SULPROC_STATUS_FLAG_IS_ARMEABI
+ 	BEQ	2f
+ 
+@@ -1438,6 +1698,7 @@
+ 	MOVNE	a1, #ARMEABISUPPORT_STACKOP_FREE
+ 	SWINE	XARMEABISupport_StackOp
+ 2:
++	TRACE	"X4 after stack free (sp invalid)", v2
+ 
+ 	@ Restore old exit and error handlers if necessary
+ 	MOV	a1, #11
+@@ -1452,23 +1713,36 @@
+ 	TEQ	a2, #0
+ 	SWINE	XOS_ChangeEnvironment
+ 
++	TRACE	"X5 after handlers restored", v2
+ 	@ Restore old wimpslot and copy parent proc down if necessary
+ 	LDR	a1, [v2, #PROC_PARENTADDR]
+ 	TEQ	a1, #0
+ 	BLNE	copy_down_parent
++	TRACE	"X6 after copy_down_parent", v2
++#ifdef SULTRACE
++	LDR	a2, [v2, #PROC_PARENTADDR]
++	TEQ	a2, #0
++	MOVNE	a1, #0x8000
++	MOVEQ	a1, #0			@ (nothing was copied down: nothing to sum; PARENTSIZE1 of such a process is not initialised)
++	LDR	a2, [v2, #PROC_PARENTSIZE1]
++	TRACESUM "X6s sum of 0x8000+size1 after copy_down (v = sum)", a1, a2
++#endif
+ 
+ 	BL	restore_wimpslot
++	TRACE	"X7 after restore_wimpslot", v2
+ 
+ 	@ Remove the process from our linked list
+ 	LDR	ip, [v2,  #PROC_PRIVATEWORD]
+ 	MOV	a3, v2
+ 	BL	delink
++	TRACE	"X8 after delink", v2
+ 
+ 	@ Free the CLI.
+ 	MOV	a1, #7
+ 	LDR	a3, [v2, #PROC_CLI]
+ 	TEQ	a3, #0
+ 	SWINE	XOS_Module
++	TRACE	"X8b after the CLI free", v2
+ 
+ 	@ If this process has no parent, then free the process structure.
+ 	@ The parent will free it otherwise.
+@@ -1490,12 +1764,13 @@
+ 	MOV	a3, v2
+ 	SWI	XOS_Module
+ 
+-	ADR	a1, error_rclimit_exceeded
++	ADRFAR	a1, error_rclimit_exceeded
+ 	LDR	a2, exit_word
+ 	MOV	a3, v3
+ 	SWI	OS_Exit		@ - never returns
+ 
+ has_parent:
++	TRACE	"X9 has_parent", v2
+ 	@ Update parent's __ul_global.sulproc pointer
+ 	LDR	a2, [v2, #PROC_PARENTSULPROC]
+ 	LDR	a3, [v2, #PROC_PARENTSULPROCADDR]
+@@ -1506,10 +1781,12 @@
+ 	ORR	a3, a3, #ZOMBIE_BIT
+ 	STR	a3, [v2, #PROC_STATUS]
+ 
++	TRACE	"X10 resuming the parent", v2
+ 	@ Restore registers and return with a1 = child pid
+ 	MOV	a1, v2, LSR #2 @ shrink pid to 30-bits
+ 	ADD	a2, v2, #PROC_FORK_STORAGE
+ 	LFM	f4, 4, [a2], #4*12
++	TRACE	"X11 after LFM", v2
+ 	LDMIA	a2, {v1-v6, sl, fp, sp, pc}
+ 
+ exit_word:

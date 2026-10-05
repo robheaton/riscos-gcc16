@@ -1,0 +1,54 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/unix/stat.c
++++ b/gcc4/recipe/files/gcc/libunixlib/unix/stat.c
+@@ -9,6 +9,7 @@
+ #include <internal/dev.h>
+ #include <internal/os.h>
+ #include <internal/local.h>
++#include <unixlib/local.h>
+ #include <internal/swiparams.h>
+ #include <internal/unix.h>
+ #include <pthread.h>
+--- a/gcc4/recipe/files/gcc/libunixlib/unix/lstat.c
++++ b/gcc4/recipe/files/gcc/libunixlib/unix/lstat.c
+@@ -10,6 +10,7 @@
+ #include <internal/dev.h>
+ #include <internal/os.h>
+ #include <internal/local.h>
++#include <unixlib/local.h>
+ #include <internal/swiparams.h>
+ #include <internal/unix.h>
+ #include <pthread.h>
+--- a/gcc4/recipe/files/gcc/libunixlib/unix/ul_close.c
++++ b/gcc4/recipe/files/gcc/libunixlib/unix/ul_close.c
+@@ -11,6 +11,7 @@
+ #include <internal/unix.h>
+ #include <internal/os.h>
+ #include <internal/dev.h>
++#include <internal/local.h>
+ #include <internal/fd.h>
+ #include <unixlib/local.h>
+ #ifdef __ARM_EABI__
+--- a/gcc4/recipe/files/gcc/libunixlib/string/strndup.c
++++ b/gcc4/recipe/files/gcc/libunixlib/string/strndup.c
+@@ -35,6 +35,9 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++/* Internal glibc-style alias; defined in string/strnlen.c but not declared in any header.  */
++extern size_t __strnlen (const char *, size_t);
++
+ char *
+ __strndup (s, n)
+      const char *s;
+--- a/gcc4/recipe/files/gcc/libunixlib/stdlib/msort.c
++++ b/gcc4/recipe/files/gcc/libunixlib/stdlib/msort.c
+@@ -40,6 +40,9 @@
+ #include <memcopy.h>
+ #include <errno.h>
+ 
++/* Internal glibc-style alias; defined in string/mempcpy.c but not declared in any header.  */
++extern void *__mempcpy (void *, const void *, size_t);
++
+ typedef int (*__compar_fn_t) (__const void *, __const void *);
+ typedef int (*__compar_d_fn_t) (__const void *, __const void *, void *);
+ #define __alloca alloca

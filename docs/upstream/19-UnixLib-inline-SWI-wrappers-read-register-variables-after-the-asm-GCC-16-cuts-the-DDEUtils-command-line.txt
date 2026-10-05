@@ -1,0 +1,246 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: the inline SWI wrappers (incl-local/internal/os.h) read their
+         results from local register variables after the asm; GCC 16 at -O2
+         then cuts the arguments of every program to the length of its name
+         when DDEUtils is loaded
+Attach:  patches/unixlib-inline-swi-register-variables.patch
+         repro/regvar/regvar1.c (the reproducer: builds anywhere on ARM)
+         repro/regvar/fix-unixlib-regvars.py (the generator of the patch)
+         repro/regvar/argtest.c rawarg.c ddecl.c (the programs of the machine
+         runs)
+         verify/tools/sim-regvar.py sim-swi-wrappers.py check-regvar-asm.sh
+
+Summary
+-------
+With a UnixLib built by GCC 16.2.0 at -O2, every program that is started with
+arguments longer than the name of the program, while the DDEUtils module is
+loaded, gets its arguments cut to the length of its own name, in a heap block
+that is too small for the whole DDEUtils line. DDEUtils is loaded by text
+editors that do throwback (StrongED loaded it on my machine), so with an editor
+running none of the native GCC 16 compilers of my port could compile anything:
+the gcc driver gives cc1 a command line of about 430 characters; a stand-in
+program that the driver started in cc1's place got 61 of them, and the real cc1
+ended with status 1 and printed nothing. UnixLib built by GCC 10.2.0 from the
+same source works (the reproducer below also passes with GCC 4.7.4).
+
+The cause is in incl-local/internal/os.h. The inline SWI wrappers declare the
+results of a SWI as local register variables (register size_t len __asm ("r0"))
+and read them in C after the asm statement. The GCC manual (Local Register
+Variables) says that the only supported use of such a variable is to name a
+register for an operand of an asm statement, and that elsewhere the contents of
+the register are not guaranteed. The variable is the hard register, and the
+compiler uses it for other things in between. In __unixinit () GCC 16.2.0 makes
+arg_size the result of the strlen () that follows SWI DDEUtils_GetCLSize: the
+SWI result is in r0, strlen's argument and result are in r0 too, and the code
+that picks the size reads r0 after the call.
+
+The patch rewrites the 32 wrappers of os.h that use register variables so that
+no result is read from a register variable after the asm: the asm copies every
+result into an ordinary variable itself. It is mechanical
+(repro/regvar/fix-unixlib-regvars.py makes it from the pristine file; 32 hunks,
+250 lines added, 136 removed), and the wrappers look the same as before at the
+call sites. A second problem that I found on the way, an endless loop in
+__get_dde_prefix () when a DDEUtils prefix is set, is report 20.
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, DDEUtils 1.75 (12 Jul
+2015, loaded by StrongED), SOManager 3.04 (20 Dec 2021), ARMEABISupport 1.08,
+UnixLib 5.0 from trunk r7800 built with GCC 16.2.0 (my forward-port of the EABI
+tool chain; libunixlib.so.5 is linked as a shared library, so one library
+serves every program). Compared with: GCCSDK GCC 10.2.0 Release 1
+(arm-riscos-gnueabihf) and GCC 4.7.4 Release 6 (arm-unknown-riscos). The source
+of os.h is the same in trunk r7800 and in the 10.2.0 build I have.
+
+How it shows: measured on the machine
+-------------------------------------
+The loader: Alias$@RunType_E1F is 'SOMRun %*0'. som_runcom.c (command_run,
+lines 662 - 674) sets the DDEUtils command line to the program's arguments
+(ddeutils_set_cl) and starts the program with an empty command tail whenever
+DDEUtils is loaded, so OS_GetEnv returns only the program name and the
+arguments wait in the DDEUtils buffer. unix/unix.c (__unixinit) takes the size
+with DDEUtils_GetCLSize, allocates name + arguments + 2 bytes, copies the name
+and gets the arguments with DDEUtils_GetCl. With DDEUtils not loaded none of
+that runs: the arguments are in the OS_GetEnv string.
+
+argtest.c prints argc and the arguments (the test words are w01, w02, ...). The
+program name, as OS_GetEnv gives it, is 60 characters; DDEUtils loaded; library
+built from trunk with GCC 16.2.0; run from a Task window:
+
+  arguments given                     arrived
+  8 words, 31 characters              all 31 (argc 9)
+  20 words, 79 characters             60 characters (argc 16)
+  60 words, 239 characters            60 characters (argc 16)
+  vfork + exec, 160 characters        60 characters (argc 13)
+  vfork + exec, 1200 characters       60 characters (argc 13)
+
+Everything arrives when DDEUtils is unloaded in the same boot (*RMKill
+DDEUtils; argc 61 for the 60 words, 21 for 20 and 41 for 40 by exec). The
+loader and the module are not at fault: rawarg.c, a freestanding program
+without UnixLib that reads OS_GetEnv and the DDEUtils command line itself, sees
+the program name in OS_GetEnv and all 239 characters of arguments in the
+DDEUtils line, intact; ddecl.c, a round trip of DDEUtils_SetCLSize / SetCL /
+GetCl for every size from 2 to 2000, is faithful. Only UnixLib's start-up loses
+the arguments.
+
+The machine code, from the real unix/unix.c of trunk compiled with GCC 16.2.0
+-O2 (the flags of the UnixLib build), the part of __unixinit after SWI
+DDEUtils_GetCLSize (offsets in unix.o):
+
+   808:  svc   0x00062583   XDDEUtils_GetCLSize: the size is in r0
+   80c:  movvs r7, r0       err = V ? r0 : 0
+   810:  movvc r7, #0
+   814:  ldr   r5, [r6]     __ul_global.cli
+   818:  mov   r0, r5
+   81c:  bl    strlen       r0 = strlen (cli): the size is gone
+   820:  cmp   r7, #0
+   824:  mov   r4, r0       com_size
+   828:  beq   b4c          no error: arg_size is "len", that is r0
+   ...
+   b4c:  lsl   r6, r0, #1   cli_size = com_size + arg_size = 2 * r0
+   b50:  add   r0, r6, #2   malloc (cli_size + 2)
+
+So arg_size is the length of the string that OS_GetEnv gave (the program name),
+the buffer is name + name + 2 bytes, and SWI DDEUtils_GetCl, which has no
+length argument, copies the whole DDEUtils line into it: for the 1200 character
+line above that is a heap overflow of about 1140 bytes. UnixLib then parses the
+cut line. I did not see a crash from the overflow in my runs (the runs above
+ended normally); I have not looked at what lay behind the block. GCC 10.2.0
+compiles the same function with an unconditional mov of r0 right after the SWI,
+and 4.7.4 and 10.2.0 pass regvar1.c below.
+
+The reproducer
+--------------
+repro/regvar/regvar1.c has the shape of the wrapper and of its use in
+__unixinit, with the SWI replaced by two instructions that need no RISC OS (mov
+r0, #7: the size 7 in r0, and no error). f ("hello") must return strlen + 7 =
+12. gcc -O2 -S -o - regvar1.c shows whether the result of the asm is copied out
+of r0 before 'bl strlen'; the program prints the result and runs on any ARM
+target. verify/tools/check-regvar-asm.sh makes that check on the assembler
+output, and verify/tools/sim-regvar.py runs f () on an A32 interpreter (the
+machine code of the compiler's output, not a model of it):
+
+  compiler       wrapper as in os.h              rewritten wrapper (-DFIXED)
+  GCC 4.7.4      copied before the call          copied before the call
+  GCC 10.2.0     copied before the call; 12      copied before the call; 12
+  GCC 16.2.0     NOT copied; f ("hello") = 10    copied; 12
+
+(4.7.4 is APCS and cannot run on the interpreter; its line is the check of the
+assembler output only.) I did not look for the first GCC version that does
+this; I tested the three that I have.
+
+The patch
+---------
+Per wrapper: the output register variables become ordinary variables, and the
+asm itself copies each result out at the end of its template ('MOV %[len],
+r0'), with an early-clobber output constraint ('=&r') so that the compiler
+cannot give the copy a register that an input still needs. An input register
+variable stays (that is the supported use); if the SWI changes its register it
+is an in-out operand ('+r'), and a register that the SWI changes and that is
+not an operand goes into the clobber list. For the wrapper above:
+
+  before:
+    register size_t len __asm ("r0");
+    register const _kernel_oserror *err;
+    __asm__ volatile ("SWI %[SWI]\n\t"
+                      "MOVVS %[err], r0\n\t"
+                      "MOVVC %[err], #0\n\t"
+                      : [err] "=r" (err), "=r" (len)
+                      : [SWI] "i" (...)
+                      : "r14", "cc");
+  after:
+    size_t len;
+    register const _kernel_oserror *err;
+    __asm__ volatile ("SWI %[SWI]\n\t"
+                      "MOVVS %[err], r0\n\t"
+                      "MOVVC %[err], #0\n\t"
+                      "MOV %[len], r0\n\t"
+                      : [len] "=&r" (len), [err] "=&r" (err)
+                      : [SWI] "i" (...)
+                      : "r0", "r14", "cc");
+
+OS_GBPB 2 and 4 return the advanced buffer address in R2; the old asm did not
+say so, and R2 is now an in-out operand. The patch adds a comment block above
+the first wrapper that states the rule. Nothing else changes: the names, the
+templates and the post-processing C code of the 32 wrappers are as they were.
+
+In my build 48 of the 1775 functions of libunixlib.so change, all of them users
+of a wrapper (one of them, __get_dde_prefix, also by the patch of report 20):
+every result of a SWI costs one mov, and the register allocation around it can
+change. The shared library grows by 4616 bytes (5198820 to 5203436, 0.09%) with
+both patches and my private fix-level answer; the 1951 exported symbols are the
+same. A user of an unpatched library has no workaround other than not loading
+DDEUtils, or passing the arguments in a response file (a short command line
+reaches the program intact).
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* incl-local/internal/os.h (SWI_*): Copy the results of the SWI out
+	of the registers inside the asm statement, into ordinary variables,
+	instead of reading local register variables after it.  A register
+	that the SWI changes is an in-out operand or a clobber.
+	(SWI_OS_GBPB_ReadBytes, SWI_OS_GBPB_WriteBytes): R2 is changed.
+
+Verification
+------------
+  Machine:  with the patch in the library (first a private copy found through
+            LD$Env, then installed as libunixlib 16.2.0-10 of my port) and
+            DDEUtils loaded and StrongED running: argtest gets all 60 words
+            (240 characters) and, by vfork + exec, all 40 and all 300 words
+            (1511 characters of command line); ulinfo 48 of 48 checks; the
+            native gcc, g++ and gfortran compile, link and run (they failed
+            silently before); the seven regression suites of my port give the
+            same check counts as before the patch (all 50 summary lines
+            identical, none fails).
+  Real source:  verify/run-verify.sh section 9 compiles the pristine
+                unix/unix.c with GCC 16.2.0 and checks that, after SWI
+                DDEUtils_GetCLSize, the first call comes before any copy of r0
+                (the bug), and with the patched os.h that the copy comes first;
+                with GCC 10.2.0 the copy comes first with both headers. The 41
+                source files of trunk that use a wrapper compile with the
+                patched os.h with GCC 10.2.0 and 16.2.0 (not counted: the six
+                scl_*.c files, which are SharedCLibrary-only; three of them, in
+                unix/, do not compile for EABI with either header).
+  Interpreter, wrappers:  verify/tools/sim-swi-wrappers.py compiles every
+                          wrapper of the pristine and of the rewritten header
+                          (GCC 16.2.0, -O2) into a test function each and runs
+                          both on the A32 interpreter with a model of the
+                          kernel that, at every SWI, scrambles the registers
+                          the wrapper's asm declares as changed and the flags
+                          (V half of the time, r0 then an error pointer), with
+                          seeded random values, the same for both versions.
+                          Compared after every run: the returned error pointer,
+                          every output variable, r4 - r11 and sp. All 32
+                          wrappers are identical on 300 seeds each; 10
+                          deliberately broken variants of the rewritten header
+                          (a capture dropped, two registers swapped, a clobber
+                          dropped, ...) are all caught. This shows that the
+                          rewritten wrappers do what the old ones do where the
+                          old ones are right (no call between the asm and the
+                          use); it cannot show the old failure, regvar1.c does.
+  Generator:  fix-unixlib-regvars.py applied to the pristine os.h gives the
+              header of the patch (verify checks it, comments aside); the patch
+              applies to trunk r7800 with patch -p1, and gives, with the patch
+              of report 20 and the others of this bundle, the sources of the
+              release build of my port (the fidelity check of
+              verify/run-verify.sh: 26 files).
+
+What I did not do
+-----------------
+Other files declare local register variables for SWI results as well:
+incl-local/sys/socket.h (93 declarations), sound/DRender.h (36), locale/iconv.c
+(13), time/stdtime.c, common/env.c, time/gmtime_r.c, time/broken.c,
+time/clock.c, stdio/err.c, and the scl_* files. I did not change them: I looked
+at some and they are small functions that use their results at once, but I did
+not audit them, and by the argument above any of them can fail the same way
+when a compiler or an inlining decision changes. I did not measure speed, and
+code size only as the growth of the library above. I tested GCC 4.7.4, 10.2.0
+and 16.2.0 only. The 32 rewritten wrappers were run on the interpreter, and on
+the machine, with GCC 16.2.0 only; with GCC 10.2.0 they compile (and the
+rewritten wrapper of regvar1.c runs right on the interpreter), but I did not
+run them on the machine. The heap overflow is from reading the code (the
+DDEUtils source and unix.c), not from a crash.
+
+Rob Heaton

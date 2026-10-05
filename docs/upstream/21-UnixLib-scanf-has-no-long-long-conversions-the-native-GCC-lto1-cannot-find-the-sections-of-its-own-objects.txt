@@ -1,0 +1,232 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: scanf () has no long long conversions (%llx, %lld, %ju, %zu,
+         %hhd ...): values are cut to 32 bits, %hhd writes two bytes, %Lf
+         stores a float (found because the native lto1 cannot read its own
+         objects)
+Attach:  patches/unixlib-scanf-long-long.patch (204 lines, one file)
+         repro/scanf/ (scantest.c, scanfcheck.c with its table scantab,
+         build-model.sh: a host model of the old and of the patched function)
+
+Summary
+-------
+vfscanf () in libunixlib/stdio/scanf.c is the 4.4BSD scanner. It knows three
+length modifiers, l, L and h. Every integer conversion goes through strtol or
+strtoul, and the result is stored as a long, short, int or pointer. So for
+what the C standard added later it silently does the wrong thing:
+
+  %llx %lld %llu %lli %llo   the second 'l' sets the same flag again, so the
+        number is converted by strtoul / strtol: it is limited to 32 bits (a
+        16 digit hex number gives ULONG_MAX), and only the LOW word of the
+        long long is stored; the high word keeps what was there before.
+  %hhd %hhx ...              the second 'h' sets the same flag again: a short
+        is stored into the one byte target, one byte past it.
+  %jd %zu %td %qd ...        j, z, t and q are not modifiers. They reach the
+        "default: /* compat */" branch of the conversion switch, which takes
+        them for a decimal strtol conversion; the real conversion letter is
+        then matched as literal text. ("%zx" of "89abcdef" stores 89 and
+        returns 1.)
+  %Lf                        stores a float (4 bytes) into a long double (8
+        bytes on this ABI): only l sets the flag that selects the double
+        store; L sets another one, and the float store is the else branch.
+
+The patch (13 hunks, 68 lines added, 19 removed) adds a long long conversion
+(strtoll / strtoull) for ll, q and j, hh (a char), z and t, %n with them, and
+a long double store (strtold) for %Lf. What no modifier, l and h did before
+is unchanged: the old and the new function give identical results for them
+(the table below, and a host model). L changes only for %Lf.
+
+How I found it
+--------------
+The native GCC 16.2.0 that I run on RISC OS could not link anything with
+-flto. lto1 stopped with
+
+  lto1: fatal error: bytecode stream in file 'dm.o' generated with GCC
+        compiler older than 10.0
+
+for every object, although the objects were fine. lto1 finds the sections of
+an LTO object by their names, .gnu.lto_.lto.<id>, where <id> is a 64 bit hash
+written as 16 hex digits (for example f8f459e5fb71f146), and it reads the id
+back from the name with (gcc/lto/lto-common.cc, lto_section_with_id)
+
+  sscanf (s, "." HOST_WIDE_INT_PRINT_HEX_PURE, id)      i.e.  ".%llx"
+
+UnixLib stored 0xffffffff in the low word of the variable (strtoul's overflow
+value) and left the high word alone, so the name that lto1 rebuilt from the id
+never matched a section, lto_get_summary_section_data () returned NULL, and
+lto1 reported the "older than 10.0" error. The same GCC reads archive member
+offsets with sscanf (p, "@%" PRIi64 "%n", ...) (lto-wrapper.cc three times,
+lto/lto-object.cc once) and has a resolution file reader with the same kind of
+format (used with the linker plugin only); they need the same repair.
+
+(The failure was also silent for a while: the output of the processes that
+collect2 starts with a redirected stdout ends up in the temporary file that
+collect2 then reads as a list of file names. That is handled in collect2 and
+lto-wrapper in my port and is not part of this report.)
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+SOManager 3.04, UnixLib 5.0 from trunk r7800 built with GCC 16.2.0 (libunixlib
+16.2.0-10 of my port for the unpatched runs: stdio/scanf.c in it is the file of
+trunk, unchanged). The function is the same in trunk r7800 and in the GCCSDK
+10.2.0 build I have; nothing here depends on the compiler.
+
+What I measured, and what I did not
+-----------------------------------
+On the machine, with two programs (repro/scanf), unpatched and patched:
+
+1. scantest: 16 sscanf cases with the formats and values of lto1 and
+   lto-wrapper; every target starts with a canary pattern. Unpatched 11 of 16
+   fail (the 5 that pass are %lx, %x, %hx, %d %i and strtoull); patched 16 of
+   16 pass. Unpatched, as printed on the machine:
+
+     format  input                 stored (old)         expected
+     %llx    f8f459e5fb71f146      11223344ffffffff     f8f459e5fb71f146
+     %llu    12345678901234567     1234605619298697215  12345678901234567
+     %lld    -12345678901234567    1234605617151213568  -12345678901234567
+     %jx     123456789abcdef0      11223344075bcd15     123456789abcdef0
+     %zx     89abcdef              59                   89abcdef
+     %tx     7fffffff              7                    7fffffff
+     %hhx    ff into byte 1 of     aa ff 00             aa ff aa
+             the bytes aa aa aa
+
+   (11223344 is the canary the test put into the high word before the call;
+   %llx got ULONG_MAX in the low word and left the canary in the high word.)
+
+2. scanfcheck: a table of 15066 sscanf cases, replayed on the library under
+   test. The table was made by glibc's sscanf on a Linux host ("scanfcheck
+   gen"): 9 modifier spellings (none, hh, h, l, ll, j, z, t, q) x conversions
+   d i u o x X x suppression x widths x inputs. For each case the program
+   compares the return value, the stored value and the guard bytes around the
+   target; the value is compared only where the number lies inside the range
+   of a 32 bit target (outside it the standard says nothing, UnixLib
+   saturates at 32 bits and glibc on a 64 bit host wraps). On the machine the
+   unpatched library fails 5502 of the 15066 cases and the patched one none.
+   The machine prints only the first 40 failures; the split by modifier is
+   from the host model of the old function (below), which fails the same
+   total of 5502:
+
+     modifier   cases   unpatched fails   patched fails
+     (none)      1674          0               0     the three that the old
+     h           1674          0               0     code had: right already
+     l           1674          0               0
+     hh          1674       1167               0     bytes past the target
+     ll          1674       1167               0     value cut to 32 bits
+     j           1674       1187               0
+     q           1674       1187               0
+     z           1674        397               0
+     t           1674        397               0
+     total      15066       5502               0
+
+3. The program that needed it. The unmodified lto1 of GCC 16.2.0 (it reads
+   the section ids with the sscanf above) links a C program of two files with
+   -flto on the patched library: the output is right and main has the calls
+   of the other file inlined; the machine code of that main is the same as
+   the one made by a lto1 in which I had replaced the sscanf by strtoull (the
+   workaround that the package of my port still carries). On the unpatched
+   library the unmodified lto1 fails with the message quoted above. The rest
+   of my port's LTO tests ran with the lto1 that has the workaround, so they
+   show that the tool chain works on the patched library, not that the
+   unmodified lto1 can do them: C++ and Fortran programs of two files, -g, an
+   archive in the link, zlib 1.3.1 (16 files in one LTO link, and built by
+   make), and the two test programs of my port (34541 and 139 checks) built
+   and linked with -flto all pass. My port's checks of the library itself
+   (48 checks of the C library, the mmap guard, the exit tests, the six heap
+   stages) pass on the patched library too, and so do the six regression
+   suites of my port (library and thread tests in C, C++ and Fortran, the
+   shared libstdc++ and libgfortran, main stack sizes and the heap fallback,
+   and the native compile, make and Fortran tests): all 50 summary lines
+   have the same counts as in the run on the unpatched library, and none
+   fails. (In the second run the native compilers were the newer ones of my
+   port as well.)
+
+On a Linux host (repro/scanf/build-model.sh; nothing is copied by hand): the
+function text of vfscanf is cut out of the pristine file and of the patched
+file and compiled with ASan and UBSan, with the 32 bit types of the target
+(long, strtol and strtoul 32 bits; size_t and ptrdiff_t 4 bytes). Then
+ (1) regression: for the modifiers the old code knew (none, h, l) every
+     integer conversion x about 60 inputs x 8 widths x suppression, plus %f
+     %lf %e %g, %n and a set of mixed formats: old and new give the same
+     return value and the same stored bytes;
+ (2) the new modifiers (hh ll j q z t) against glibc for well-formed inputs:
+     return value, stored value, and no byte written outside the target; the
+     old code gives another result than the new one (which agrees with
+     glibc) in 7493 of these cases;
+ (3) %Lf against glibc (the old code stores a float);
+ (4) the canary cases of scantest.
+47315 cases, 0 failures. The table of item 2 above, replayed on the two models:
+new 0 failed, old 5502 failed (the same number as on the machine, so the model
+of the old function is the real one), glibc itself 0 failed.
+
+Object level: in the release build of my port with this patch, 1788 of the
+1792 object files are identical to the build without it (debug information
+stripped). The four that differ are scanf.o and sysconf.o (the plain and the
+PIC object of each); sysconf.o carries only a private "fix level" number of my
+packaging. The exports are identical (1951).
+
+The patch
+---------
+ * Two new flags, LONGLONG (ll, q, j) and CHARSZ (hh; SHORT stays set), and
+   a second conversion pointer, ccfnll, set next to ccfn at every integer
+   conversion: strtoll for d and i, strtoull for o u x p.
+ * 'l' when LONG is already set sets LONGLONG; 'h' when SHORT is already set
+   sets CHARSZ; 'j' and 'q' set LONGLONG. 'z' and 't' mean as big as size_t
+   and ptrdiff_t: nothing to do while those are int sized, as they are on
+   this target; the code tests sizeof and sets LONG or LONGLONG where they are
+   bigger, so that it stays right on a 64 bit target.
+ * The store: LONGLONG stores an unsigned long long; otherwise as before, with
+   a char for CHARSZ. %n stores a long long for LONGLONG and a char for CHARSZ.
+ * %Lf (LONGDBL) stores a long double converted by strtold.
+ * #include <stddef.h> for size_t and ptrdiff_t.
+
+Deliberately not changed: %D %O %X stay the BSD synonyms of %ld %lo %lx and
+%E %F of %le %lf; %G, %a and %A are still not conversions (they go to the
+default branch, a decimal integer conversion); no wide character functions; the
+behaviour for numbers outside the range of the target. Two differences from
+glibc that were there before and that the patch leaves alone (the comparison
+with glibc leaves such inputs out): a hex prefix that a width cuts off ("%2x"
+of "0x1F"), and a bare "0x" ("%x" of "0x"): UnixLib returns 1 and stores 0,
+glibc returns 0.
+
+%Lf uses UnixLib's strtold, which is a placeholder that calls strtod ("until
+we have time to get a proper version"). That is right where long double is
+the same as double, as it is on this ABI; I did not look further.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* stdio/scanf.c (vfscanf): Understand the length modifiers ll, q,
+	j, hh, z and t, and %Lf.  Convert with strtoll / strtoull into a
+	long long for ll, q and j, store a char for hh.  Before, ll was l,
+	hh was h, j z t q were taken for a decimal conversion, and %Lf
+	stored a float.  Include <stddef.h>.
+
+Verification
+------------
+  Source:   the patch applies to trunk r7800 with patch -p1; the patched file
+            compiles with GCC 10.2.0 and 16.2.0; with the other patches of
+            this bundle it gives the sources of the release build of my port
+            (verify/run-verify.sh, sections 1, 10 and the fidelity check).
+  Host:     repro/scanf/build-model.sh, as above; run-verify.sh checks the
+            four numbers (47315 cases / 0 failures; table: new 0, old 5502,
+            glibc 0).
+  Machine:  scantest and scanfcheck, unpatched and patched (above); lto1,
+            zlib, the regression suites and the rest of the list in item 3.
+
+What I did not do
+-----------------
+I did not look at the history of the file in svn, nor search the mailing list
+or the bug tracker for it, so I do not know whether the problem is known or
+since when it is there. I did not look at wide character functions, if there
+are any, nor at other code that parses numbers (apart from the strtold remark
+above). The comparison table is made by glibc on a 64 bit host, with the 32 bit
+target emulated in the model and only the values inside the 32 bit range
+compared: it says nothing about numbers outside that range. I did not try
+a 64 bit target for the z and t paths: they are written to be right there
+and tested only through the int sized case.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

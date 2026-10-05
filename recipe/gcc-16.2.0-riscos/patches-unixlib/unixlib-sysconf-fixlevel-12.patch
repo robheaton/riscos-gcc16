@@ -1,0 +1,19 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-04 19:13:38.356893631 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-04 19:13:38.368930178 +0100
+@@ -145,11 +145,14 @@
+ 	 freed when the process ends; 10: 16.2.0-8 and later, the _exit of a
+ 	 vfork child that does not exec no longer frees the RMA block of its
+ 	 parent's program image; 11: the heap of a vfork + exec child no
+-	 longer grows over the copy of its parent).  Lets a
++	 longer grows over the copy of its parent; 12: the inline SWI wrappers
++	 no longer read a register variable after the asm, so that the
++	 arguments of a program survive the DDEUtils module being loaded).
++	 Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 11;
++	return 12;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

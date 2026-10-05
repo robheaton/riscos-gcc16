@@ -1,0 +1,49 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: Eight problems in SharedUnixLibrary / UnixLib / ARMEABISupport found
+         while forward-porting GCCSDK to GCC 16 (reports follow, one per mail)
+Attach:  none
+
+Hello,
+
+I have been forward-porting the GCCSDK EABI tool chain (arm-riscos-gnueabihf)
+to GCC 16.2.0 and binutils 2.45.1, on top of the UnixLib, SharedUnixLibrary
+and ARMEABISupport sources of trunk r7800, and testing it on a Raspberry Pi
+Compute Module 4 running RISC OS 5.30 - including native gcc, g++ and
+gfortran driven by GNU make on the machine itself.  That exercises vfork,
+exec and mmap far harder than most programs do, and it turned up eight
+problems in SharedUnixLibrary 1.16, UnixLib, ARMEABISupport and, possibly,
+the kernel.
+
+I will send them as separate mails, the most serious first:
+
+  1  SharedUnixLibrary: a vfork child that ends without exec kills its
+     parent, resizes its parent's Wimp slot and, when the parent was started
+     by exec, freezes the machine.  Patch.
+  2  UnixLib: the _exit of such a child frees the RMA block of the shared
+     program image.  Patch.
+  3  UnixLib: the signal stack of every program is never freed.  Patch.
+  4  ARMEABISupport: a failed mmap leaves its dynamic area behind until the
+     next reboot.  Patch (against 1.05).
+  5  ARMEABISupport / SharedUnixLibrary: the mmap memory of a vfork + exec
+     child stays allocated until the root process ends.  Design suggestion.
+  6  ARMEABISupport: *RMKill while SOManager is loaded (minor).
+  7  RISC OS 5.30 / ARMEABISupport: a store made by the OS to a not-yet-mapped
+     page of an EABI stack is lost.  Reproducer; I did not find the cause.
+  8  UnixLib / SharedUnixLibrary: the heap of a vfork + exec child can grow
+     over the saved copy of its parent.  Reproducer.
+
+Each mail is self-contained: what happens, a reproducer, what I measured on
+the machine, the cause as far as I could find it in the sources, and a patch
+against trunk r7800 where I have one.  I can run a test build of any of the
+modules on the machine if that would help.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Thanks,
+Rob Heaton

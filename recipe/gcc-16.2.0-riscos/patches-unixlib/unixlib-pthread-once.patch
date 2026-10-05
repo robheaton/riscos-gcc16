@@ -1,0 +1,126 @@
+--- a/libunixlib/pthread/once.c
++++ b/libunixlib/pthread/once.c
+@@ -1,26 +1,77 @@
+ /* Written by Alex Waugh.
+    Copyright (c) 2002, 2003, 2004, 2005, 2006 UnixLib Developers.  */
+ 
++/* This file must be compiled with -fexceptions (see pthread_once).  */
++
+ #include <errno.h>
+ #include <pthread.h>
+ 
++/* once_mutex only protects the state of the pthread_once_t objects, and
++   once_cond signals changes of that state.  It is NOT held while an
++   init routine runs.
++
++   The previous implementation held one mutex shared by every
++   pthread_once_t for the whole duration of the init routine.  An init
++   routine that blocks on another thread, which itself calls pthread_once
++   for a different pthread_once_t, then deadlocks.  The C++ library does
++   exactly that in std::async: future::get() runs
++   call_once (thread::join) while the asynchronous thread runs
++   call_once (set the result).
++
++   State of a pthread_once_t:
++     0 (PTHREAD_ONCE_INIT)  init routine has not run
++     ONCE_RUNNING           some thread is inside the init routine
++     ONCE_DONE              init routine has completed (as before)  */
++#define ONCE_DONE    1
++#define ONCE_RUNNING 2
++
+ static pthread_mutex_t once_mutex = PTHREAD_MUTEX_INITIALIZER;
++static pthread_cond_t once_cond = PTHREAD_COND_INITIALIZER;
+ 
++/* The init routine did not complete: the effect must be as if pthread_once
++   was never called, so let another thread try.  */
++static void
++once_reset (pthread_once_t *once_control)
++{
++  pthread_mutex_lock (&once_mutex);
++  *once_control = 0;
++  pthread_cond_broadcast (&once_cond);
++  pthread_mutex_unlock (&once_mutex);
++}
+ 
+-/* Cleanup handler for pthread_once */
++/* Cleanup handler for pthread_once: the init routine was cancelled, i.e.
++   it called pthread_exit () or the thread was cancelled.  */
+ static void
+ __pthread_once_cleanup (void *arg)
+ {
+-  arg = arg;
+-  pthread_mutex_unlock (&once_mutex);
++  once_reset ((pthread_once_t *) arg);
+ }
+ 
+-/* Ensure a specified function is called exactly once
+-   We need a mutex so that only one call to pthread_once
+-   can proceed at any one time, and we can't have ints
+-   disabled during the init_routine call.
+-   If the init_routine is cancelled then the effect should
+-   be as if pthread_once was never called. */
++/* An exception (C++ exceptions have to propagate through pthread_once, as
++   std::call_once relies on it) thrown by the init routine must have the same
++   effect.  The thread's cleanup handler list is not unwound with the stack,
++   so its entry for this call is removed here, before the stack frame holding
++   it goes away.  */
++struct once_guard
++{
++  pthread_once_t *control;
++  int armed;
++  struct __pthread_cleanup cleanup;   /* the thread's cleanup list entry; lives as long as the guard */
++};
++
++static void
++once_guard_cleanup (struct once_guard *guard)
++{
++  if (guard->armed)
++    {
++      __pthread_cleanup_pop ();
++      once_reset (guard->control);
++    }
++}
++
++/* Ensure a specified function is called exactly once.
++   A thread that finds the init routine already running in another thread
++   waits until that has finished (or been cancelled), as POSIX requires.  */
+ int
+ pthread_once (pthread_once_t *once_control, void (*init_routine) (void))
+ {
+@@ -29,15 +80,33 @@
+ 
+   pthread_mutex_lock (&once_mutex); /* This won't fail */
+ 
++  while (*once_control == ONCE_RUNNING)
++    pthread_cond_wait (&once_cond, &once_mutex);
++
+   if (*once_control == 0)
+     {
+-      pthread_cleanup_push (__pthread_once_cleanup, NULL);
++      struct once_guard guard __attribute__ ((cleanup (once_guard_cleanup)));
++
++      guard.control = once_control;
++      guard.armed = 1;
++      guard.cleanup.routine = __pthread_once_cleanup;
++      guard.cleanup.arg = once_control;
++
++      *once_control = ONCE_RUNNING;
++      pthread_mutex_unlock (&once_mutex);
++
++      /* pthread_cleanup_push/pop (__pthread_once_cleanup, once_control) written out, so that the entry
++         stays in scope for once_guard_cleanup.  */
++      __pthread_cleanup_push (&guard.cleanup);
+ 
+       init_routine ();
+ 
+-      pthread_cleanup_pop (0);
++      __pthread_cleanup_pop ();
++      guard.armed = 0;
+ 
+-      *once_control = 1;
++      pthread_mutex_lock (&once_mutex);
++      *once_control = ONCE_DONE;
++      pthread_cond_broadcast (&once_cond);
+     }
+ 
+   pthread_mutex_unlock (&once_mutex);

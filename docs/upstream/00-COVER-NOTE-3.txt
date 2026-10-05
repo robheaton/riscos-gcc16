@@ -1,0 +1,40 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: Two UnixLib fixes for programs that run with the DDEUtils module
+         loaded (reports follow, one per mail)
+Attach:  none
+
+Hello,
+
+This is the third batch from the same work as my earlier mails. The forward
+port of the GCCSDK EABI tool chain to GCC 16.2.0 (a Raspberry Pi Compute Module
+4, RISC OS 5.30) can compile natively on RISC OS now, and getting that to work
+with a text editor running (which loads the DDEUtils module) turned up two
+problems in UnixLib, one of them serious. Each is against the trunk r7800
+sources and each can be taken on its own:
+
+  19  The inline SWI wrappers of incl-local/internal/os.h read their results
+      from local register variables after the asm statement, which GCC does
+      not guarantee.  GCC 16 at -O2 then makes __unixinit () use the result of
+      strlen () as the size of the DDEUtils command line: with DDEUtils loaded
+      every program started with arguments longer than its own name gets them
+      cut to the length of the name, in a buffer that is too small.  GCC
+      10.2.0 compiles the same source as intended (GCC 4.7.4 a small
+      reproducer).  Seen on the machine and fixed; the patch is generated and
+      rewrites all 32 wrappers.
+  20  __get_dde_prefix () loops for ever when a DDEUtils prefix is set (the
+      loop tests *prefix instead of *end_prefix).  One word.  Found by reading
+      the code; NOT seen on the machine with the unpatched code (the report
+      says what I did run: the compiled function on an interpreter).
+
+Each mail says what was measured on the machine and what was only read from the
+code or run on an interpreter, and where it did not run at all. I can run a
+test build on the machine if that helps.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Thanks,
+
+Rob Heaton

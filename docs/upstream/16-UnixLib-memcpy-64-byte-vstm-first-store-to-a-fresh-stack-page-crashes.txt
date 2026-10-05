@@ -1,0 +1,94 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: the NEON memcpy / memmove store 64 bytes with one VSTM, which
+         crashes (SIGSEGV) when it is the first access to an unmapped EABI
+         stack page; split into two 32-byte stores
+Attach:  patches/unixlib-memcpy-split-vstm.patch
+         repro/svc-abort/readtest5.c repro/svc-abort/readtest6.c
+
+Summary
+-------
+This is the workaround in UnixLib for the second problem of report 07: a
+64-byte VSTM (vstmia / vstmdb of eight d registers) that is aligned to 64 bytes
+and is the first access to a not-yet-mapped page of an EABI stack gets SIGSEGV;
+the abort is not restarted after ARMEABISupport has mapped the page. Stores of
+32 bytes or less, and 64-byte ones that are not aligned, are handled correctly.
+If report 07 is fixed in RISC OS or ARMEABISupport, this patch is not needed.
+
+UnixLib's v7l memcpy / memmove (string/_memcpymove-v7l.s, from RISC OS Open's
+code) aligns the destination to 64 bytes and then stores 64 bytes at a time
+with VSTM, so copies of 64 bytes or more into stack pages that have not been
+used yet crash (in my test always for 512 bytes, and for 64 bytes when the copy
+starts or ends exactly at a page boundary). The patch replaces each of the 4
+sites (the aligned and the vext-shifted forward and backward loops) by two
+32-byte VSTMs of the same registers in the same memory order: one line becomes
+two at each site; the rest of the patch is a comment.
+
+Measured on the machine
+-----------------------
+Raspberry Pi Compute Module 4, RISC OS 5.30, ARMEABISupport 1.08; readtest5 and
+readtest6 (repro/svc-abort/) make copies into two stack pages that nobody has
+used before (each line deeper in the stack than the last; build with
+-fno-stack-clash-protection). Copies of 64 and of 512 bytes, starting at 0, -8,
+-16, -32, -48 and -64 bytes from a page boundary:
+
+  routine                      n = 64                      n = 512
+  UnixLib (original)    crash at 0 and -64, ok     crash at all six offsets
+                        at -8 -16 -32 -48
+  8-register vstmia     crash at 0 and -64, ok     crash at 0 and -64, ok
+  loop of my own        at -8 -16 -32 -48          at -8 -16 -32 -48
+  4-register vstmia     ok at all six offsets      ok at all six offsets
+  patched memcpy and    ok at all six offsets      ok at all six offsets
+  memmove (12 cases each)
+
+A 64 KB copy into a fresh stack buffer: the patched library's memcpy and
+memmove 'returned 65536 of 65536 bytes; 0 bytes differ', the original memcpy
+(UnixLib's routine linked into the test program) 'CRASH (SIGSEGV)'. memset
+(vst1.8 with a 128-bit alignment hint) and a hand-written vst1 are fine on
+fresh pages in the same test.
+
+Correctness on ordinary memory, readtest6: random copies of 0 to 1.1 MB at all
+alignments (an alignment sweep of 12288 copies, memmove overlaps as well, 522
+overlap cases): 0 wrong for the library's routines, the split ones and the
+original ones. Speed on heap memory, aligned, the patched memcpy (A) against
+the original (B), best of 5, 10 ms timer: 64 bytes 1969 / 2048 MB/s, 512 bytes
+5689 / 5389, 4 KB 7585 / 6827, 64 KB 7585 / 7062, 1 MB 2498 / 2560: B/A between
+0.96 and 1.11, i.e. no measurable cost.
+
+(An earlier version of readtest6 reported memmove errors and an EMT trap in its
+self test; that was a fault of the test harness, fixed in readtest6 1.2, and
+the library's routines pass the corrected one. The result files that I have are
+from my machine and not part of the bundle.)
+
+Static check
+------------
+verify/tools/check-vstm-split.py assembles the original and the patched file
+with the flags of the UnixLib build, disassembles both, and checks that after
+joining each pair of 32-byte stores in the patched listing (same base register,
+consecutive register ranges, in the order that the forward or backward loop
+uses) the two listings are identical, instruction for instruction: 32
+sixty-four-byte stores in the original, none in the patched file (it has 32
+more instructions: 2408 against 2440).
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* string/_memcpymove-v7l.s (memcpy_middle_64bytes): Store 64 bytes
+	with two 32-byte vstm instead of one.  A 64-byte aligned vstm that
+	is the first access to an unmapped page of an EABI stack is not
+	restarted.
+
+What I did not do
+-----------------
+I did not look for other 64-byte stores in UnixLib (the memset uses 32-byte
+stores) or in other libraries (libstdc++, libgcc): a compiler can generate a
+VSTM of eight registers too, for example when it copies a big struct. With the
+default -fstack-clash-protection of my port's compiler the pages are mapped in
+user mode before the program gets there, which hides all of this. I cannot say
+from the hardware whether the problem is the OS's data abort handling or
+ARMEABISupport's; report 07 asks.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

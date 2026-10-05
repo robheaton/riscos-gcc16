@@ -1,0 +1,31 @@
+--- a/libstdc++-v3/configure.host
++++ b/libstdc++-v3/configure.host
+@@ -268,6 +268,9 @@
+   linux-musl*)
+     os_include_dir="os/generic"
+     ;;
++  gnueabihf)
++    os_include_dir="os/riscos"
++    ;;
+   gnu* | linux* | kfreebsd*-gnu | uclinux*)
+     if [ "$uclibc" = "yes" ]; then
+       os_include_dir="os/uclibc"
+@@ -307,6 +310,9 @@
+     # Use libatomic if necessary and avoid libstdc++ specific atomicity support
+     atomicity_dir="cpu/generic/atomicity_builtins"
+     ;;
++  riscos)
++    os_include_dir="os/riscos"
++    ;;
+   solaris2*)
+     os_include_dir="os/solaris"
+     ;;
+@@ -370,7 +376,7 @@
+ 	;;
+     esac
+     ;;
+-  arm*-*-freebsd*)
++  arm*-*-freebsd* | arm*-riscos-*)
+      port_specific_symbol_files="\$(srcdir)/../config/os/gnu-linux/arm-eabi-extra.ver"
+      ;;
+   nvptx-*-none)

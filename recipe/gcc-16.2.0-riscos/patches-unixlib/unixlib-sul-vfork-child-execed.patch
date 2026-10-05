@@ -1,0 +1,19 @@
+--- a/libunixlib/module/sul.s	2026-10-04 12:04:28.447374312 +0100
++++ b/libunixlib/module/sul.s	2026-10-04 12:04:28.458621905 +0100
+@@ -913,6 +913,16 @@
+ 	@ of its own stack in its start-up code.
+ 	STR	a1, [v2, #PROC_STACK]
+ 
++	@ The child was also copied from the parent's STATUS word, and with it the flag IS_EXECED: UnixLib's execve sets it in the process structure of a process that execs, and the program that
++	@ is started keeps that structure.  A vfork child of such a program is not the result of an exec: until it execs itself it is the same client as its parent (the Shared Object Manager
++	@ client of the dynamically linked program).  With the flag set, sul_exit takes the child for a new client and calls SOM_DeregisterClient: that frees the PARENT's client record and the
++	@ tables behind the PIC register of the parent (the pointer at 0x8038 in the application space), which the parent goes on using; the next client that registers - typically the child of
++	@ the parent that execs next - is handed that memory, and the parent's next call into UnixLib loads garbage as its PIC register: a crash, or a frozen machine when it happens inside
++	@ __env_unixlib (GCCSDK GCC 16 forward-port, RunTraceUL1, 2026-10-04).  A child that execs sets the flag itself (execve) before it calls sul_exec.
++	LDR	a1, [v2, #PROC_STATUS]
++	BIC	a1, a1, #SULPROC_STATUS_FLAG_IS_EXECED
++	STR	a1, [v2, #PROC_STATUS]
++
+ 	@ Save a reference to the parent proc struct
+ 	STR	v1, [v2, #PROC_PARENTSULPROC]
+ 	STR	v3, [v2, #PROC_PARENTSULPROCADDR]

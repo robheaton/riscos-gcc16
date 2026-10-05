@@ -1,0 +1,19 @@
+--- a/gcc/config/arm/arm.cc	2026-10-03 07:26:44.293696660 +0100
++++ b/gcc/config/arm/arm.cc	2026-10-03 07:26:44.308961113 +0100
+@@ -3696,6 +3696,16 @@
+   /* The data segment is stored seperately from the text segment at an
+    * address determined at runtime.  */
+   arm_pic_data_is_text_relative = 0;
++
++  /* The stack of an EABI program is mapped one page at a time, from a data
++     abort handler (ARMEABISupport), when a page is first touched.  RISC OS
++     loses the store that takes the page fault when IT is the first to touch a
++     page (an OS call filling a buffer in a big frame), and a 64-byte aligned
++     vstm that takes the fault is not restarted at all.  Touch every page of a
++     stack frame, with an ordinary store, when the frame is created, unless
++     the user said otherwise (-fno-stack-clash-protection).  */
++  if (!OPTION_SET_P (flag_stack_clash_protection))
++    flag_stack_clash_protection = 1;
+ #endif
+ 
+   /* If stack checking is disabled, we can use r10 as the PIC register,

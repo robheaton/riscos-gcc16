@@ -1,0 +1,11 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/common/prefix.c
++++ b/gcc4/recipe/files/gcc/libunixlib/common/prefix.c
+@@ -27,7 +27,7 @@
+ 
+       /* Returned string can be control char terminated.  */
+       const char *end_prefix;
+-      for (end_prefix = prefix; (unsigned char)*prefix >= ' '; ++end_prefix)
++      for (end_prefix = prefix; (unsigned char)*end_prefix >= ' '; ++end_prefix)
+         /* */;
+       /* Filter out zero length results.  */
+       size_t size = end_prefix - prefix;

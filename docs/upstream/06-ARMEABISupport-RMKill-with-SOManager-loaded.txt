@@ -1,0 +1,62 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: ARMEABISupport: *RMKill succeeds while SOManager holds the handle of a
+         global allocator of the module - afterwards every EABI program fails
+         to start (minor)
+Attach:  none
+
+Summary
+-------
+Found by accident while testing the patch of report 04 (RISC OS 5.30,
+Cortex-A72).  EABI programs had been run since the boot, so ARMEABISupport 1.08
+and SOManager 3.04 were loaded (a test script of mine checks the first; the
+second is loaded with it by SharedLibs:SOM1stRun); no EABI program was running
+at that moment.  I replaced the module: *RMKill ARMEABISupport, then *RMLoad
+of another build.  Both commands succeeded without an error, and from then on
+EVERY EABI program failed to start:
+    modver: SharedLibs:lib.armeabihf.libm/so/1/0/0: OS Error: Bad parameter
+        passed to ARMEABISupport SWI
+    modver: can't load library 'libm.so.1'
+A reboot cures it; nothing was harmed.
+
+Cause (source: trunk r7800 = ARMEABISupport 1.05, and SOManager module2)
+-----------------------------------------------------------------------
+som_alloc_lib creates SOManager's "Shared Libraries" allocator (page mapped,
+ARMEABISUPPORT_ALLOCATOR_FLAG_GLOBAL) on first use and keeps the handle in
+global.memory_page_allocator.  After the module has been replaced the handle
+points into the old module's freed RMA memory and MemoryOp ALLOC rejects it
+(page_allocator_valid () -> armeabisupport_bad_param).
+module_finalisation (init-fini.c) refuses with armeabisupport_in_use only
+while global.app_list.count > 0 - allocator_new registers the calling
+program's app also for a GLOBAL allocator, but that app goes when the program
+ends - and it destroys only global.stack_allocator, so the global allocator
+and its dynamic area (whose page handler is code of the unloaded module) are
+left behind too.
+
+Suggestion (not tested)
+-----------------------
+Refuse to finalise (armeabisupport_in_use) while global.allocator_list is not
+empty - SOManager would then have to be killed first - or destroy those
+allocators there and let SOManager notice.  Which of the two fits the design
+is for the maintainers to say; I only saw the symptom once and have not tried
+either.
+
+Workaround
+----------
+Do not replace ARMEABISupport in a running system: load the test build with
+*RMLoad right after a boot, before any EABI program has run (the module is
+loaded on demand by SharedLibs:SOM1stRun), and reboot afterwards.
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30,
+  ARMEABISupport 1.08 (03 Jun 2025) replaced by a test build of the 1.05
+  sources, SOManager 3.04 (20 Dec 2021).  The 1.05 sources are the latest I
+  have (trunk r7800); the behaviour was seen with 1.08 being replaced, the
+  cause was read in 1.05.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

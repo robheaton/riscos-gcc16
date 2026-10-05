@@ -1,0 +1,1046 @@
+diff -ruN a/bfd/config.bfd b/bfd/config.bfd
+--- a/bfd/config.bfd	2025-11-10 00:00:00.000000000 +0000
++++ b/bfd/config.bfd	2026-10-01 19:49:04.250203611 +0100
+@@ -420,6 +420,11 @@
+     targ_defvec=arm_elf32_le_vec
+     targ_selvecs=arm_elf32_be_vec
+     ;;
++  arm-riscos-gnueabihf)
++    targ_defvec=arm_elf32_le_vec
++    targ_selvecs=arm_elf32_be_vec
++    targ_cflags=-D__RISCOS_TARGET__
++    ;;
+   arm-*-elf | arm*-*-freebsd* | arm*-*-linux-* | arm*-*-conix* | \
+   arm*-*-uclinux* | arm-*-kfreebsd*-gnu | \
+   arm*-*-eabi* | arm-*-rtems* | arm*-*-uclinuxfdpiceabi)
+diff -ruN a/bfd/elf32-arm.c b/bfd/elf32-arm.c
+--- a/bfd/elf32-arm.c	2025-11-10 00:00:00.000000000 +0000
++++ b/bfd/elf32-arm.c	2026-10-01 20:31:42.359634119 +0100
+@@ -2304,6 +2304,36 @@
+ 
+ #define CMSE_STUB_NAME ".gnu.sgstubs"
+ 
++#ifdef __RISCOS_TARGET__
++#define RISCOS_ABI_SECTION_NAME ".riscos.abi.version"
++#define RISCOS_PIC_SECTION_NAME ".riscos.pic"
++
++/* Marker symbols (undefined weak) referenced from RISC OS PIC code; each
++   reference gets an entry in the .riscos.pic section.  */
++#define RISCOS_IS_GOTT_SYMBOL(name) \
++  ((name) != NULL && (name)[0] == '_' && (name)[1] == '_' \
++   && (strcmp ((name), "__GOTT_INDEX__") == 0 \
++       || strcmp ((name), "__GOTT_THUMB_INDEX__") == 0 \
++       || strcmp ((name), "__GOTT_BASE__") == 0))
++
++/* RISC OS module __RelocData entry: any ABS32 reloc in a rw data section
++   pointing to RW data (ie module workspace).  */
++#define ro_module_is_datareloc(type, secname) \
++  ((type) == R_ARM_ABS32 \
++   && (!strncmp (secname, ".data", sizeof (".data")-1)))
++
++/* RISC OS module __RelocCode entry: an ABS32 reloc in any .data* and
++   .rodata* section, and any GOT32/GOTOFF32 reloc.  */
++#define ro_module_is_codereloc(type, secname) \
++  (((type) == R_ARM_ABS32 \
++    && (!strncmp (secname, ".data", sizeof (".data")-1) \
++	|| !strncmp (secname, ".rodata", sizeof (".rodata")-1) \
++	|| !strcmp (secname, ".ctors") \
++	|| !strcmp (secname, ".dtors"))) \
++   || (type) == R_ARM_GOT32 \
++   || (type) == R_ARM_GOTOFF32)
++#endif
++
+ /* The name of the dynamic interpreter.  This is put in the .interp
+    section.  */
+ #define ELF_DYNAMIC_INTERPRETER     "/usr/lib/ld.so.1"
+@@ -2536,6 +2566,56 @@
+   0xea000000,		/* b	.Lplt_tail			*/
+ };
+ 
++#ifdef __RISCOS_TARGET__
++#define PLT_RISCOS_EXEC_HEADER_SIZE 20
++#define PLT_RISCOS_SHARED_HEADER_SIZE 20
++#define PLT_RISCOS_EXEC_ENTRY_SIZE 12
++#define PLT_RISCOS_SHARED_ENTRY_SIZE 20
++
++#define SRELPIC_VERSION 1
++#define SRELPIC_HEADER_SIZE 8 /* in bytes */
++
++/* The first entry in a procedure linkage table looks like
++   this.  It is set up so that any shared library function that is
++   called before the relocation has been set up calls the dynamic
++   linker first.  */
++static const bfd_vma elf32_arm_riscos_exec_plt0_entry [] =
++  {
++    0xe52de004,		/* str   lr, [sp, #-4]! */
++    0xe59fe004,		/* ldr   lr, [pc, #4]   */
++    0xe08fe00e,		/* add   lr, pc, lr     */
++    0xe5bef008,		/* ldr   pc, [lr, #8]! */
++    0x00000000		/* &GOT[0] - .          */
++  };
++
++static const bfd_vma elf32_arm_riscos_shared_plt0_entry [] =
++  {
++    0xe52de004,		/* str   lr, [sp, #-4]!            */
++    0xe3a0e902,		/* mov   lr, #0x8000               */
++    0xe59ee038,		/* ldr   lr, [lr, #0x38]           */
++    0xe59ee000,		/* ldr   lr, [lr, #__GOTT_INDEX__] */
++    0xe5bef008,		/* ldr   pc, [lr, #8]! */
++  };
++
++static const bfd_vma elf32_arm_riscos_shared_plt_entry [] =
++  {
++    0xe3a0c902,		/* mov  ip, #0x8000               */
++    0xe59cc038,		/* ldr  ip, [ip, #0x38]           */
++    0xe59cc000,		/* ldr  ip, [ip, #__GOTT_INDEX__] */
++    0xe28cca00,		/* add	ip, ip, #0x00XX000 */
++    0xe5bcf000,		/* ldr  pc,[ip, #0x0000XXX]!  @ call function */
++  };
++
++/* Subsequent entries in a procedure linkage table look like
++   this.  */
++static const bfd_vma elf32_arm_riscos_exec_plt_entry [] =
++  {
++    0xe28fc600,		/* add   ip, pc, #0xXX00000 */
++    0xe28cca00,		/* add   ip, ip, #0x00XX000 */
++    0xe5bcf000		/* ldr   pc,[ip, #0x0000XXX]! */
++  };
++#endif
++
+ /* PR 28924:
+    There was a bug due to too high values of THM_MAX_FWD_BRANCH_OFFSET and
+    THM2_MAX_FWD_BRANCH_OFFSET.  The first macro concerns the case when Thumb-2
+@@ -3446,6 +3526,28 @@
+ 
+   /* Fixup section. Used for FDPIC.  */
+   asection *srofixup;
++
++#ifdef __RISCOS_TARGET__
++  /* For RISC OS module __RelocCode & __RelocData support.  */
++  bfd * bfd_ro_module_owner;
++
++  asection * s_ro_module_reloccode;
++  bfd_vma ro_module_reloccode_offset;
++  bfd_vma ro_module_reloccode_size;
++
++  asection * s_ro_module_relocdata;
++  bfd_vma ro_module_relocdata_offset;
++  bfd_vma ro_module_relocdata_size;
++
++  bfd_vma ro_module_image_ro_base;
++  bfd_vma ro_module_image_rw_base;
++
++  /* For RISC OS PIC support.  */
++  asection * srelpic;
++  bfd_vma srelpic_offset;
++  int srelpic_size;
++  int plt_count;
++#endif
+ };
+ 
+ /* Add an FDPIC read-only fixup.  */
+@@ -3961,6 +4063,66 @@
+ 	  || arch >= TAG_CPU_ARCH_V7);
+ }
+ 
++#ifdef __RISCOS_TARGET__
++bool
++bfd_elf32_arm_create_riscos_pic_section (struct bfd_link_info *info)
++{
++  BFD_ASSERT (bfd_link_pic (info) && info->flag_pic == 2);
++
++  struct elf32_arm_link_hash_table *htab = elf32_arm_hash_table (info);
++  bfd *dynobj = elf_hash_table (info)->dynobj;
++  const struct elf_backend_data *bed = get_elf_backend_data (dynobj);
++
++  asection *s = bfd_make_section_with_flags (dynobj,
++					     RISCOS_PIC_SECTION_NAME,
++					     SEC_ALLOC | SEC_LOAD | SEC_DATA
++					     | SEC_HAS_CONTENTS | SEC_IN_MEMORY
++					     | SEC_READONLY | SEC_LINKER_CREATED);
++  if (s == NULL
++      || !bfd_set_section_alignment (s, bed->s->log_file_align))
++    return false;
++  htab->srelpic = s;
++  /* check_relocs may already have counted the __GOTT_INDEX__ references.  */
++  htab->srelpic_size += SRELPIC_HEADER_SIZE;
++
++  return true;
++}
++
++bool
++bfd_elf32_arm_allocate_riscos_pic_section (struct bfd_link_info *info)
++{
++  BFD_ASSERT (bfd_link_pic (info) && info->flag_pic == 2);
++
++  struct elf32_arm_link_hash_table *htab = elf32_arm_hash_table (info);
++  bfd *dynobj = elf_hash_table (info)->dynobj;
++  asection *s = htab->srelpic;
++
++  if (s == NULL)
++    return false;
++
++  /* One relocation for every PLT entry, plus one for the first entry
++     which is used when lazy binding.  */
++  if (htab->plt_count)
++    htab->srelpic_size += (htab->plt_count + 1) * 4;
++
++  s->contents = (bfd_byte *) bfd_zalloc (dynobj, htab->srelpic_size);
++  if (s->contents == NULL)
++    return false;
++  s->alloced = 1;
++  s->size = htab->srelpic_size;
++
++  /* Write header into section:
++     +0 version number
++     +4 Number of relocs.  */
++  bfd_put_32 (dynobj, SRELPIC_VERSION, s->contents + 0);
++  bfd_put_32 (dynobj, (s->size - SRELPIC_HEADER_SIZE) >> 2, s->contents + 4);
++
++  htab->srelpic_offset = SRELPIC_HEADER_SIZE;
++
++  return true;
++}
++#endif
++
+ /* Create .plt, .rel(a).plt, .got, .got.plt, .rel(a).got, .dynbss, and
+    .rel(a).bss sections in DYNOBJ, and set up shortcuts to them in our
+    hash table.  */
+@@ -3980,6 +4142,21 @@
+   if (!_bfd_elf_create_dynamic_sections (dynobj, info))
+     return false;
+ 
++#ifdef __RISCOS_TARGET__
++  if (info->riscos_abi)
++    {
++      const struct elf_backend_data *bed = get_elf_backend_data (dynobj);
++      asection *sec;
++
++      sec = bfd_make_section_anyway_with_flags (dynobj,
++						RISCOS_ABI_SECTION_NAME,
++						bed->dynamic_sec_flags
++						| SEC_READONLY);
++      if (sec == NULL)
++	return false;
++    }
++#endif
++
+   if (htab->root.target_os == is_vxworks)
+     {
+       if (!elf_vxworks_create_dynamic_sections (dynobj, info, &htab->srelplt2))
+@@ -4019,6 +4196,22 @@
+       htab->obfd = saved_obfd;
+     }
+ 
++#ifdef __RISCOS_TARGET__
++  if (info->flag_pic == 2)
++    {
++      if (bfd_link_pic (info))
++	{
++	  htab->plt_header_size = PLT_RISCOS_SHARED_HEADER_SIZE;
++	  htab->plt_entry_size = PLT_RISCOS_SHARED_ENTRY_SIZE;
++	}
++      else
++	{
++	  htab->plt_header_size = PLT_RISCOS_EXEC_HEADER_SIZE;
++	  htab->plt_entry_size = PLT_RISCOS_EXEC_ENTRY_SIZE;
++	}
++    }
++#endif
++
+   if (htab->fdpic_p) {
+     htab->plt_header_size = 0;
+     if (info->flags & DF_BIND_NOW)
+@@ -4133,6 +4326,199 @@
+   return &ret->root.root;
+ }
+ 
++#ifdef __RISCOS_TARGET__
++/* Relocates 32-bit words because the ARM code/data is not loaded in memory
++   at Image$$RO$$Base (used by the linker) but at module RMA space.  */
++static const bfd_vma riscos_module_reloccode[] =
++{
++		/* __RelocCode:                   */
++  0xE59F1034,	/*	LDR	R1, RelocCode     */
++  0xE24FB00C,	/*	ADR	R11, __RelocCode  */
++  0xE05B1001,	/*	SUBS	R1, R11, R1       */
++  0x01A0F00E,	/*	MOVEQ	PC, R14           */
++  0xE59FB028,	/*	LDR	R11, ImageROBase  */
++  0xE08BB001,	/*	ADD	R11, R11,R1       */
++  0xE28F2024,	/*	ADR	R2, RelocCodeList */
++		/* RelocCodeLoop:                 */
++  0xE4920004,	/*	LDR	R0, [R2], #4      */
++  0xE3700001,	/*	CMP	R0, #-1           */
++  0x01A0F00E,	/*	MOVEQ	PC, R14           */
++  0xE79B3000,	/*	LDR	R3, [R11, R0]     */
++  0xE3330000,	/*	TEQ	R3, #0            */
++  0x10833001,	/*	ADDNE	R3, R3, R1        */
++  0x178B3000,	/*	STRNE	R3, [R11, R0]     */
++  0xEAFFFFF7,	/*	B	RelocCodeLoop     */
++#define RISCOS_MODULE_RELOCCODE_OFFSET_RELOCCODE (15*4)
++  0x00000000,	/* RelocCode:                     */
++		/*	.word	__RelocCode       */
++#define RISCOS_MODULE_RELOCCODE_OFFSET_IMAGEROBASE (16*4)
++  0x00000000	/* ImageROBase:                   */
++		/*	.word	Image$$RO$$Base   */
++		/* RelocCodeList:                 */
++		/* ... addresses to words which needs to be relocated
++		   terminated by a -1 value. It should also include the
++		   2 RISCOS_MODULE_RELOCCODE_OFFSET_* offsets.  */
++};
++
++/* Relocates 32-bit words because the RW data can contain RW data pointers
++   which should point to module RMA workspace instead of to module
++   code/data.  */
++static const bfd_vma riscos_module_relocdata[] =
++{
++		/*	Entry: R0 = client static relocation offset  */
++		/*	       R2 = Image$$RW$$Base                  */
++		/*	       R13 = SVC stack                       */
++		/*	Exit: All registers reserved                 */
++		/* __RelocData:                                      */
++  0xE92D400E,	/*	STMFD	R13!, {R1-R3, R14}                   */
++  0xE0822000,	/*	ADD	R2, R2, R0                           */
++  0xE28FE018,	/*	ADR	R14, RelocDataList                   */
++		/* RelocDataLoop:                                    */
++  0xE49E1004,	/*	LDR	R1, [R14], #4                        */
++  0xE3710001,	/*	CMP	R1, #-1                              */
++  0x17923001,	/*	LDRNE	R3, [R2, R1]                         */
++  0x10833000,	/*	ADDNE	R3, R3, R0                           */
++  0x17823001,	/*	STRNE	R3, [R2, R1]                         */
++  0x1AFFFFF9,	/*	BNE	RelocDataLoop                        */
++  0xE8BD800E	/*	LDMFD	R13!, {R1-R3, PC}                    */
++		/* Offsets in the RW data block which need relocated */
++		/* over R12[8] terminated with -1 value.             */
++		/* RelocDataList:                                    */
++};
++
++bool
++bfd_elf32_arm_create_riscos_module_reloc (bfd *abfd, struct bfd_link_info *link_info)
++{
++  asection *s;
++  struct bfd_link_hash_entry *bh;
++  struct elf32_arm_link_hash_table * globals;
++
++  globals = elf32_arm_hash_table (link_info);
++  if (globals->bfd_ro_module_owner != NULL
++      || globals->s_ro_module_reloccode != NULL
++      || globals->s_ro_module_relocdata != NULL)
++    return false; /* Multiple times called bfd_elf32_arm_create_riscos_module_reloc ? */
++
++  globals->bfd_ro_module_owner = abfd;
++
++  /* __RelocCode */
++  s = bfd_get_section_by_name (abfd, ".riscos.module.reloccode");
++  if (s != NULL)
++    return false; /* Section already exists ?  */
++
++  s = bfd_make_section_with_flags (abfd,
++				   ".riscos.module.reloccode",
++				   (SEC_ALLOC
++				    | SEC_LOAD
++				    /* | SEC_RELOC */
++				    | SEC_CODE
++				    | SEC_HAS_CONTENTS
++				    | SEC_LINKER_CREATED
++				    | SEC_READONLY
++				    | SEC_IN_MEMORY));
++  if (s == NULL
++      || !bfd_set_section_alignment (s, 2))
++    return false;
++
++  globals->s_ro_module_reloccode = s;
++
++  bh = NULL;
++  if (!_bfd_generic_link_add_one_symbol (link_info, abfd, "__RelocCode",
++      BSF_GLOBAL | BSF_FUNCTION, s, 0, (const char *) NULL, false, false, &bh))
++    return false;
++
++  /* Set size which is the size of __RelocCode code + its data (including
++     RISCOS_MODULE_RELOCCODE_OFFSET_* and -1 sentinel value.  */
++  globals->ro_module_reloccode_size += 4*ARRAY_SIZE (riscos_module_reloccode) + 3*4;
++  s->size = globals->ro_module_reloccode_size;
++
++  /* __RelocData */
++  s = bfd_get_section_by_name (abfd, ".riscos.module.relocdata");
++  if (s != NULL)
++    return false; /* Section already exists ?  */
++
++  s = bfd_make_section_with_flags (abfd,
++				   ".riscos.module.relocdata",
++				   (SEC_ALLOC
++				    | SEC_LOAD
++				    /* | SEC_RELOC */
++				    | SEC_CODE
++				    | SEC_HAS_CONTENTS
++				    | SEC_LINKER_CREATED
++				    | SEC_READONLY
++				    | SEC_IN_MEMORY));
++  if (s == NULL
++      || !bfd_set_section_alignment (s, 2))
++    return false;
++
++  globals->s_ro_module_relocdata = s;
++
++  bh = NULL;
++  if (!_bfd_generic_link_add_one_symbol (link_info, abfd, "__RelocData",
++      BSF_GLOBAL | BSF_FUNCTION, s, 0, (const char *) NULL, false, false, &bh))
++    return false;
++
++  /* Set size which is the size of __RelocData code + its data and -1 sentinel
++     value.  */
++  globals->ro_module_relocdata_size += 4*ARRAY_SIZE (riscos_module_relocdata) + 1*4;
++  s->size = globals->ro_module_relocdata_size;
++
++  return true;
++}
++
++bool
++bfd_elf32_arm_allocate_riscos_module_reloc (struct bfd_link_info *link_info)
++{
++  asection *s;
++  size_t i;
++  struct elf32_arm_link_hash_table * globals;
++
++  globals = elf32_arm_hash_table (link_info);
++  if (globals->bfd_ro_module_owner == NULL
++      || globals->s_ro_module_reloccode == NULL
++      || globals->s_ro_module_relocdata == NULL)
++    return false;
++
++  /* __RelocCode */
++  s = globals->s_ro_module_reloccode;
++
++  if (s->output_section == NULL)
++    return true; /* Apparently not in the output bfd, so bail out.  */
++
++  /* The relocations are counted by elf32_arm_check_relocs, which may run
++     after bfd_elf32_arm_create_riscos_module_reloc.  */
++  s->size = globals->ro_module_reloccode_size;
++  s->contents = (bfd_byte *) bfd_zalloc (globals->bfd_ro_module_owner, s->size);
++  if (s->contents == NULL)
++    return false;
++  s->alloced = 1;
++
++  for (i = 0; i < ARRAY_SIZE (riscos_module_reloccode); ++i)
++    bfd_put_32 (globals->bfd_ro_module_owner, riscos_module_reloccode[i], s->contents + i*4);
++
++  globals->ro_module_reloccode_offset = 4*ARRAY_SIZE (riscos_module_reloccode);
++
++  /* __RelocData */
++  s = globals->s_ro_module_relocdata;
++
++  if (s->output_section == NULL)
++    return true; /* Apparently not in the output bfd, so bail out.  */
++
++  s->size = globals->ro_module_relocdata_size;
++  s->contents = (bfd_byte *) bfd_zalloc (globals->bfd_ro_module_owner, s->size);
++  if (s->contents == NULL)
++    return false;
++  s->alloced = 1;
++
++  for (i = 0; i < ARRAY_SIZE (riscos_module_relocdata); ++i)
++    bfd_put_32 (globals->bfd_ro_module_owner, riscos_module_relocdata[i], s->contents + i*4);
++
++  globals->ro_module_relocdata_offset = 4*ARRAY_SIZE (riscos_module_relocdata);
++
++  return true;
++}
++#endif
++
+ /* Determine what kind of NOPs are available.  */
+ 
+ static bool
+@@ -9906,6 +10292,55 @@
+ 			  elf32_arm_plt_thumb_stub[1], ptr - 2);
+ 	}
+ 
++#ifdef __RISCOS_TARGET__
++      if (info->flag_pic == 2)
++	{
++	  if (bfd_link_pic (info))
++	    {
++	      /* Insert __GOTT_INDEX__ reloc for this plt entry.  */
++	      BFD_ASSERT (htab->srelpic_offset + 4
++			  <= (bfd_vma) htab->srelpic_size);
++	      bfd_put_32 (output_bfd,
++			  ((plt_address + 8) & 0x3fffffff) | (1u << 31),
++			  htab->srelpic->contents + htab->srelpic_offset);
++	      htab->srelpic_offset += 4;
++
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_shared_plt_entry[0],
++			    ptr + 0);
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_shared_plt_entry[1],
++			    ptr + 4);
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_shared_plt_entry[2],
++			    ptr + 8);
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_shared_plt_entry[3]
++			    | ((got_offset & 0x000ff000) >> 12),
++			    ptr + 12);
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_shared_plt_entry[4]
++			    | (got_offset & 0x00000fff),
++			    ptr + 16);
++	    }
++	  else
++	    {
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_exec_plt_entry[0]
++			    | ((got_displacement & 0x0ff00000) >> 20),
++			    ptr + 0);
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_exec_plt_entry[1]
++			    | ((got_displacement & 0x000ff000) >> 12),
++			    ptr + 4);
++	      put_arm_insn (htab, output_bfd,
++			    elf32_arm_riscos_exec_plt_entry[2]
++			    | (got_displacement & 0x00000fff),
++			    ptr + 8);
++	    }
++	}
++      else
++#endif
+       if (!elf32_arm_use_long_plt_entry)
+ 	{
+ 	  BFD_ASSERT ((got_displacement & 0xf0000000) == 0);
+@@ -10404,6 +10839,65 @@
+   else
+     addend = signed_addend = rel->r_addend;
+ 
++#ifdef __RISCOS_TARGET__
++  if (bfd_link_pic (info) && info->flag_pic == 2
++      && RISCOS_IS_GOTT_SYMBOL (sym_name))
++    {
++      const bfd_vma osection_addr = input_section->output_section->vma
++				    + input_section->output_offset
++				    + rel->r_offset;
++      BFD_ASSERT (globals->srelpic_offset < (bfd_vma) globals->srelpic_size);
++
++      /* Set bit 31 of the offset for a __GOTT_INDEX__ reloc.
++	 Set bit 30 for a Thumb2 instruction.  */
++      unsigned offset = osection_addr & 0x3fffffff;
++      if (sym_name[7] == 'T')
++	offset |= (3u << 30); /* Set both bits 30 and 31.  */
++      else if (sym_name[7] == 'I')
++	offset |= (1u << 31);
++      bfd_put_32 (input_bfd,
++		  offset,
++		  globals->srelpic->contents + globals->srelpic_offset);
++      globals->srelpic_offset += 4;
++    }
++
++  if (globals->bfd_ro_module_owner != NULL)
++    {
++      /* __RelocData entry:
++	 Any ABS32 reloc in a rw data section pointing to RW data (ie module
++	 workspace), need to have a __RelocData entry.  */
++      if (ro_module_is_datareloc (r_type, input_section->name)
++	  && eh != NULL
++	  && (unsigned int)value + (unsigned int)addend >= (unsigned int)globals->ro_module_image_rw_base /* comparison needs to happen in 32-bit space.  */)
++	{
++	  /* Relocation inside RW data, i.e. in module RMA workspace.  */
++	  const bfd_vma osection_addr = input_section->output_section->vma + input_section->output_offset - globals->ro_module_image_rw_base;
++
++	  /* Just to make sure our dodgy allocation approach is not underallocating.  */
++	  BFD_ASSERT (globals->ro_module_relocdata_offset < globals->ro_module_relocdata_size);
++
++	  bfd_put_32 (input_bfd, osection_addr + rel->r_offset, globals->s_ro_module_relocdata->contents + globals->ro_module_relocdata_offset);
++	  globals->ro_module_relocdata_offset += 4;
++	}
++
++      /* __RelocCode entry:
++	 An ABS32 reloc in any .data* and .rodata* section needs to result in
++	 an __RelocCode entry.
++	 Any GOT32/GOTOFF32 reloc needs to be mentioned in __RelocCode entry.  */
++      if (ro_module_is_codereloc (r_type, input_section->name))
++	{
++	  /* Relocation because of placing Module in RMA instead of application space.  */
++	  const bfd_vma osection_addr = input_section->output_section->vma + input_section->output_offset - globals->ro_module_image_ro_base;
++
++	  /* Just to make sure our dodgy allocation approach is not underallocating.  */
++	  BFD_ASSERT (globals->ro_module_reloccode_offset < globals->ro_module_reloccode_size);
++
++	  bfd_put_32 (input_bfd, osection_addr + rel->r_offset, globals->s_ro_module_reloccode->contents + globals->ro_module_reloccode_offset);
++	  globals->ro_module_reloccode_offset += 4;
++	}
++    }
++#endif
++
+   /* Record the symbol information that should be used in dynamic
+      relocations.  */
+   dynreloc_st_type = st_type;
+@@ -11489,7 +11983,10 @@
+ 	 define _GLOBAL_OFFSET_TABLE in a different way, as is
+ 	 permitted by the ABI, we might have to change this
+ 	 calculation.  */
+-      value -= sgot->output_section->vma;
++#ifdef __RISCOS_TARGET__
++      if (globals->s_ro_module_reloccode == NULL)
++#endif
++	value -= sgot->output_section->vma;
+       return _bfd_final_link_relocate (howto, input_bfd, input_section,
+ 				       contents, rel->r_offset, value,
+ 				       rel->r_addend);
+@@ -13818,10 +14315,87 @@
+ {
+   struct elf32_arm_link_hash_table *globals = elf32_arm_hash_table (info);
+   asection *sec, *osec;
++#ifdef __RISCOS_TARGET__
++  asection *o;
++  struct bfd_link_order *p;
++  asection *ro_module_reloccode_section = NULL;
++  asection *ro_module_relocdata_section = NULL;
++  asection *srelpic = NULL;
++#endif
+ 
+   if (globals == NULL)
+     return false;
+ 
++#ifdef __RISCOS_TARGET__
++  for (o = abfd->sections; o != NULL; o = o->next)
++    {
++      if (strcmp (o->name, ".riscos.module.reloccode") == 0)
++	{
++	  for (p = o->map_head.link_order; p != NULL; p = p->next)
++	    {
++	      asection *input_section;
++
++	      if (p->type != bfd_indirect_link_order)
++		continue;
++	      input_section = p->u.indirect.section;
++	      /* Hack: reset the SEC_HAS_CONTENTS flag so that
++		 elf_link_input_bfd ignores this section.  */
++	      input_section->flags &= ~SEC_HAS_CONTENTS;
++	    }
++
++	  ro_module_reloccode_section = o;
++	  /* Skip this section later on.  */
++	  o->map_head.link_order = NULL;
++	}
++      else if (strcmp (o->name, ".riscos.module.relocdata") == 0)
++	{
++	  for (p = o->map_head.link_order; p != NULL; p = p->next)
++	    {
++	      asection *input_section;
++
++	      if (p->type != bfd_indirect_link_order)
++		continue;
++	      input_section = p->u.indirect.section;
++	      /* Hack: reset the SEC_HAS_CONTENTS flag so that
++		 elf_link_input_bfd ignores this section.  */
++	      input_section->flags &= ~SEC_HAS_CONTENTS;
++	    }
++
++	  ro_module_relocdata_section = o;
++	  /* Skip this section later on.  */
++	  o->map_head.link_order = NULL;
++	}
++      else if (strcmp (o->name, RISCOS_PIC_SECTION_NAME) == 0)
++	srelpic = o;
++    }
++  if (globals->s_ro_module_reloccode != NULL
++      || globals->s_ro_module_relocdata != NULL)
++    {
++      struct elf_link_hash_entry *hash;
++
++      hash = elf_link_hash_lookup (elf_hash_table (info), "Image$$RO$$Base",
++				   false, false, true);
++      if (hash == NULL)
++	_bfd_error_handler (_("Unable to find Image$$RO$$Base"));
++      else
++	globals->ro_module_image_ro_base = hash->root.u.def.value
++	  + hash->root.u.def.section->output_section->vma
++	  + hash->root.u.def.section->output_offset;
++
++      hash = elf_link_hash_lookup (elf_hash_table (info), "Image$$RW$$Base",
++				   false, false, true);
++      if (hash == NULL)
++	_bfd_error_handler (_("Unable to find Image$$RW$$Base"));
++      else
++	globals->ro_module_image_rw_base = hash->root.u.def.value
++	  + hash->root.u.def.section->output_section->vma
++	  + hash->root.u.def.section->output_offset;
++
++      BFD_ASSERT (ro_module_reloccode_section != NULL);
++      BFD_ASSERT (ro_module_relocdata_section != NULL);
++    }
++#endif
++
+   /* Invoke the regular ELF backend linker to do all the work.  */
+   if (!bfd_elf_final_link (abfd, info))
+     return false;
+@@ -13873,6 +14447,73 @@
+ 	return false;
+     }
+ 
++#ifdef __RISCOS_TARGET__
++  if (ro_module_reloccode_section != NULL)
++    {
++      asection *ro_section = globals->s_ro_module_reloccode;
++      bfd_vma addr_reloccode = ro_section->output_section->vma
++			       + ro_section->output_offset;
++
++      /* Write start of __RelocCode address which will be used by __RelocCode itself.  */
++      bfd_put_32 (globals->bfd_ro_module_owner,
++		  addr_reloccode,
++		  ro_section->contents + RISCOS_MODULE_RELOCCODE_OFFSET_RELOCCODE);
++
++      /* Write imagerobase Image$$RO$$Base.  */
++      bfd_put_32 (globals->bfd_ro_module_owner,
++		  globals->ro_module_image_ro_base,
++		  ro_section->contents + RISCOS_MODULE_RELOCCODE_OFFSET_IMAGEROBASE);
++
++      BFD_ASSERT (globals->ro_module_reloccode_offset == globals->ro_module_reloccode_size - 3*4);
++
++      /* Write relocs for RISCOS_MODULE_RELOCCODE_OFFSET_*.  */
++      bfd_put_32 (globals->bfd_ro_module_owner,
++		  addr_reloccode + RISCOS_MODULE_RELOCCODE_OFFSET_RELOCCODE - globals->ro_module_image_ro_base,
++		  ro_section->contents + globals->ro_module_reloccode_offset + 0*4);
++      bfd_put_32 (globals->bfd_ro_module_owner,
++		  addr_reloccode + RISCOS_MODULE_RELOCCODE_OFFSET_IMAGEROBASE - globals->ro_module_image_ro_base,
++		  ro_section->contents + globals->ro_module_reloccode_offset + 1*4);
++
++      /* Write sentinel.  */
++      bfd_put_32 (globals->bfd_ro_module_owner,
++		  -1,
++		  ro_section->contents + globals->ro_module_reloccode_offset + 2*4);
++
++      /* Write __RelocCode section. */
++      if (!bfd_set_section_contents (abfd, ro_module_reloccode_section, ro_section->contents, 0, ro_section->size))
++	return false;
++    }
++
++  if (ro_module_relocdata_section != NULL)
++    {
++      asection *ro_section = globals->s_ro_module_relocdata;
++
++      BFD_ASSERT (globals->ro_module_relocdata_offset <= globals->ro_module_relocdata_size - 4);
++
++      /* Write sentinel.  */
++      bfd_put_32 (globals->bfd_ro_module_owner,
++		  -1,
++		  ro_section->contents + globals->ro_module_relocdata_offset + 0*4);
++
++      /* Write __RelocData section.  */
++      if (!bfd_set_section_contents (abfd, ro_module_relocdata_section, ro_section->contents, 0, ro_section->size))
++	return false;
++    }
++
++  if (srelpic != NULL && globals->srelpic != NULL)
++    {
++      /* The size of .riscos.pic was estimated from the relocations seen by
++	 check_relocs.  Relocations in sections which have since been
++	 discarded were not written, and the loader must not process the
++	 zeroed entries left at the end, so record the real count.  */
++      bfd_put_32 (abfd,
++		  (globals->srelpic_offset - SRELPIC_HEADER_SIZE) >> 2,
++		  globals->srelpic->contents + 4);
++      if (!bfd_set_section_contents (abfd, srelpic, globals->srelpic->contents, 0, globals->srelpic_size))
++	return false;
++    }
++#endif
++
+   return true;
+ }
+ 
+@@ -15448,6 +16089,24 @@
+ 
+       eh = (struct elf32_arm_link_hash_entry *) h;
+ 
++#ifdef __RISCOS_TARGET__
++      /* For RISC OS module __RelocCode / __RelocData support.  */
++      if (ro_module_is_datareloc (r_type, sec->name)
++	  && eh != NULL)
++	{
++	  /* This can allocate too much but we can only be sure of the
++	     exact size after linking, e.g. after we know that the relocs
++	     are in RO RMA space or in RW RMA workspace.  */
++	  htab->ro_module_relocdata_size += 4;
++	}
++      if (ro_module_is_codereloc (r_type, sec->name))
++	htab->ro_module_reloccode_size += 4;
++
++      /* Each reference to a __GOTT_* marker gets a .riscos.pic entry.  */
++      if (h && RISCOS_IS_GOTT_SYMBOL (h->root.root.string))
++	htab->srelpic_size += 4;
++#endif
++
+       call_reloc_p = false;
+       may_become_dynamic_p = false;
+       may_need_local_target_p = false;
+@@ -16368,6 +17027,10 @@
+ 	{
+ 	  elf32_arm_allocate_plt_entry (info, eh->is_iplt, &h->plt, &eh->plt);
+ 
++#ifdef __RISCOS_TARGET__
++	  htab->plt_count++;
++#endif
++
+ 	  /* If this symbol is not defined in a regular file, and we are
+ 	     not generating a shared library, then set the symbol to this
+ 	     location in the .plt.  This is required to make function
+@@ -16830,6 +17493,22 @@
+ 	}
+     }
+ 
++#ifdef __RISCOS_TARGET__
++  if (info->riscos_abi)
++    {
++      s = bfd_get_linker_section (dynobj, RISCOS_ABI_SECTION_NAME);
++      if (s != NULL)
++	{
++	  s->size = strlen (info->riscos_abi) + 1;
++	  s->contents = (bfd_byte *) bfd_alloc (dynobj, s->size);
++	  if (s->contents == NULL)
++	    return false;
++	  memcpy (s->contents, info->riscos_abi, s->size);
++	  s->alloced = 1;
++	}
++    }
++#endif
++
+   /* Set up .got offsets for local syms, and space for local dynamic
+      relocs.  */
+   for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link.next)
+@@ -17180,6 +17859,33 @@
+       s->alloced = 1;
+     }
+ 
++#ifdef __RISCOS_TARGET__
++  if (htab->root.dynamic_sections_created)
++    {
++      if (bfd_link_pic (info) && info->flag_pic == 2)
++	{
++	  if (!_bfd_elf_add_dynamic_entry (info, DT_RISCOS_PIC, 0))
++	    return false;
++	}
++
++      if (info->riscos_abi)
++	{
++	  if (!_bfd_elf_add_dynamic_entry (info, DT_RISCOS_ABI_VERSION, 0))
++	    return false;
++	}
++
++#ifdef RISCOS_DUP_PLTGOT
++      /* A/B testing only: reproduce binutils 2.30's duplicate DT_PLTGOT.  */
++      if (!_bfd_elf_add_dynamic_entry (info, DT_PLTGOT, 0))
++	return false;
++#endif
++
++      /* The RISC OS loader finds the GOT through DT_PLTGOT, so a shared
++	 object always needs one, even when there is no PLT.  */
++      htab->root.dt_pltgot_required = true;
++    }
++#endif
++
+   return _bfd_elf_maybe_vxworks_add_dynamic_tags (output_bfd, info,
+ 						  relocs);
+ }
+@@ -17434,6 +18140,14 @@
+ 	    case DT_VERNEED:
+ 	      break;
+ 
++#ifdef __RISCOS_TARGET__
++	    case DT_RISCOS_PIC:
++	      name = RISCOS_PIC_SECTION_NAME;
++	      goto get_vma;
++	    case DT_RISCOS_ABI_VERSION:
++	      name = RISCOS_ABI_SECTION_NAME;
++	      goto get_vma;
++#endif
+ 	    case DT_PLTGOT:
+ 	      name = ".got.plt";
+ 	      goto get_vma;
+@@ -17557,6 +18271,39 @@
+ 
+ 	      bfd_put_32 (output_bfd, got_displacement, splt->contents + 12);
+ 	    }
++#ifdef __RISCOS_TARGET__
++	  else if (info->flag_pic == 2)
++	    {
++	      got_displacement = got_address - (plt_address + 16);
++
++	      if (bfd_link_pic (info))
++		{
++		  /* Insert __GOTT_INDEX__ reloc for the first plt entry.  */
++		  BFD_ASSERT (htab->srelpic_offset + 4
++			      <= (bfd_vma) htab->srelpic_size);
++		  bfd_put_32 (output_bfd,
++			      ((plt_address + 12) & 0x3fffffff) | (1u << 31),
++			      htab->srelpic->contents + htab->srelpic_offset);
++		  htab->srelpic_offset += 4;
++
++		  plt0_entry = elf32_arm_riscos_shared_plt0_entry;
++		  put_arm_insn (htab, output_bfd, plt0_entry[0], splt->contents + 0);
++		  put_arm_insn (htab, output_bfd, plt0_entry[1], splt->contents + 4);
++		  put_arm_insn (htab, output_bfd, plt0_entry[2], splt->contents + 8);
++		  put_arm_insn (htab, output_bfd, plt0_entry[3], splt->contents + 12);
++		  put_arm_insn (htab, output_bfd, plt0_entry[4], splt->contents + 16);
++		}
++	      else
++		{
++		  plt0_entry = elf32_arm_riscos_exec_plt0_entry;
++		  put_arm_insn (htab, output_bfd, plt0_entry[0], splt->contents + 0);
++		  put_arm_insn (htab, output_bfd, plt0_entry[1], splt->contents + 4);
++		  put_arm_insn (htab, output_bfd, plt0_entry[2], splt->contents + 8);
++		  put_arm_insn (htab, output_bfd, plt0_entry[3], splt->contents + 12);
++		  bfd_put_32 (output_bfd, got_displacement, splt->contents + 16);
++		}
++	    }
++#endif
+ 	  else
+ 	    {
+ 	      got_displacement = got_address - (plt_address + 16);
+@@ -19957,13 +20704,29 @@
+ 				       flagsp, secp, valp))
+     return false;
+ 
++#ifdef __RISCOS_TARGET__
++  /* The __GOTT_* marker symbols are undefined weak symbols that never get
++     defined; give them a type so that ld does not warn that "type and size
++     of dynamic symbol are not defined" when it exports them.  */
++  if (bfd_link_pic (info)
++      && sym->st_shndx == SHN_UNDEF
++      && RISCOS_IS_GOTT_SYMBOL (*namep))
++    sym->st_info = ELF_ST_INFO (ELF_ST_BIND (sym->st_info), STT_OBJECT);
++#endif
++
+   return true;
+ }
+ 
+ /* We use this to override swap_symbol_in and swap_symbol_out.  */
+ const struct elf_size_info elf32_arm_size_info =
+ {
++#ifdef __RISCOS_TARGET__
++  /* RISC OS keeps five words of runtime workspace after the ELF header
++     (see !SharedLibs.docs.Technical).  */
++  sizeof (Elf32_External_Ehdr) + 20,
++#else
+   sizeof (Elf32_External_Ehdr),
++#endif
+   sizeof (Elf32_External_Phdr),
+   sizeof (Elf32_External_Shdr),
+   sizeof (Elf32_External_Rel),
+@@ -20355,7 +21118,11 @@
+ #define ELF_ARCH			bfd_arch_arm
+ #define ELF_TARGET_ID			ARM_ELF_DATA
+ #define ELF_MACHINE_CODE		EM_ARM
++#ifdef __RISCOS_TARGET__
++#define ELF_MAXPAGESIZE			0x8000
++#else
+ #define ELF_MAXPAGESIZE			0x1000
++#endif
+ #define ELF_COMMONPAGESIZE		0x1000
+ 
+ #define bfd_elf32_mkobject			elf32_arm_mkobject
+diff -ruN a/bfd/elf32-arm.h b/bfd/elf32-arm.h
+--- a/bfd/elf32-arm.h	2025-11-10 00:00:00.000000000 +0000
++++ b/bfd/elf32-arm.h	2026-10-01 19:49:04.250849554 +0100
+@@ -67,6 +67,16 @@
+ extern bool bfd_elf32_arm_process_before_allocation
+   (bfd *, struct bfd_link_info *);
+ 
++/* RISC OS module relocation and PIC support.  Called from the linker.  */
++extern bool bfd_elf32_arm_create_riscos_module_reloc
++  (bfd *, struct bfd_link_info *);
++extern bool bfd_elf32_arm_allocate_riscos_module_reloc
++  (struct bfd_link_info *);
++extern bool bfd_elf32_arm_create_riscos_pic_section
++  (struct bfd_link_info *);
++extern bool bfd_elf32_arm_allocate_riscos_pic_section
++  (struct bfd_link_info *);
++
+ struct elf32_arm_params {
+   char *thumb_entry_symbol;
+   int byteswap_code;
+@@ -84,6 +94,8 @@
+   int merge_exidx_entries;
+   int cmse_implib;
+   bfd *in_implib_bfd;
++  /* RISC OS: add the module relocation code/data (--ro-module-reloc).  */
++  int riscos_module;
+ };
+ 
+ void bfd_elf32_arm_set_target_params
+diff -ruN a/bfd/elf.c b/bfd/elf.c
+--- a/bfd/elf.c	2025-11-10 00:00:00.000000000 +0000
++++ b/bfd/elf.c	2026-10-01 20:32:11.939461991 +0100
+@@ -1565,6 +1565,8 @@
+ 		}
+ 	      break;
+ 
++	    case DT_RISCOS_PIC: name = "RISCOS_PIC"; break;
++	    case DT_RISCOS_ABI_VERSION: name = "RISCOS_ABI_VERSION"; break;
+ 	    case DT_NEEDED: name = "NEEDED"; stringp = true; break;
+ 	    case DT_PLTRELSZ: name = "PLTRELSZ"; break;
+ 	    case DT_PLTGOT: name = "PLTGOT"; break;
+@@ -5266,7 +5268,16 @@
+ 	    }
+ 	  else if ((abfd->flags & D_PAGED) != 0
+ 		   && (((last_hdr->lma + last_size - 1) & -maxpagesize)
+-		       == (hdr->lma & -maxpagesize)))
++		       == (hdr->lma & -maxpagesize))
++#ifdef __RISCOS_TARGET__
++		   /* RISC OS: text and data are laid out back to back, so they
++		      share a page, but they still need separate segments (the
++		      loader wants one read-only and one read/write PT_LOAD).
++		      Fall through to the writable-after-read-only test below
++		      instead of merging them.  */
++		   && (writable || (hdr->flags & SEC_READONLY) != 0)
++#endif
++		   )
+ 	    {
+ 	      /* If we are demand paged then we can't map two disk
+ 		 pages onto the same memory page.  */
+diff -ruN a/include/bfdlink.h b/include/bfdlink.h
+--- a/include/bfdlink.h	2025-11-10 00:00:00.000000000 +0000
++++ b/include/bfdlink.h	2026-10-01 19:48:49.454289301 +0100
+@@ -765,6 +765,12 @@
+   /* The maximum cache size.  Backend can use cache_size and and
+      max_cache_size to decide if keep_memory should be honored.  */
+   bfd_size_type max_cache_size;
++
++  /* RISC OS: 1 for -fpic, 2 for -fPIC (RISC OS GOT/PLT handling).  */
++  unsigned int flag_pic;
++
++  /* RISC OS: contents of the .riscos.abi.version section, or NULL.  */
++  const char *riscos_abi;
+ };
+ 
+ /* Some forward-definitions used by some callbacks.  */
+diff -ruN a/include/elf/common.h b/include/elf/common.h
+--- a/include/elf/common.h	2025-11-10 00:00:00.000000000 +0000
++++ b/include/elf/common.h	2026-10-01 19:49:04.249417192 +0100
+@@ -1214,6 +1214,10 @@
+ #define DT_LOPROC	0x70000000
+ #define DT_HIPROC	0x7fffffff
+ 
++/* RISC OS specific dynamic tags (in the OS specific range).  */
++#define DT_RISCOS_PIC		DT_LOOS
++#define DT_RISCOS_ABI_VERSION	(DT_LOOS + 1)
++
+ /* The next 2 dynamic tag ranges, integer value range (DT_VALRNGLO to
+    DT_VALRNGHI) and virtual address range (DT_ADDRRNGLO to DT_ADDRRNGHI),
+    are used on Solaris.  We support them everywhere.  Note these values
+--- a/binutils/readelf.c	2025-11-10 00:00:00.000000000 +0000
++++ b/binutils/readelf.c	2026-10-01 20:32:04.506927944 +0100
+@@ -3064,6 +3064,15 @@
+ 	    case EM_IA_64:
+ 	      result = get_ia64_dynamic_type (type);
+ 	      break;
++	    case EM_ARM:
++	      /* RISC OS (GCCSDK EABI) dynamic tags.  */
++	      if (type == DT_RISCOS_PIC)
++		result = "RISCOS_PIC";
++	      else if (type == DT_RISCOS_ABI_VERSION)
++		result = "RISCOS_ABI_VERSION";
++	      else
++		result = NULL;
++	      break;
+ 	    default:
+ 	      if (filedata->file_header.e_ident[EI_OSABI] == ELFOSABI_SOLARIS)
+ 		result = get_solaris_dynamic_type (type);

@@ -1,0 +1,159 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: the _exit () of a vfork child that ends without exec frees
+         the RMA block of the program image that it shares with its parent
+Attach:  patches/unixlib-vfork-child-pthread-fini.patch
+         repro/sul/vforkrma.c  repro/sul/vforkbare.c
+
+Summary
+-------
+libunixlib's _exit () calls __pthread_prog_fini () unconditionally, and that
+function frees the RMA block that start-up allocated for the program image
+(__ul_global.pthread_callevery_rma, 120 bytes: the register save area of the
+CallBack handler, the pthread work semaphores, the filter name, the upcall
+address that SharedUnixLibrary gave out ...).  A vfork child that ends with
+_exit () WITHOUT having exec'd shares the program image - __ul_global and that
+block included - with its PARENT, so the child frees the PARENT's block.  The
+parent resumes with a dangling pointer and frees the same block again when it
+ends.
+
+What is demonstrated: one such child changes the total free space of the RMA
+by +64 bytes over its whole life cycle where 0 is expected (an extra free),
+and the patch brings that to exactly 0 (measurements below).  What is NOT
+demonstrated: that the use-after-free corrupts anything.  With one child the
+block is still free when the parent frees it again and the second free is
+refused.  If the RMA hands the block out again in between (a loop of such
+children: the next vfork's process structure, the copy of its environment
+...), the parent would go on using - and then free - memory that belongs to
+somebody else.  I suspected that this had frozen a machine in my tests; it had
+not: those freezes have another cause (report 01, problem 3), so I claim no
+more here than the measurement.
+
+The usual idiom is
+    pid = vfork (); if (pid == 0) { ...; execv (...); _exit (127); }
+and the child reaches the _exit when the exec RETURNS an error that UnixLib
+detects before it starts anything (a NULL name, E2BIG, ENOMEM: execve's
+checks before "From this point onwards we cannot return an error"), or when
+anything between vfork and exec fails.
+
+Why nobody saw it on EABI: SharedUnixLibrary 1.16 has a bug in the same place
+(report 01, problem 1): sul_exit frees the main stack of such a child, which
+is the PARENT's stack, so the parent died "Internal error: abort on data
+transfer" at once.  With that fixed the parent survives, and this is the next
+thing. (An exec of a program that does not exist is not affected: execve does
+not call __pthread_prog_fini, it hands over to SharedUnixLibrary, which runs
+the command with OS_CLI.)
+
+Cause (trunk r7800: unix/unix.c _exit, pthread/pthinit.c __pthread_prog_fini)
+----------------------------------------------------------------------------
+  * _exit () -> __pthread_prog_fini (): stops the pthread ticker when the
+    pthread system runs and then OS_Module 7 on gbl->pthread_callevery_rma -
+    whatever the process is.
+  * sys/vfork.c: the child adds itself to __dynamic_area_refcount in
+    __fork_post () ("There are now two processes sharing the dynamic area")
+    and takes itself off in __dynamic_area_exit (), which _exit () calls AFTER
+    __pthread_prog_fini ().  So at the time of the free the count is 2 for a
+    vfork child that shares the image, and 1 for the last user.  Everything
+    else _exit () tears down is either the child's own (its process structure,
+    file descriptors and environment: __free_process; sul_exit) or already
+    guarded by the same count (the dynamic area).
+  * The parent keeps using the block: setjmp/longjmp (sys/_jmp.s), the signal
+    code (signal/_signal.s, post.c), __pthread_disable_ints / enable_ints
+    (pthread/_ints.s: every PTHREAD_UNSAFE section) and the CallBack
+    environment handler, whose register buffer is the first thing in the
+    block, all go through __ul_global.pthread_callevery_rma.
+  * By reading only (not measured): execve does not call __pthread_prog_fini,
+    so an exec in place does not free the block of the image it replaces
+    (about 128 bytes of RMA per exec in place).
+
+Fix (patches/unixlib-vfork-child-pthread-fini.patch: pthread/pthinit.c)
+----------------------------------------------------------------------
+  __pthread_prog_fini ():  if (__dynamic_area_refcount > 1) return;  at the
+  top: while the image is still shared, the block and the pthread system
+  belong to the parent.  (The parent's __fork_post () restarts the ticker that
+  __fork_pre () stopped; the last user frees the block, once, at its own
+  exit.)  Nothing changes for a process that is not a vfork child: its count
+  is 1.
+  Suggested ChangeLog entry (date and name are yours):
+	* pthread/pthinit.c (__pthread_prog_fini): Return at once when
+	__dynamic_area_refcount is more than 1, i.e. when the program image
+	is still shared with a parent.  The _exit of a vfork child that ends
+	without exec freed the RMA block of the image
+	(__ul_global.pthread_callevery_rma) that its parent was still using,
+	and the parent freed it again when it ended.
+
+Evidence
+--------
+  * The library's own machine code, run on a small ARM (A32) interpreter
+    (script available on request): libunixlib built from r7800,
+    __pthread_prog_fini () with __dynamic_area_refcount = 2 (a vfork child)
+    and the pthread system running: calls the ticker stop and OS_Module 7 on
+    the block.  With the fix: nothing.  Fixed code: refcount 1 (the last
+    user): ticker stopped when the pthread system runs, flag cleared, block
+    freed once; refcount 2, 3 or 0xFFFFFFFF: nothing touched.  35 scenarios;
+    75 mutants (every conditional instruction flipped, every immediate
+    changed): 73 caught, 2 reviewed as equivalent.  Of 1858 functions of
+    libunixlib only this one differs between the patched and the unpatched
+    build (apart from a private fix-level query of my builds).
+  * On the machine (RISC OS 5.30, Cortex-A72, ARMEABISupport 1.08,
+    SharedUnixLibrary with the stack and Wimp slot fixes of report 01): the
+    probe repro/sul/vforkrma.c with ONE vfork child that ends with _exit (0):
+    the total free space of the RMA (OS_Module 5) before the vfork, with the
+    child a zombie, and after waitpid; the noise is read as four reads in a
+    row (0 bytes in both runs).
+        unpatched libunixlib:  before 125648, zombie -224, after waitpid +64
+                               (waitpid gave back 288 bytes, the zombie's
+                               process structure)
+        patched libunixlib:    before 127888, zombie -288, after waitpid +0
+    (the two runs are in different boots: only the change within a run
+    counts). With the patched library the probe also reads the heap words of
+    the block itself (its address from OS_ChangeEnvironment 7): the heap's
+    size word 0x80 (128 bytes: the 120 byte block plus heap overhead) and the
+    first words are untouched before, with the child a zombie and after
+    waitpid.  The +64 of the unpatched run has the sign of a block freed that
+    the child did not allocate; why it is 64 and not 128 I have not worked
+    out.
+  * Regression with the patched library (libunixlib 16.2.0-8) on the machine:
+    exit / return / _Exit / _exit / abort / fatal fault / caught fault / exit
+    in a signal handler / exit by another thread / vfork + exec / exec in
+    place: all the statuses as before (exittest, 12 of 12), the shared stack
+    range steady; the C, C++, thread and Fortran suites with the same check
+    counts as with the unpatched library (34541 checks per C program, 139 per
+    C++ program, 24 + 19 thread checks ...).  Loops of vfork children that end
+    without exec, with the module fixes of report 01: no freeze, no growth of
+    the stack range (8 stages run twice).
+
+Reproducer
+----------
+  repro/sul/vforkrma.c  ONE vfork child that ends with _exit (0) without exec:
+      the total free space of the RMA around its whole life cycle, the heap
+      words of the callback block, the Wimp slot and the memory limits before
+      and after.  It needs the module fixes of report 01 (otherwise the parent
+      dies first) and ends by exec, so that its own _exit does not free the
+      block a second time.
+  repro/sul/vforkbare.c  pid = vfork (); if (pid == 0) _exit (0); waitpid ...
+      repeated in one process.
+
+Side notes (not part of the patch)
+----------------------------------
+  * _exit () of a vfork child also calls __stop_itimers () (outside a
+    TaskWindow: stops the parent's interval timers) and __dsp_exit ()
+    (deactivates DigitalRenderer): both act on state the parent may still use.
+    Not seen to matter in practice; mentioned for completeness.
+  * SharedUnixLibrary's exit of such a child also resized the PARENT's Wimp
+    slot and, in a program that was started by exec, freed the parent's
+    SOManager client: report 01.
+
+Environment
+-----------
+  Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30,
+  ARMEABISupport 1.08 (03 Jun 2025), SOManager 3.04, SharedUnixLibrary 1.16 (3
+  Apr 2020) with the fixes of report 01, UnixLib 5.0 from the GCCSDK sources
+  (trunk r7800) built with GCC 16.2.0 (libunixlib 16.2.0-7 and 16.2.0-8; the
+  same code is in the GCC 10.2.0 build).
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

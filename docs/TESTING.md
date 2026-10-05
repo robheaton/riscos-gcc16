@@ -1,0 +1,65 @@
+# Testing
+
+Four kinds of test, from "check my installation" to "the suites the port was developed with". Only the first two are turnkey.
+
+## 1. Check an installation on RISC OS: `tests/selftest`
+
+After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported,
+and checks the fix level of the runtime. It takes a minute or two and ends with `SELFTEST: N checks, M failed -> PASS`. See its [README](../tests/selftest/README.md).
+
+## 2. Check the Linux cross compiler: `tests/cross-smoke`
+
+```bash
+tests/cross-smoke/cross-smoke.sh <toolchain directory> [<reference toolchain>]
+```
+
+It compiles and links programs in C, C++, Fortran, LTO and as a shared library with the cross compiler in the given directory, checks that every part of the compiler (`cc1`, `lto1`, the linker plugin, `libunixlib.so` ...) is found **inside** that directory, that the objects are ELF 32-bit ARM EABI5 for the shared UnixLib,
+and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 29 checks (25 without the comparison) with the directory it was built in hidden from it, and its programs are byte-identical to those of the compiler it was compared with.
+
+## 3. The regression suites (developers)
+
+These are what the port was developed and proven with. They assume the author's directory layout and, for the A/B comparisons, a GCCSDK 10.2.0 compiler: the variants named `g10-*` and `cx10-*` are built by GCC 10.2.0 for comparison and need it (`OLD=...`);
+the `g16-*` and `cx16-*` variants need only the cross compiler (`NEW=<path to arm-riscos-gnueabihf-gcc>`). They are built on Linux, copied to RISC OS (the `,e1f` suffix gives a file the ELF type, `,feb` is an Obey file), and run in a Task window.
+
+| Suite | Where | What it checks | Expected |
+|---|---|---|---|
+| **rotest** | `tests/rotest` (`build.sh`, `RunAll,feb`) | the C compiler: integers, 64-bit arithmetic, floating point, conversions, varargs, `alloca`, `setjmp`, unwinding, atomics, PIC data, C23 | `SUMMARY ...: 34541 checks, 0 failed -> PASS` for every variant (two `INFO` lines, "unwinder returned only 0 frames" and "191 informational checks, 2 differ", are normal) |
+| **cxxtest** | `tests/cxx` (`build-cxx.sh`, `RunAll,feb`) | the C++ compiler and libstdc++: exceptions, RTTI, containers, iostreams, strings, language features, memory, `random_device` | `139 checks, 0 failed -> PASS` |
+| **threadtest**, **tlstest**, **cxx23** | `tests/cxx` | threads, timed waits, `std::async`, `call_once`, thread-local storage, C++23 | `SUMMARY` lines: all PASS |
+| **Fortran** | `tests/fortran` (`build-fortran.sh`) | `fcore` 122, `fmath` 54, `fio` 26, `fmisc` 30, `fcinterop` 9 checks; `ferr` ends with a runtime error and return code 2 | all PASS |
+| **dynamic libraries** | `tests/shlib`, `tests/cxx`, `tests/fortran` | programs built against the shared libstdc++ and libgfortran | PASS |
+| **bench** | `tests/bench` | what stack probing costs (`callbench`: worst case, nothing but calls) | timings |
+| **A72 / ARMv8** | `tests/rotest`, `tests/bench` | the same programs built for `-mcpu=cortex-a72` | PASS |
+
+The native compiler runs the same sources: the self-test and the packaged-compiler checks compile `rotest`, `cxxtest`, a make project and the Fortran programs **on RISC OS** and compare with the cross compiler's results.
+
+## 4. The runtime and OS tests
+
+The test programs of the runtime work, each with the symptom it was written for ([RUNTIME.md](RUNTIME.md), [`docs/upstream/`](upstream/00-INDEX.txt)):
+
+| Folder | Programs |
+|---|---|
+| `tests/ulinfo.c`, `tests/unixlib16` | `ulinfo` (48 library checks: maths, strings, process, files; it also names the installed library file and its fix level), `readtest*` (a `read()` into a fresh stack buffer), `svc_abort_repro` (the RISC OS stack-page store problem) |
+| `tests/unixlib17` | `seqtest`, `chain`, `stkinfo`, `mmaptest` (23 checks that `mmap` refuses impossible requests), `daprobe`, `heapinfo`: stack sizes, the heap fallback, dynamic area accounting |
+| `tests/unixlib18` | `exittest` (12 checks: every way a process can end), `vforkbare`, `moddump` |
+| `tests/unixlib19`, `tests/sulfix` | `vfork` children that end without `exec` (the SharedUnixLibrary bugs): loops, traces and the host tests of the tracing code. **These can freeze the machine with the stock SharedUnixLibrary 1.16** (a child that ends without `exec` under a parent that was itself started by `exec`): run them only with the fixed module (1.16-vforkfix3, [KNOWN-ISSUES.md](KNOWN-ISSUES.md)) |
+| `tests/upstream20` | `vforkheap`: the heap of a `vfork` + `exec` child (report 08) |
+| `tests/unixlib24`, `docs/upstream/repro/scanf` | `scantest` (16 `sscanf` cases) and `scanfcheck` with its table (15,066 cases made by glibc) |
+| `tests/fixlevel` | `fixlevel N`: exit status 0 when the running UnixLib has fix level N |
+
+Each hardware test prints lines like `SUMMARY [name]: 48 checks, 0 failed -> PASS` and sets its exit status; the Obey runners `Spool` everything to a results file. The Obey files all begin with `Set X$Dir <Obey$Dir>` because the first EABI program
+that runs changes `<Obey$Dir>`.
+
+The expected results of the current release, run on the author's machine: the final regression run (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests) gave **50 `SUMMARY` lines, identical to the previous release's run, none failing**.
+
+## 5. Host tests (no RISC OS needed)
+
+| Test | What | Run |
+|---|---|---|
+| `tests/throwback/build-and-run.sh` | the throwback sink: text handling, the DDEUtils transport against a mock kernel, the syslog transport against a UDP socket: 66 checks, and with `mutate` 27 deliberate breakages of the source, all caught | `build-and-run.sh [mutate]` |
+| `tests/armeabisupport-model` | a host model of ARMEABISupport's `mmap` code, unpatched against patched (30 failed checks against none) | needs the ARMEABISupport sources from the GCCSDK svn |
+| `tests/unixlib-fix/`, `docs/upstream/repro/` | models of the UnixLib fixes (`pthread_once`, timed waits, `fread`/`fwrite`, `sleep`, the `scanf` function against glibc: 47,315 cases) | see each folder |
+| `docs/upstream/verify/run-verify.sh` | re-runs every check behind the upstream reports: patches apply to pristine UnixLib, the patched files compile with GCC 10.2.0 and 16.2.0, the host models, the machine code of the changed functions on an ARM interpreter | needs the GCCSDK svn checkout, the cross compiler and the UnixLib build ([BUILDING.md](BUILDING.md) steps 4 and 5); the last runs: 189 checks in the author's work area, 188 in a fresh copy of the repository, 0 failed |
+| `tools/check-libunixlib.sh <libunixlib.so>` | looks for the code of every fix in a built UnixLib | [BUILDING.md](BUILDING.md) |
+
+`tools/a32.py` is a small ARMv7 (A32) interpreter used by these checks to run the compiled machine code of the changed functions without hardware.

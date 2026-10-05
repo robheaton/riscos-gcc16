@@ -1,0 +1,3 @@
+#!/bin/sh
+# configure runs "$PLUGIN_LD --version" to decide whether the LINKER supports -plugin; the linker of the NATIVE tool chain (binutils-native, --disable-plugins) does not, so this says nothing that looks like GNU ld
+echo "native ld: no linker plugin support"

@@ -1,0 +1,76 @@
+--- a/libunixlib/incl-local/internal/unix.h
++++ b/libunixlib/incl-local/internal/unix.h
+@@ -308,6 +308,15 @@
+ 
+   /* Value of 'appspace_himem' last time the stack was increased.  */
+   unsigned int old_himem;
++
++  /* The permitted RAM limit that the program was started with, when that is
++     below the application space limit (-1 when it is not).  'appspace_himem'
++     is never raised above it: the memory between the two is not spare.  A
++     program that was started by vfork () + exec () is told by
++     SharedUnixLibrary to stay below the copy of its parent, which
++     SharedUnixLibrary keeps between that limit and the end of the Wimp slot.
++     Offset 52 (MEM_APPSPACE_HIMEM_MAX in asm_dec.s).  */
++  unsigned int appspace_himem_max;
+ };
+ 
+ extern struct ul_memory __ul_memory;
+--- a/libunixlib/incl-local/internal/asm_dec.s
++++ b/libunixlib/incl-local/internal/asm_dec.s
+@@ -328,6 +328,7 @@
+ .set	MEM_DALIMIT, 40		@ = __ul_memory.dalimit
+ .set	MEM_APPSPACE_LIMIT, 44	@ = __ul_memory.appspace_limit
+ .set	MEM_OLD_HIMEM, 48	@ = __ul_memory.old_himem
++.set	MEM_APPSPACE_HIMEM_MAX, 52	@ = __ul_memory.appspace_himem_max
+ #endif
+ 
+ #if __UNIXLIB_CHUNKED_STACK
+--- a/libunixlib/sys/_syslib.s
++++ b/libunixlib/sys/_syslib.s
+@@ -146,6 +146,19 @@
+ 	SWI	OS_ChangeEnvironment		@ No X call, if error call parent
+ 	STR	a2, [fp, #MEM_APPSPACE_LIMIT]	@ error handler.
+ 
++	@ When the permitted RAM limit (appspace_himem) is below the application
++	@ space limit, the memory between the two is not ours: a process that was
++	@ started by vfork () + exec () is told by SharedUnixLibrary to stay below
++	@ the copy of its parent, which is kept there.  Remember the limit, so
++	@ that __stackalloc_incr_wimpslot never raises appspace_himem above it
++	@ (-1: no such limit).
++himem_max_start:
++	LDR	a3, [fp, #MEM_APPSPACE_HIMEM]
++	CMP	a3, a2
++	MVNCS	a3, #0
++	STR	a3, [fp, #MEM_APPSPACE_HIMEM_MAX]
++himem_max_end:
++
+ 	@ For a description of the memory layout of a UnixLib application
+ 	@ see sys/brk.c.
+ 	LDR	a2, [fp, #MEM_RWLOMEM]		@ __ul_memory.rwlomem
+@@ -1536,4 +1549,5 @@
+ 	.word	0			@ dalimit		offset = 40
+ 	.word	0			@ appspace_limit	offset = 44
+ 	.word	0			@ old_himem		offset = 48
++	.word	0			@ appspace_himem_max	offset = 52
+ 	DECLARE_OBJECT __ul_memory
+--- a/libunixlib/sys/stackalloc.c
++++ b/libunixlib/sys/stackalloc.c
+@@ -44,6 +44,17 @@
+   struct ul_memory *mem = &__ul_memory;
+   struct ul_global *gbl = &__ul_global;
+ 
++  /* 'appspace_himem' is never raised above the permitted RAM limit that the
++     program was started with (see struct ul_memory): in a process that was
++     started by vfork () + exec () the memory between that limit and
++     'appspace_limit' is the copy of its parent, and a heap or stack that grew
++     over it would destroy the parent.  The caller gets an error (brk:
++     ENOMEM) and malloc falls back to mmap.  A process whose 'appspace_himem'
++     is already above that value (a fork () child: __fork_post) is not
++     affected: the difference wraps around.  */
++  if (incr > mem->appspace_himem_max - mem->appspace_himem)
++    return 0;
++
+   /* If the amount requested does not exceed the current application space
+      limit, then we can satisfy the request easily.  */
+   if (mem->appspace_himem + incr <= mem->appspace_limit)

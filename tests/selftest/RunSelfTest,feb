@@ -1,0 +1,175 @@
+| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-11 on SharedLibs-C-armeabihf 16.2.0-11).
+| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, and checks that a compile error is reported.
+| BEFORE: install the packages with PackMan, REBOOT, and double-click !GCC16 once (it sets GCC16$Dir and the search path).
+| RUN IT IN A TASK WINDOW (Ctrl-F12):     Obey <GCC16Test$Dir>.RunSelfTest        About a minute or two.
+| The work is done on the local disc (<Wimp$ScrapDir>.GCC16Test); the output is also copied to Results next to this file (and to SelfTest$ResultsTo, if you set that variable first).
+Set SelfTest$Src <Obey$Dir>
+If "<Wimp$ScrapDir>" = "" Then Error Wimp$ScrapDir is not set: run this in a Task window of the desktop
+If "<GCC16$Dir>" = "" Then Error GCC16 is not set up: install the packages with PackMan, reboot, double-click !GCC16, then run this again
+Set SelfTest$Dir <Wimp$ScrapDir>.GCC16Test
+IfThere <SelfTest$Dir> Then Wipe <SelfTest$Dir> R~C~V
+CDir <SelfTest$Dir>
+CDir <SelfTest$Dir>.c
+CDir <SelfTest$Dir>.cc
+CDir <SelfTest$Dir>.f90
+CDir <SelfTest$Dir>.h
+Copy <SelfTest$Src>.c.* <SelfTest$Dir>.c.* F~C~V
+Copy <SelfTest$Src>.cc.* <SelfTest$Dir>.cc.* F~C~V
+Copy <SelfTest$Src>.f90.* <SelfTest$Dir>.f90.* F~C~V
+Copy <SelfTest$Src>.h.* <SelfTest$Dir>.h.* F~C~V
+Copy <SelfTest$Src>.Makefile <SelfTest$Dir>.Makefile F~C~V
+Dir <SelfTest$Dir>
+| what double-clicking !GCC16 does: Run$Path, return code limit and the suffix swapping lists of every tool
+Obey <GCC16$Dir>.!Run
+If "<GCC16$Version>" <> "16.2.0-11" Then Error This self-test is for Gcc16 16.2.0-11 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-11 with PackMan, reboot, double-click !GCC16, then run this again
+Unset TMPDIR
+WimpSlot -min 48M -max 48M
+Unset SelfTest$Fails
+Spool <SelfTest$Dir>.Results
+Time
+Echo GCC16 <GCC16$Version> is in <GCC16$Dir>.  The test directory is <SelfTest$Dir>.
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 1. the runtime: UnixLib fix level 13 (SharedLibs-C-armeabihf 16.2.0-11)
+GCC16bin:gcc -O2 -o fixlevel fixlevel.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile fixlevel.c
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile fixlevel.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> fixlevel-compile
+IfThere <SelfTest$Dir>.fixlevel Then Run <SelfTest$Dir>.fixlevel 13
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: the runtime is at fix level 13
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: the runtime is not at fix level 13: install SharedLibs-C-armeabihf 16.2.0-11 with PackMan and REBOOT
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> fixlevel-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 2. C:  gcc -O2 -o hello hello.c   (the source is c.hello)
+GCC16bin:gcc -O2 -o hello hello.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile hello.c
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile hello.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> C-compile
+IfThere <SelfTest$Dir>.hello Then Run <SelfTest$Dir>.hello
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run hello
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run hello (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> C-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 3. C++ (exceptions, a thread, std::async):  g++ -O2 -o hellocxx hellocxx.cc   (the source is cc.hellocxx)
+GCC16bin:g++ -O2 -o hellocxx hellocxx.cc
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile hellocxx.cc
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile hellocxx.cc (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> C++-compile
+IfThere <SelfTest$Dir>.hellocxx Then Run <SelfTest$Dir>.hellocxx
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run hellocxx
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run hellocxx (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> C++-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 4. Fortran:  gfortran -O2 -o hellof hellof.f90   (the source is f90.hellof)
+GCC16bin:gfortran -O2 -o hellof hellof.f90
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile hellof.f90
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile hellof.f90 (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> Fortran-compile
+IfThere <SelfTest$Dir>.hellof Then Run <SelfTest$Dir>.hellof
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run hellof
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run hellof (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> Fortran-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 5. a two-file project: gcc -c main.c util.c (c.main, c.util, h.util -> o.main, o.util), link, run, then ar and nm
+GCC16bin:gcc -O2 -c main.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile main.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> main-compile
+GCC16bin:gcc -O2 -c util.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile util.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> util-compile
+GCC16bin:gcc -o app main.o util.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile and link the project
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: link the project (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> project-link
+IfThere <SelfTest$Dir>.app Then Run <SelfTest$Dir>.app
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the project (2 + 3 = 5, 10 squared = 100)
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the project (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> project-run
+GCC16tbin:ar rcs libutil.a util.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: ar rcs libutil.a util.o
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: ar (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> ar
+GCC16tbin:nm libutil.a
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: nm libutil.a (util_add and util_square are listed above)
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: nm (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> nm
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 6. make:  make -B app   (the native GNU make drives gcc: make -> gcc -> cc1 -> as, then make -> gcc -> collect2 -> ld)
+GCC16bin:make -B app
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: make -B app
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: make -B app (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> make
+IfThere <SelfTest$Dir>.app Then Run <SelfTest$Dir>.app
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the program that make built
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the program that make built (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> make-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 7. link time optimisation:  gcc -O2 -flto -o lto lto_a.c lto_b.c      and again with -flto=2
+GCC16bin:gcc -O2 -flto -o lto lto_a.c lto_b.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile and link with -flto
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: -flto (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> lto-compile
+IfThere <SelfTest$Dir>.lto Then Run <SelfTest$Dir>.lto
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the -flto program
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the -flto program (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> lto-run
+GCC16bin:gcc -O2 -flto=2 -o lto2 lto_a.c lto_b.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile and link with -flto=2 (the warning about serial compilation is normal)
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: -flto=2 (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> lto2-compile
+IfThere <SelfTest$Dir>.lto2 Then Run <SelfTest$Dir>.lto2
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the -flto=2 program
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the -flto=2 program (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> lto2-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 8. a compile error is reported:  gcc -c bad.c   (the error messages below and a non-zero return code are the expected result)
+GCC16bin:gcc -c bad.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo PASS: the error in bad.c was reported (return code <SelfTest$RC>)
+If "<SelfTest$RC>" = "0" Then Echo FAIL: gcc returned 0 for a file with an error
+If "<SelfTest$RC>" = "0" Then Set SelfTest$Fails <SelfTest$Fails> error-not-reported
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== SUMMARY
+If "<SelfTest$Fails>" = "" Then Echo SELFTEST: ALL CHECKS PASSED
+If "<SelfTest$Fails>" <> "" Then Echo SELFTEST: FAILED:<SelfTest$Fails>
+Spool
+Copy <SelfTest$Dir>.Results <SelfTest$Src>.Results F~C~V
+| optional: SelfTest$ResultsTo names another file to copy the output to (for example on a network share)
+If "<SelfTest$ResultsTo>" <> "" Then Copy <SelfTest$Dir>.Results <SelfTest$ResultsTo> F~C~V
+Echo Finished.  The output is in <SelfTest$Src>.Results

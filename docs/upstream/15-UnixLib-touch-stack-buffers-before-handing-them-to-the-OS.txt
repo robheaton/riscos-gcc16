@@ -1,0 +1,120 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: read () / fread () / recv () into a stack buffer that has
+         never been used return wrong data, because RISC OS loses a store to an
+         unmapped EABI stack page; workaround in UnixLib
+Attach:  patches/unixlib-touch-stack-buffers.patch
+         repro/svc-abort/readtest2.c (read / fread into a fresh stack buffer)
+         repro/touch-model/ (host model of the new function)
+
+Summary
+-------
+This is a workaround in UnixLib for the problem described in report 07 (a store
+made by RISC OS in supervisor mode to a not-yet-mapped page of an EABI stack is
+lost). If that is fixed in RISC OS or in ARMEABISupport, this patch is not
+needed; I send it because the problem is real now, and the patch is small.
+
+The symptom: read () (and fread (), recv (), recvfrom ()) into a big buffer on
+the main stack that the program has not used yet returns the right byte count
+and some wrong bytes: about 8 to 16 bytes, zeros, in front of nearly every page
+boundary of the buffer. Where the buffer is on the heap, in an mmap area,
+static, or on stack pages that have been used before, the data is right. The
+cause (report 07) is that the first access to an unmapped page of an EABI
+stack, if it is a store by the OS in SVC mode (here OS_GBPB, filling the
+buffer), is lost after ARMEABISupport has mapped the page. A load in user mode
+maps the page without loss.
+
+The patch adds __touch_stack_buffer (buf, n) to incl-local/internal/unix.h. If
+the buffer starts less than 1 MB above the stack pointer (so it is on this
+thread's stack), it reads one byte from every 4 KB page that the buffer covers
+(up to 1 MB above sp), then the caller goes on. It is called in __fsread before
+OS_GBPB, in __sockread and in recv () and recvfrom (). It does nothing on
+non-EABI builds and nothing for buffers anywhere else (touching a heap or mmap
+buffer would only commit memory that the call may not need). 77 lines of patch.
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+UnixLib 5.0 from trunk r7800 built with GCC 16.2.0.
+
+Measured on the machine
+-----------------------
+repro/svc-abort/readtest2.c, one process per case so that the stack is fresh
+(readtest2 read|fread KB reads a file, SharedLibs:lib.armeabihf.libgcc_s/so/1
+by default, into a stack buffer of that size and compares every 4 KB page with
+a copy read into the heap). Build it with -fno-stack-clash-protection: a
+compiler that probes the stack (GCC 16's -fstack-clash-protection, the default
+of my port) maps the pages first and the problem does not show.
+
+Stock behaviour (UnixLib without the patch): read () returned the full count
+every time, and the number of bytes that differ from the file was
+
+  buffer KB      8    16    32    64   128   256   512
+  read ()        2     5    23    71   190   343   679
+  fread ()       2     9    25    71   190   349   697
+
+the first wrong byte always at buffer offset 4496, which is the last 8 bytes of
+a memory page (the 8 KB buffer was at 0x66f66e68..0x66f68e68 on the stack
+0x66e69000..0x66f69000, so offset 4496 is address 0x66f67ff8); the page map
+shows every page of the buffer wrong except the first and, in the 128 KB and
+256 KB runs, pages 31 and 62. A buffer that was written first (memset), an
+anonymous mmap and a malloc block of 64 KB to 1 MB: every byte right. In a
+related test (readtest3, a 64 KB read) every wrong byte was zero, 3 to 16 of
+them per page, at in-page offsets 0xff0 to 0xfff, and a copy of the same data
+with memcpy instead of read () was right.
+
+With the patch in the library (ulinfo, which does a 128 KB fread () into a
+fresh stack buffer as the first thing in main ()): 'WRONG DATA' before, 'data
+right' after, and readtest2 read / fread of 64 KB and 512 KB into a fresh stack
+buffer: every byte right. With the patch in the library my regression suites
+pass (ulinfo 48 of 48 checks, the C suites 34541 checks in six variants).
+
+Is it the right place?
+----------------------
+It is a workaround, and it only covers what UnixLib calls: other SWIs that fill
+a user buffer on a fresh stack page (I saw OS_GSTrans lose the first byte of
+every fresh page the same way) are not covered. Alternatives: fix the OS
+(report 07), have ARMEABISupport map the whole stack at start-up (costs the
+lazy mapping that makes big stacks cheap), or compile everything with
+-fstack-clash-protection, which touches the pages in order as the stack grows;
+that is what my port's compiler does by default now, and with it the symptom
+does not appear, but it protects only programs built that way.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* incl-local/internal/unix.h (__touch_stack_buffer): New.  Load one
+	byte from every page of a buffer that lies on the thread's stack.
+	* unix/dev.c (__fsread, __sockread), netlib/recv.c, netlib/recvfrom.c:
+	Call it before handing the buffer to the OS.
+
+Verification
+------------
+  Machine:  as above, before and after.
+  Host model:  repro/touch-model/ cuts __touch_stack_buffer () out of the
+               patched header, replaces the read of sp and the load by a model
+               variable and a page recorder, and runs 2,000,000 random sp /
+               buffer / length triples against an independent statement of the
+               rule (a buffer that starts less than 1 MB above sp: every page
+               it covers, up to sp + 1 MB, is touched and nothing else; any
+               other buffer: nothing), including lengths that wrap round the 4
+               GB, buffers exactly at the 1 MB limit and at the top of the
+               address space. 0 failed checks; 10 breakages of the function
+               (limits, clamp, overflow test, rounding, step, loop bound) are
+               all caught.
+  Compilation:  the five files compile with GCC 10.2.0 and 16.2.0.
+
+What I did not do
+-----------------
+I did not test recv () or recvfrom () on the machine; they use the same
+function. A buffer on the stack of a pthread other than the main thread is
+covered by the same rule (anything within 1 MB above sp), but I tested only the
+main thread. repro/svc-abort/readtest2.c also has a 'model' mode left over from
+an earlier wrong guess of mine (that fread forgot to advance after a short
+read: report 09 is about a real instance of that, but not the cause here);
+ignore it.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

@@ -1,0 +1,13 @@
+__get_dde_prefix () measured the DDEUtils prefix with  for (end_prefix = prefix; (unsigned char)*prefix >= ' '; ++end_prefix)  : the test reads *prefix, which never changes, not *end_prefix: when a DDEUtils prefix
+is set for the task (*Prefix <dir>, which StrongED, DDE Make and UnixLib's own chdir () use) the loop never ends.  Every UnixLib program starts by calling __get_dde_prefix () (__unixinit, vfork, getcwd).
+--- a/libunixlib/common/prefix.c	2026-10-04 19:16:32.148345606 +0100
++++ b/libunixlib/common/prefix.c	2026-10-04 19:16:32.157875865 +0100
+@@ -27,7 +27,7 @@
+ 
+       /* Returned string can be control char terminated.  */
+       const char *end_prefix;
+-      for (end_prefix = prefix; (unsigned char)*prefix >= ' '; ++end_prefix)
++      for (end_prefix = prefix; (unsigned char)*end_prefix >= ' '; ++end_prefix)
+         /* */;
+       /* Filter out zero length results.  */
+       size_t size = end_prefix - prefix;

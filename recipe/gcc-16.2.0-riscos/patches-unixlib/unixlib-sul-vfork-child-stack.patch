@@ -1,0 +1,31 @@
+--- a/libunixlib/module/sul.s	2026-10-03 19:02:34.475340855 +0100
++++ b/libunixlib/module/sul.s	2026-10-03 19:35:14.833697524 +0100
+@@ -907,6 +907,12 @@
+ 	STR	a1, [v2, #PROC_INITIALHIMEM]
+ 	STR	a1, [v2, #PROC_PARENTADDR]
+ 
++	@ The child was copied from the parent, PROC_STACK (the ARMEABISupport handle of the main stack) included.  A vfork child runs on the stack of its
++	@ PARENT until it execs, so that stack is not the child's: if the child's PROC_STACK stayed, sul_exit would free the stack of the parent when the child
++	@ ends without an exec, and the parent would be resumed on it (GCCSDK GCC 16 forward-port).  A child that execs a UnixLib program records the handle
++	@ of its own stack in its start-up code.
++	STR	a1, [v2, #PROC_STACK]
++
+ 	@ Save a reference to the parent proc struct
+ 	STR	v1, [v2, #PROC_PARENTSULPROC]
+ 	STR	v3, [v2, #PROC_PARENTSULPROCADDR]
+@@ -1418,9 +1424,13 @@
+ 	TST	a1, #SULPROC_STATUS_FLAG_IS_ARMEABI
+ 	BEQ	2f
+ 
+-	MOV	a1, #ARMEABISUPPORT_STACKOP_FREE
++	@ Free the main stack, if the process has one of its own recorded: a process that ends before its start-up code has recorded the handle, a vfork child
++	@ that did not exec, and a child that exec'd a program that is not UnixLib have PROC_STACK = 0 (sul_fork clears it in a child).  StackOp FREE of 0
++	@ must not be called: ARMEABISupport does not check the handle and follows it as a pointer.
+ 	LDR	a2, [v2, #PROC_STACK]
+-	SWI	XARMEABISupport_StackOp
++	TEQ	a2, #0
++	MOVNE	a1, #ARMEABISUPPORT_STACKOP_FREE
++	SWINE	XARMEABISupport_StackOp
+ 2:
+ 
+ 	@ Restore old exit and error handlers if necessary

@@ -1,0 +1,30 @@
+--- a/libiberty/physmem.c	2026-10-03 12:48:38.206973059 +0100
++++ b/libiberty/physmem.c	2026-10-03 12:48:38.218262639 +0100
+@@ -78,10 +78,27 @@
+ 
+ #include "libiberty.h"
+ 
++#ifdef __riscos__
++#include <kernel.h>
++#include <swis.h>
++#endif
++
+ /* Return the total amount of physical memory.  */
+ double
+ physmem_total (void)
+ {
++#ifdef __riscos__
++  { /* UnixLib's sysconf (_SC_PHYS_PAGES) answers 0, which makes GCC's garbage
++       collector run at its minimum heap size.  OS_ReadMemMapInfo returns the
++       page size (R0) and the number of pages of RAM (R1).  */
++    int pagesize, pages;
++
++    if (_swix (OS_ReadMemMapInfo, _OUT (0) | _OUT (1), &pagesize, &pages) == NULL
++	&& pagesize > 0 && pages > 0)
++      return (double) pages * (double) pagesize;
++  }
++#endif
++
+ #if defined _SC_PHYS_PAGES && defined _SC_PAGESIZE
+   { /* This works on linux-gnu, solaris2 and cygwin.  */
+     double pages = sysconf (_SC_PHYS_PAGES);

@@ -1,0 +1,314 @@
+--- a/libunixlib/sys/_vfork.s	2026-10-04 11:32:51.733238684 +0100
++++ b/libunixlib/sys/_vfork.s	2026-10-04 11:57:34.462870422 +0100
+@@ -6,6 +6,32 @@
+ 	.syntax unified
+ 	.text
+ 
++#ifdef ULTRACE
++@ ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
++@ ULTR (a debugging aid for test builds only: assemble with -DULTRACE; not part of the library): ULTR "text", reg  appends the line
++@     text v=<reg> sp=<the sp at the call> ctx=<VFPSupport_ActiveContext> t=<monotonic time> p=<[0x8038]> g=<[[0x8038]]> c=<[0x8040]> h=<sum of the words 0x8000-0x80FF>      (all in hex)
++@ p, g, c, h describe the application space at that moment: p is the word that PIC_LOAD reads (the runtime workspace: the pointer to the client's GOTT array), g what it points at (ffffffff when p cannot
++@ be read: OS_ValidateAddress says no), c SOManager's client structure of this application space, h a checksum of the first 256 bytes (ELF header and runtime workspace).
++@ to the SulLog file of the traced SharedUnixLibrary (the same file and format), with raw SWIs (OS_Find 0xC0 open for update, OS_Args 2 and 1 to go to the end, OS_GBPB 2, OS_Find 0 close), so that the
++@ last line survives a freeze.  __ul_trace (const char *text, unsigned value) is callable from C as well.  It preserves EVERY register and the flags, uses 264 bytes of the caller's stack (valid at
++@ every place it is called from) and no VFP/NEON instruction (the VFP context may be inactive there).  Must not be called while IRQs are off: the file write needs the network.
++@ ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
++	.macro	ULTR	text, reg=a1
++	STMFD	sp!, {r0, r1, lr}
++	MOV	r1, \reg
++	ADR	r0, 98f
++	BL	ul_trace_local
++	LDMFD	sp!, {r0, r1, lr}
++	B	99f
++98:	.asciz	"\text"
++	.align
++99:
++	.endm
++#else
++	.macro	ULTR	text, reg=a1
++	.endm
++#endif
++
+ @ vfork is similar to fork.
+ @
+ @ fork makes a complete copy of the calling process's address space
+@@ -88,6 +114,7 @@
+ 
+ 	@ The PIC register should have been restored on return from the
+ 	@ child process.
++	ULTR	"UL1 fork_common: sul_fork returned (v = the child pid, 0 in the child)", a1
+ 
+ 	@ Tail-call __fork_post to do the remaining work
+ 	LDR	a3, .L0			@=__saved_lr
+@@ -103,6 +130,7 @@
+ 	SWI	VFPSupport_ChangeContext
+ 	LDMFD	sp!, {a1-a2}
+ #endif
++	ULTR	"UL2 fork_common: VFP context reactivated (v = the child pid)", a1
+ 
+ 	B	__fork_post
+ .L0:
+@@ -111,6 +139,151 @@
+ 	WORD	__ul_memory
+ 	DECLARE_FUNCTION fork
+ 
++#ifdef ULTRACE
++	.set	XOS_Find_T, 0x2000D
++	.set	XOS_Args_T, 0x20009
++	.set	XOS_GBPB_T, 0x2000C
++	.set	XOS_ReadMonotonicTime_T, 0x20042
++	.set	XVFPSupport_ActiveContext_T, 0x78EC6
++	.set	XOS_ValidateAddress_T, 0x2003A
++
++	@ entry: r0 = the text (NUL terminated), r1 = the value.  Preserves every register and the flags.
++	.global	__ul_trace
++	.protected __ul_trace		@ (calls from the C code of this library bind directly, not through the lazily bound PLT)
++	.type	__ul_trace, %function
++__ul_trace:
++ul_trace_local:
++	STMFD	sp!, {r0-r12, lr}
++	MRS	r10, APSR		@ r10 = the flags
++	ADD	r11, sp, #14*4		@ r11 = the caller's sp
++	SUB	sp, sp, #208		@ the line buffer (192 bytes) and four words: p, g, c, h
++	MOV	r0, #0x8000
++	LDR	r6, [r0, #0x38]		@ r6 = p
++	STR	r6, [sp, #192]
++	LDR	r1, [r0, #0x40]
++	STR	r1, [sp, #200]		@ c
++	MOV	r2, r0
++	MOV	r3, #0
++	ADD	r4, r0, #0x100
++ul_tr_hloop:
++	LDR	r5, [r2], #4
++	ADD	r3, r3, r5
++	TEQ	r2, r4
++	BNE	ul_tr_hloop
++	STR	r3, [sp, #204]		@ h
++	MVN	r7, #0			@ g = ffffffff when [p] cannot be read
++	MOV	r0, r6
++	ADD	r1, r6, #4
++	SWI	XOS_ValidateAddress_T
++	BVS	ul_tr_nog
++	LDRCC	r7, [r6]
++ul_tr_nog:
++	STR	r7, [sp, #196]		@ g
++	SWI	XVFPSupport_ActiveContext_T
++	MOVVS	r0, #-1
++	MOV	r12, r0			@ r12 = the active VFP context (-1 when VFPSupport is not there)
++	SWI	XOS_ReadMonotonicTime_T
++	MOV	r8, r0			@ r8 = time
++	LDR	r9, [sp, #208+4]	@ r9 = the value (the saved r1)
++	MOV	r4, sp			@ r4 = start of the line, r1 = write pointer
++	MOV	r1, sp
++	LDR	r2, [sp, #208]		@ the text (the saved r0)
++	BL	ul_trace_puts
++	ADRL	r2, ul_sfx_v
++	BL	ul_trace_puts
++	MOV	r0, r9
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_sp
++	BL	ul_trace_puts
++	MOV	r0, r11
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_ctx
++	BL	ul_trace_puts
++	MOV	r0, r12
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_t
++	BL	ul_trace_puts
++	MOV	r0, r8
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_p
++	BL	ul_trace_puts
++	LDR	r0, [sp, #192]
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_g
++	BL	ul_trace_puts
++	LDR	r0, [sp, #196]
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_c
++	BL	ul_trace_puts
++	LDR	r0, [sp, #200]
++	BL	ul_trace_hex8
++	ADRL	r2, ul_sfx_h
++	BL	ul_trace_puts
++	LDR	r0, [sp, #204]
++	BL	ul_trace_hex8
++	MOV	r3, #10
++	STRB	r3, [r1], #1
++	SUB	r5, r1, r4		@ r5 = length of the line
++	MOV	r0, #0xC0
++	ADRL	r1, ul_trace_name
++	SWI	XOS_Find_T
++	BVS	ul_tr_done
++	MOVS	r6, r0			@ r6 = handle
++	BEQ	ul_tr_done
++	MOV	r0, #2
++	MOV	r1, r6
++	SWI	XOS_Args_T		@ r2 = extent
++	MOV	r0, #1
++	MOV	r1, r6
++	SWI	XOS_Args_T		@ pointer := extent
++	MOV	r0, #2
++	MOV	r1, r6
++	MOV	r2, r4
++	MOV	r3, r5
++	SWI	XOS_GBPB_T
++	MOV	r0, #0
++	MOV	r1, r6
++	SWI	XOS_Find_T		@ close
++ul_tr_done:
++	ADD	sp, sp, #208
++	MSR	APSR_nzcvq, r10
++	LDMFD	sp!, {r0-r12, pc}
++
++	@ r2 = NUL terminated string, r1 = write pointer: the string is copied without its NUL, r1 advanced; corrupts r2, r3
++ul_trace_puts:
++	LDRB	r3, [r2], #1
++	TEQ	r3, #0
++	STRBNE	r3, [r1], #1
++	BNE	ul_trace_puts
++	MOV	pc, lr
++
++	@ r0 = value, r1 = write pointer: 8 hex digits, r1 advanced; corrupts r0, r2, r3, r7
++ul_trace_hex8:
++	MOV	r7, #8
++ul_tr_hex_loop:
++	MOV	r0, r0, ROR #28
++	AND	r2, r0, #15
++	CMP	r2, #10
++	ADDLT	r2, r2, #'0'
++	ADDGE	r2, r2, #'A' - 10
++	STRB	r2, [r1], #1
++	SUBS	r7, r7, #1
++	BNE	ul_tr_hex_loop
++	MOV	pc, lr
++
++ul_trace_name:	.asciz	"LanMan98::MyShare.$.SulLog"
++ul_sfx_v:	.asciz	" v="
++ul_sfx_sp:	.asciz	" sp="
++ul_sfx_ctx:	.asciz	" ctx="
++ul_sfx_t:	.asciz	" t="
++ul_sfx_p:	.asciz	" p="
++ul_sfx_g:	.asciz	" g="
++ul_sfx_c:	.asciz	" c="
++ul_sfx_h:	.asciz	" h="
++	.align
++	.size	__ul_trace, . - __ul_trace
++#endif
++
+ 	.section ".bss"
+ 
+ 	.align
+--- a/libunixlib/sys/vfork.c	2026-10-04 11:32:51.733271286 +0100
++++ b/libunixlib/sys/vfork.c	2026-10-04 11:33:39.972558005 +0100
+@@ -21,6 +21,14 @@
+ static int __saved_pthread_system_running;
+ static const char *dde_prefix;
+ 
++#ifdef ULTRACE
++/* A debugging aid for test builds only (-DULTRACE): a line in the SulLog file at each step, see _vfork.s.  Not part of the library.  */
++extern void __ul_trace (const char *, unsigned);
++#define ULT(tag, v) __ul_trace ((tag), (unsigned) (v))
++#else
++#define ULT(tag, v) ((void) 0)
++#endif
++
+ /* Do everything that needs doing before the call to sul_fork.  */
+ int
+ __fork_pre (int isfork, void **sul_fork, pid_t *pid)
+@@ -28,6 +36,8 @@
+   struct ul_global *gbl = &__ul_global;
+   struct __sul_process *sulproc = gbl->sulproc;
+ 
++  ULT ("UL10 __fork_pre enter (v = isfork)", isfork);
++
+   /* Reset redirection variables.  They are set in exec(), when it is called,
+      and consuled at __fork_post() time.  */
+   gbl->rewindpipeoffset = -1;
+@@ -64,10 +74,12 @@
+ #endif
+ 
+   __env_riscos ();
++  ULT ("UL11 __fork_pre: after __env_riscos", 0);
+ 
+   *sul_fork = (void *)sulproc->sul_fork;
+   *pid = sulproc->pid;
+ 
++  ULT ("UL12 __fork_pre returns 0", 0);
+   return 0;
+ }
+ 
+@@ -76,7 +88,9 @@
+ {
+   struct ul_global *gbl = &__ul_global;
+ 
++  ULT ("UL20 __fork_post enter (v = pid)", pid);
+   __env_unixlib ();
++  ULT ("UL21 __fork_post: after __env_unixlib (v = pid)", pid);
+ 
+   gbl->pthread_system_running = __saved_pthread_system_running;
+ 
+@@ -104,10 +118,12 @@
+       /* Record the fact that this child process was the result of
+ 	 fork().  */
+       gbl->sulproc->status.forked = 1;
++      ULT ("UL28 __fork_post: the child is ready", 0);
+     }
+   else
+     {
+       /* We are the parent (including the case when sul_fork failed).  */
++      ULT ("UL22 parent: __fork_post continues", 0);
+ 
+       /* Reset the DDEUtils' Prefix variable to the value before the fork,
+          in case the child has changed it. */
+@@ -125,6 +141,7 @@
+       /* Restore RISC OS in/out redirection.
+          When the stdout of our child process was a DEV_PIPE, we need to rewind it to
+ 	 to point where we exec'ed the child so we can read its output.  */
++      ULT ("UL23 parent: before OS_ChangeRedirection (v = changeredir0)", gbl->changeredir0);
+       int prev_fh_in, prev_fh_out;
+       const _kernel_oserror *err;
+       if ((err = SWI_OS_ChangeRedirection (gbl->changeredir0, gbl->changeredir1,
+@@ -161,6 +178,7 @@
+ 	    }
+ 	}
+ 
++      ULT ("UL24 parent: redirection restored", 0);
+       if (gbl->pthread_system_running)
+         {
+           __pthread_start_ticker ();
+@@ -169,14 +187,17 @@
+ 
+       /* Raise SIGCHLD because the child process has now terminated
+          or stopped.  The default action is to ignore this.  */
++      ULT ("UL25 parent: before raise (SIGCHLD)", 0);
+       if (pid != -1)
+         raise (SIGCHLD);
++      ULT ("UL26 parent: after raise (SIGCHLD)", 0);
+     }
+ 
+   /* sul_fork can only fail due to lack of memory.  */
+   if (pid == -1)
+     (void)__set_errno (ENOMEM);
+ 
++  ULT ("UL27 __fork_post returns (v = pid)", pid);
+   return pid;
+ }
+ 
+--- a/libunixlib/unix/sysconf.c	2026-10-04 11:42:26.537788398 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-04 11:42:26.549842231 +0100
+@@ -154,6 +154,12 @@
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */
+       case 0x4701:
+ 	return __GNUC__;
++
++#ifdef ULTRACE
++      /* Private, test builds only (-DULTRACE: the traced libunixlib of RunTraceUL1, see sys/_vfork.s): lets sulmark tell the traced library from the release.  */
++      case 0x4702:
++	return 0x7ACE;
++#endif
+     }
+ 
+   return __set_errno (EINVAL);

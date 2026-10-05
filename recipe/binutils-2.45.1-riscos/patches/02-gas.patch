@@ -1,0 +1,112 @@
+diff -ruN a/gas/config/tc-arm.c b/gas/config/tc-arm.c
+--- a/gas/config/tc-arm.c	2025-11-10 00:00:00.000000000 +0000
++++ b/gas/config/tc-arm.c	2026-10-01 19:51:33.789546474 +0100
+@@ -29336,6 +29336,15 @@
+       /* Fall through.  */
+ 
+     case BFD_RELOC_32:
++#ifdef TE_RISCOS
++      /* RISC OS: a reference to __GOTT_BASE__ is only a marker for the
++	 linker (see elf32_arm_final_link_relocate).  */
++      if (streq (S_GET_NAME (fixp->fx_addsy), "__GOTT_BASE__"))
++	{
++	  code = BFD_RELOC_NONE;
++	  break;
++	}
++#endif
+       if (fixp->fx_pcrel)
+ 	{
+ 	  code = BFD_RELOC_32_PCREL;
+@@ -29504,6 +29513,14 @@
+       return NULL;
+ 
+     case BFD_RELOC_ARM_OFFSET_IMM:
++#ifdef TE_RISCOS
++      /* RISC OS: __GOTT_INDEX__ is only a marker for the linker.  */
++      if (streq (S_GET_NAME (fixp->fx_addsy), "__GOTT_INDEX__"))
++	{
++	  code = BFD_RELOC_NONE;
++	  break;
++	}
++#endif
+       if (section->use_rela_p)
+ 	{
+ 	  code = fixp->fx_r_type;
+@@ -29524,6 +29541,16 @@
+ 		    _("internal_relocation (type: OFFSET_IMM) not fixed up"));
+       return NULL;
+ 
++#ifdef TE_RISCOS
++    case BFD_RELOC_ARM_T32_OFFSET_IMM:
++      /* RISC OS: __GOTT_THUMB_INDEX__ is only a marker for the linker.  */
++      if (streq (S_GET_NAME (fixp->fx_addsy), "__GOTT_THUMB_INDEX__"))
++	{
++	  code = BFD_RELOC_NONE;
++	  break;
++	}
++      /* Fall through.  */
++#endif
+     default:
+       {
+ 	const char * type;
+@@ -32940,4 +32967,21 @@
+     }
+   return 0;
+ }
++
++#ifdef TE_RISCOS
++/* RISC OS: the __GOTT_* marker symbols are weak so that they never need
++   defining.  */
++
++void
++riscos_symbol_new_hook (symbolS *sym)
++{
++  const char *sym_name = S_GET_NAME (sym);
++
++  if (sym_name[0] == '_' && sym_name[1] == '_'
++      && (strcmp (sym_name, "__GOTT_BASE__") == 0
++	  || strcmp (sym_name, "__GOTT_THUMB_INDEX__") == 0
++	  || strcmp (sym_name, "__GOTT_INDEX__") == 0))
++    S_SET_WEAK (sym);
++}
++#endif /* TE_RISCOS */
+ #endif /* OBJ_ELF */
+diff -ruN a/gas/config/tc-arm.h b/gas/config/tc-arm.h
+--- a/gas/config/tc-arm.h	2025-11-10 00:00:00.000000000 +0000
++++ b/gas/config/tc-arm.h	2026-10-01 19:51:27.683153742 +0100
+@@ -350,6 +350,11 @@
+ extern int tc_arm_regname_to_dw2regnum (char *regname);
+ extern void tc_arm_frame_initial_instructions (void);
+ 
++#ifdef TE_RISCOS
++extern void riscos_symbol_new_hook (symbolS *);
++#define tc_symbol_new_hook(sym)		riscos_symbol_new_hook (sym)
++#endif
++
+ #ifdef TE_PE
+ 
+ #define O_secrel O_md1
+diff -ruN a/gas/config/te-riscos.h b/gas/config/te-riscos.h
+--- a/gas/config/te-riscos.h	1970-01-01 01:00:00.000000000 +0100
++++ b/gas/config/te-riscos.h	2026-10-01 19:51:27.670422958 +0100
+@@ -0,0 +1,9 @@
++/* te-riscos.h -- RISC OS (GCCSDK EABI, arm-riscos-gnueabihf) target environment.  */
++
++#define TE_RISCOS
++#define LOCAL_LABELS_FB 1
++/* Pure-endian doubles, VFP order (binutils 2.30's FPU_ARCH_VFP).  */
++#define FPU_DEFAULT FPU_ARCH_SOFTVFP
++#define EABI_DEFAULT EF_ARM_EABI_VER5
++
++#include "obj-format.h"
+diff -ruN a/gas/configure.tgt b/gas/configure.tgt
+--- a/gas/configure.tgt	2025-11-10 00:00:00.000000000 +0000
++++ b/gas/configure.tgt	2026-10-01 19:51:27.682995388 +0100
+@@ -150,6 +150,7 @@
+ 
+   arm-*-phoenix*)			fmt=elf ;;
+   arm-*-elf)				fmt=elf ;;
++  arm-riscos-gnueabihf)			fmt=elf em=riscos ;;
+   arm-*-eabi* | arm-*-rtems* | arm-*-genode*)	fmt=elf em=armeabi ;;
+   arm-*-kaos*)				fmt=elf ;;
+   arm-*-conix*)				fmt=elf ;;

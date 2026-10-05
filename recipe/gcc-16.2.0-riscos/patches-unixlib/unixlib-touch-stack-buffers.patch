@@ -1,0 +1,77 @@
+--- a/libunixlib/incl-local/internal/unix.h	2026-10-02 18:03:34.784933596 +0100
++++ b/libunixlib/incl-local/internal/unix.h	2026-10-02 18:03:34.807856198 +0100
+@@ -432,6 +432,36 @@
+ 
+ extern unsigned int __get_cpu_arch (void);
+ 
++/* The pages of an EABI stack are mapped one at a time, by ARMEABISupport's data abort handler, when a page is first touched.  If the first access to a page comes from
++   RISC OS itself, in supervisor mode, while it fills a buffer for the caller (OS_GBPB, the socket calls, ...), the store that takes the fault is lost: some bytes of the
++   buffer are never written (seen on a Cortex-A72 machine with RISC OS 5: the 8 or 16 bytes before most page boundaries of a read into a big stack buffer that had not
++   been used yet).  A load in user mode maps the page properly, so touch every page of a buffer that lies on this thread's stack (within 1 MB above the stack pointer)
++   before handing it to the OS.  Buffers anywhere else (heap, mmap, static) are left alone: touching them would only commit memory.  */
++#if defined (__ARM_EABI__)
++static inline void
++__touch_stack_buffer (const void *__buf, size_t __n)
++{
++  unsigned int __sp, __lo = (unsigned int) __buf, __hi;
++
++  __asm__ ("mov	%0, sp" : "=r" (__sp));
++  if (__lo - __sp >= 0x100000u)
++    return;
++  __hi = __lo + (unsigned int) __n;
++  if (__hi < __lo || __hi - __sp > 0x100000u)
++    __hi = __sp + 0x100000u;
++  for (volatile const char *__p = (volatile const char *) (__lo & ~0xfffu);
++       (unsigned int) __p < __hi; __p += 4096)
++    (void) *__p;
++}
++#else
++static inline void
++__touch_stack_buffer (const void *__buf, size_t __n)
++{
++  (void) __buf;
++  (void) __n;
++}
++#endif
++
+ __END_DECLS
+ 
+ #endif
+--- a/libunixlib/unix/dev.c	2026-10-02 18:03:34.789445660 +0100
++++ b/libunixlib/unix/dev.c	2026-10-02 18:03:34.807922174 +0100
+@@ -414,6 +414,7 @@
+     {
+       const _kernel_oserror *err;
+       unsigned not_read;
++      __touch_stack_buffer (data, nbyte);
+       if ((err = SWI_OS_GBPB_ReadBytes ((int) file_desc->devicehandle->handle,
+ 					data, nbyte, &not_read)) != NULL)
+ 	return __ul_seterr (err, EOPSYS);
+@@ -812,6 +813,7 @@
+ int
+ __sockread (struct __unixlib_fd *file_desc, void *data, int nbyte)
+ {
++  __touch_stack_buffer (data, nbyte);
+   return _sread ((int) file_desc->devicehandle->handle, data, nbyte);
+ }
+ 
+--- a/libunixlib/netlib/recv.c	2026-10-02 18:03:34.793638551 +0100
++++ b/libunixlib/netlib/recv.c	2026-10-02 18:03:34.807943054 +0100
+@@ -29,6 +29,7 @@
+   if (__socket_valid (s) == -1)
+     return -1;
+ 
++  __touch_stack_buffer (msg, len);
+   return _recv ((int)(getfd (s)->devicehandle->handle), msg, len, flags);
+ #endif
+ }
+--- a/libunixlib/netlib/recvfrom.c	2026-10-02 18:03:34.795833617 +0100
++++ b/libunixlib/netlib/recvfrom.c	2026-10-02 18:03:34.807958284 +0100
+@@ -30,6 +30,7 @@
+   if (__socket_valid (s) == -1)
+     return -1;
+ 
++  __touch_stack_buffer (msg, len);
+   return _recvfrom ((int)getfd (s)->devicehandle->handle, msg, len, flags, from, fromlen);
+ #endif
+ }

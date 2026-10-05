@@ -1,0 +1,44 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/sys/_syslib.s
++++ b/gcc4/recipe/files/gcc/libunixlib/sys/_syslib.s
+@@ -225,17 +225,37 @@
+ 
+ 	STR	a3, [ip, #GBL_SIGNALHANDLER_SP]
+ 
++	@ The size of the main stack: 1MB (256 pages) unless the program defines __stack_size (in bytes) and asks for more (before,
++	@ the stack of an EABI program was always 1MB).  ARMEABISupport maps a stack one 4KB page at a time when it is first touched, so a big stack costs
++	@ nothing but address space - but ALL the EABI stacks of the machine are carved out of one shared 256MB range of address space, so when the module has no
++	@ room for the size asked for, try half of it, and so on down to 1MB, before giving up.
++	LDR	v2, ___stack_size
++ PICEQ "LDR	v2, [v4, v2]"
++	TEQ	v2, #0
++	LDRNE	v2, [v2, #0]		@ __stack_size, in bytes
++	MOV	v2, v2, LSR #12		@ in pages
++	CMP	v2, #256
++	MOVCC	v2, #256		@ never less than 1MB (256 pages)
++stack_try:
+ 	MOV	a1, #ARMEABISUPPORT_STACKOP_ALLOC
+-	MOV	a2, #256		@ Allow for 1MB (256 pages) of stack
++	MOV	a2, v2			@ the stack size in pages
+ 	MOV	a3, #1			@ 1 Stack guard page
+ 	LDR	a4, ___program_name
+  PICEQ "LDR	a4, [v4, a4]"
+ 	TEQ	a4, #0
+ 	LDRNE	a4, [a4, #0]
+ 	SWI	XARMEABISupport_StackOp
+-	MOVS	sp, a3
+-	MOVEQ	a1, #ERR_NO_STACK
+-	BEQ	__exit_with_error_num	@ Failed to allocate stack, exit.
++	TEQ	a3, #0
++	BNE	stack_ok
++	CMP	v2, #256
++	MOVLS	a1, #ERR_NO_STACK
++	BLS	__exit_with_error_num	@ Not even 1MB: failed to allocate stack, exit.
++	MOV	v2, v2, LSR #1		@ No room for that much: half the size,
++	CMP	v2, #256
++	MOVCC	v2, #256		@ but not less than 1MB
++	B	stack_try
++stack_ok:
++	MOV	sp, a3
+ 	LDR	a3, [fp, #MEM_APPSPACE_HIMEM]
+ 	SUB	a3, a3, #4
+ 	STR	a3, [fp, #MEM_STACK]	@ __ul_memory.stack = bottom of stack
