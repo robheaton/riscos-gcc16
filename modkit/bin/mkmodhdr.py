@@ -127,7 +127,8 @@ def parse(text):
 
 # ---------------------------------------------------------------- generators
 def const(name, fallback):
-    if rc is None: return fallback
+    # the one number the header needs besides the ones in the CMHG file; RISCOS_SOURCES (a checkout of the RISC OS Open sources) makes it be READ from the sources instead of taken from here
+    if rc is None or not rc.BASE: return fallback
     return rc.get(name)
 
 def asm_bytes(b):

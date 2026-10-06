@@ -62,8 +62,7 @@
 #ifdef CROSS_DIRECTORY_STRUCTURE
 #define SUBTARGET_EXTRA_LINK_SPEC " -m armelf_riscos_eabi -p \
      %{!static: \
-      %{!fpic:-fPIC} %{fpic:-fpic} \
-      %{mmodule:--ro-module-reloc --target2=rel}}"
+      %{!fpic:-fPIC} %{fpic:-fpic}}"
 #else
 extern const char * riscos_multilib_dir (int argc, const char **argv);
 #undef EXTRA_SPEC_FUNCTIONS
@@ -82,10 +81,22 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
    "-m armelf_riscos_eabi -p \
    %{!static: \
      %{!fpic:-fPIC} %{fpic:-fpic} \
-     %:riscos_multilib_dir() \
-     %{mmodule:--ro-module-reloc --target2=rel}}"
+     %:riscos_multilib_dir()}"
 
 #endif
+
+/* -mmodule: a RISC OS relocatable module (modkit, no C library; the GCCSDK 4.7.4 name of the option).  The code is for ARMv6 and later, soft float, ARM state, freestanding, not
+   position independent (the image is linked at address 0 and relocates itself: modkit/README.md), with no stack protector and no unwind tables; the compiler's own
+   headers come after the few of modkit (<prefix>/lib/gcc/TARGET/VERSION/include-modkit), the UnixLib headers are not searched, and no start files and libraries are linked
+   except libmodkit.a (ENDFILE_SPEC).  The configured default architecture (armv7-a) is already a switch when the self specs run, so it is replaced: -march=armv6
+   (or -march=armv6k ... if given), soft float, whatever -mcpu / -mfpu / -mfloat-abi say.  The image has no relocation type for movw / movt (modkit/bin/modreloc.py).  */
+#define RISCOS_MODULE_SELF_SPEC						   \
+  " %{mmodule:%{!march=armv6*:%<march=* -march=armv6} %<mcpu=* %<mfpu=* %<mfloat-abi=* -mfloat-abi=soft -marm -ffreestanding -fno-pic -fno-pie -fvisibility=hidden" \
+  " -fno-stack-clash-protection -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-exceptions -fno-builtin" \
+  " -fno-tree-loop-distribute-patterns -nostdinc -nodefaultlibs}"
+
+#undef  SUBTARGET_CPP_SPEC
+#define SUBTARGET_CPP_SPEC " %{mmodule:-iwithprefixbefore include-modkit -iwithprefix include}"
 
 /* Same as arm.h's DRIVER_SELF_SPECS (including the entries added since GCC 10,
    ARCH_CPU_CLEANUP_SPECS and MULTILIB_ARCH_CANONICAL_SPECS), plus the RISC OS
@@ -93,6 +104,7 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
 #undef DRIVER_SELF_SPECS
 #define DRIVER_SELF_SPECS						   \
   ARCH_CPU_CLEANUP_SPECS,						   \
+  RISCOS_MODULE_SELF_SPEC,						   \
   " %{mfpu=neon:%{!mfloat-abi=*:-mfloat-abi=hard} %{!mcpu=*:-mcpu=cortex-a8}}"   \
   " %{!munaligned-access:-mno-unaligned-access}" \
   MCPU_MTUNE_NATIVE_SPECS,			\
@@ -102,20 +114,21 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
 
 
 #undef STARTFILE_SPEC
-#define STARTFILE_SPEC	" crti.o%s" \
+#define STARTFILE_SPEC	" %{mmodule:;:crti.o%s" \
 			" %{!shared:%{pg:gcrt0.o%s;:crt0.o%s}}" \
-			" %{shared:crtbeginS.o%s;:crtbegin.o%s}"
+			" %{shared:crtbeginS.o%s;:crtbegin.o%s}}"
 
 #undef ENDFILE_SPEC
-#define ENDFILE_SPEC	" %{shared:crtendS.o%s;:crtend.o%s}" \
-			" crtn.o%s"
+#define ENDFILE_SPEC	" %{mmodule:libmodkit.a%s;:%{shared:crtendS.o%s;:crtend.o%s}" \
+			" crtn.o%s}"
 
 /* -mthrowback: the assembler and the linker also send their errors and warnings to the text editor (binutils patch 05-throwback).  */
 #undef  SUBTARGET_EXTRA_ASM_SPEC
 #define SUBTARGET_EXTRA_ASM_SPEC " %{mthrowback:--throwback}"
 
 #undef  LINK_SPEC
-#define LINK_SPEC "%{h*} %{version:-v} \
+#define LINK_SPEC "%{mmodule:-m armelf_riscos_eabi -T module.ld%s -static -q -X --no-warn-rwx-segments %{h*} %{version:-v} %{b} %{Wl,*:%*} %{mthrowback:--throwback};: \
+   %{h*} %{version:-v} \
    %{b} %{Wl,*:%*} %{mthrowback:--throwback} \
    %{static:-Bstatic} \
    %{shared:-shared} \
@@ -126,14 +139,26 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
      %{!riscos-abi:-riscos-abi " RISCOS_ABI "}} \
    -X \
    %{mbig-endian:-EB}" \
-   SUBTARGET_EXTRA_LINK_SPEC
+   SUBTARGET_EXTRA_LINK_SPEC "}"
+
+/* -mmodule: after the link the output file is a module ELF file; modreloc (modkit: <prefix>/arm-riscos-gnueabihf/bin/modreloc, next to as and ld, in the cross compiler and in the native one)
+   replaces it by the flat module image, as the linker of GCCSDK 4.7.4 wrote one: gcc -mmodule -o Module,ffa main.o header.o makes the module.  An output named *.elf is left alone (for a
+   debugger or a simulation), and so is a partial link (-r).  */
+#undef  POST_LINK_SPEC
+#define POST_LINK_SPEC "%{mmodule:%{!r:%{!shared:modreloc -q --driver %{o*:%*;:a.out}}}}"
 
 #define TARGET_OS_CPP_BUILTINS()		\
   do						\
     {						\
       builtin_define ("__riscos");		\
       builtin_define ("__riscos__");		\
-      builtin_define ("__TARGET_UNIXLIB__");	\
+      if (TARGET_MODULE)				\
+	{						\
+	  builtin_define ("__TARGET_MODULE__");	\
+	  builtin_define ("__TARGET_SCL__");		\
+	}						\
+      else						\
+	builtin_define ("__TARGET_UNIXLIB__");	\
       /* The GNU C++ standard library requires this.  */	\
       if (c_dialect_cxx ())					\
 	builtin_define ("_GNU_SOURCE");				\

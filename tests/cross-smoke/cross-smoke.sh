@@ -61,6 +61,20 @@ else
 fi
 chk "-mthrowback: the driver gives --throwback to as and to ld"  "test \$($T-gcc -mthrowback -### $HERE/hello.c 2>&1 | grep -c -e '--throwback') -ge 2"
 chk "without -mthrowback the driver adds no --throwback"         "! $T-gcc -### $HERE/hello.c 2>&1 | grep -q -e '--throwback'"
+echo "Modules (gcc -mmodule, cmunge: modkit)"
+if [ -e "$TC/arm-riscos-gnueabihf/lib/libmodkit.a" ]; then
+  chk "-mmodule: ARMv6, soft float, ARM state, no pic, freestanding"  "$T-gcc -mmodule -O2 -### -c $HERE/hello.c 2>&1 | grep cc1 | grep -q -e '-march=armv6' && $T-gcc -mmodule -O2 -### -c $HERE/hello.c 2>&1 | grep cc1 | grep -q 'mfloat-abi=soft' && $T-gcc -mmodule -O2 -### -c $HERE/hello.c 2>&1 | grep cc1 | grep -q -e '-ffreestanding'"
+  chk "-mmodule: __TARGET_MODULE__ is defined and __TARGET_UNIXLIB__ is not" "$T-gcc -mmodule -dM -E -x c /dev/null | grep -q __TARGET_MODULE__ && ! $T-gcc -mmodule -dM -E -x c /dev/null | grep -q __TARGET_UNIXLIB__ && $T-gcc -dM -E -x c /dev/null | grep -q __TARGET_UNIXLIB__"
+  chk "-mmodule: the headers of modkit come first, inside the toolchain directory, and the UnixLib headers are not searched" "$T-gcc -mmodule -E -v -x c /dev/null 2>&1 | sed -n '/search starts here/,/End of search/p' | sed 's#/bin/\\.\\./#/#' | grep -q \"$TC/lib/gcc/.*/include-modkit\" && ! $T-gcc -mmodule -E -v -x c /dev/null 2>&1 | grep -q 'arm-riscos-gnueabihf/include'"
+  chk "-mmodule: no start files, the linker script and libmodkit.a are found inside the toolchain directory" "l=\$($T-gcc -mmodule -### -o x.elf mh.o 2>&1 | grep collect2); echo \"\$l\" | grep -q -e \"-T $TC/\" && echo \"\$l\" | grep -q \"$TC/.*libmodkit.a\" && ! echo \"\$l\" | grep -q 'crt0.o\\|crti.o\\|crtbegin'"
+  chk "cmunge: modhello.cmhg gives the header and the object (CMunge's command line)" "cmunge -tgcc -32bit -p -d modhello.h -o modhello_hdr.o $HERE/modhello.cmhg && test -s modhello.h && test -s modhello_hdr.o"
+  chk "-mmodule: compile, link (one command: the driver runs modreloc): the output is the flat module image, with its name in the header and a table of address words" "$T-gcc -mmodule -O2 -Wall -I. -c $HERE/modhello.c -o modhello.o && $T-gcc -mmodule -o modhello,ffa modhello.o modhello_hdr.o && ! head -c 4 modhello,ffa | grep -q ELF && grep -q ModHello modhello,ffa"
+  chk "-mmodule: an output named *.elf stays an ELF file (for a debugger or a simulation), and modreloc makes the same module image of it" "$T-gcc -mmodule -o modhello.elf modhello.o modhello_hdr.o && head -c 4 modhello.elf | grep -q ELF && $T-modreloc -q modhello.elf modhello2,ffa && cmp modhello,ffa modhello2,ffa"
+  chk "-mmodule -r (a partial link) is not turned into a module" "$T-gcc -mmodule -r -o modpart.o modhello.o modhello_hdr.o && head -c 4 modpart.o | grep -q ELF"
+  chk "the module has no call into a C library (every symbol is the module's or modkit's)" "test -f modhello.elf && ! $T-nm -u modhello.elf | grep -q ."
+else
+  echo "  skip  modules: this toolchain has no modkit (install-modkit.sh puts it in)"
+fi
 echo "Tuning"
 chk "cortex-a72 tuning flags are accepted" "$T-gcc -O2 -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -o /dev/null -x c - <<< 'int main(void){return 0;}'"
 if [ -n "${REF:-}" ]; then

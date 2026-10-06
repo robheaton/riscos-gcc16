@@ -13,13 +13,14 @@ Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about 
 9. a **coverage** run: `--coverage`, the program writes its counts when it ends, `gcov` annotates the source, and a small program checks the counts,
 10. a **profile-guided** build: `-fprofile-generate`, run, then `-fprofile-use` (which must find the profile).
 11. a **gprof** run: `-pg`, the program writes `gmon.out` when it ends, `gprof` reads it, and a small program checks the call counts of its report.
+12. a **module** (16.2.0-14): `cmunge` makes the header and veneers of a CMHG file, `gcc -mmodule` compiles and links it (the driver runs `modreloc`, so the output is the module image), a small program checks the image, the module is loaded with `RMLoad`, its command `*ModHello_Sum 2 3` prints 5, and the module is removed again.
 
 Every program checks itself and returns 0 only when it is right, so a `PASS` means the compiler produced a program that ran correctly.
-On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all eleven checks in 29 seconds.
+On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all twelve checks in about half a minute.
 
 ## Get it
 
-**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-13_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-13 and installs `!GCC16Test`.
+**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-14_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-14 or later (the module check uses `cmunge` and `gcc -mmodule`) and installs `!GCC16Test`.
 
 Or copy this folder to RISC OS yourself: the files are in the RISC OS layout (directories `c`, `cc`, `f90` and `h`; `RunSelfTest,feb` is the Obey file: on RISC OS it must have the file type Obey, `*SetType RunSelfTest Obey`).
 

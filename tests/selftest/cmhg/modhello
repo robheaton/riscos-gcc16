@@ -1,0 +1,8 @@
+; the smallest module of the smoke test: a title, a help string, start-up and shut-down code and one star command
+title-string: ModHello
+help-string: ModHello 0.01
+date-string: 06 Oct 2026
+initialisation-code: modhello_init
+finalisation-code: modhello_final
+command-keyword-table: modhello_command
+     ModHello_Sum(min-args: 2, max-args: 2, help-text: "Syntax: *ModHello_Sum <a> <b>\n")

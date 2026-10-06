@@ -3,8 +3,8 @@
 You only need this to change the tool chain or to rebuild it. To **use** it, install the [packages](INSTALL-RISCOS.md) or the [cross compiler tarball](CROSS-COMPILER.md).
 
 > **Status of these instructions.** They are the scripts that built the released binaries, on one machine (Ubuntu 26.04, host GCC 15.2, 22 cores) in September and October 2026.
-> Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). All eight steps ran without an error, in 33 minutes.
-> **The packages and the Linux tarball on the releases page are the output of that run**, and the three packages that changed are the files that were installed and tested on the Raspberry Pi. The run passed the checks of the steps: the library check of step 5 (the profiler routines among them) and [`cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) on the cross compiler of step 4 and on the unpacked tarball of step 8 (39 checks, four of them compare its programs with those of step 4's compiler; the directory the tarball was built in was hidden from it).
+> Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). All eight steps took about 33 minutes. The checks at the end of step 8 stopped the run once, because one of their patterns did not allow for the form of path that a relocated tool chain prints (the compiler was right); they passed when the pattern was corrected and the step was run again.
+> **The `Gcc16` and `Gcc16SelfTest` packages and the Linux tarball on the releases page are the output of that run**, and the two packages are the files that were installed and tested on the Raspberry Pi. Compared with the first test build of the same sources, 1104 of the 1116 files of the `Gcc16` package are byte for byte the same; the others are the 16-byte checksums inside `cc1` and `cc1plus` and the timestamps inside static libraries. Every file of the C runtime package of step 5 came out byte for byte the same as in the published 16.2.0-13 package. The C++ and Fortran runtime packages are not rebuilt for this release: today's compiler puts a stack probe in a few small functions (the constructors of `std::ios_base::failure`, for example), so a rebuild gives libraries that behave the same but are not byte for byte the published ones. The run passed the checks of the steps: the library check of step 5 (the profiler routines among them) and [`cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) on the cross compiler of step 4 and on the unpacked tarball of step 8 (48 checks, four of them compare its programs, byte for byte, with those of step 4's compiler; the other 44 were also run with the directory the tarball was built in hidden from it).
 >
 > Every binary contains the path it was built in (assertion messages, debug information), so a rebuild in another directory differs in those strings. The least reproducible part is step 1 (GCCSDK itself).
 
@@ -86,20 +86,27 @@ export PATH=~/gccsdk-next/env-f/bin:$PATH
 $R/build-unixlib.sh                                              # UnixLib 5.0 from the GCCSDK tree + patches-unixlib/ -> ~/gccsdk-next/unixlib/build/.libs/libunixlib.so.5.0.0
 ~/gccsdk-next/tools/check-libunixlib.sh ~/gccsdk-next/unixlib/build/.libs/libunixlib.so.5.0.0
 $R/install-unixlib-sysroot.sh ~/gccsdk-next/env-f ~/gccsdk-next/unixlib/build   # the cross compiler links against this UnixLib from now on (and uses its crt0.o and gcrt0.o)
+$R/install-modkit.sh ~/gccsdk-next/env-f                                 # gcc -mmodule and cmunge: libmodkit.a, module.ld, the headers and scripts of modkit (see MODULES.md)
 ```
+
+`install-modkit.sh` builds `libmodkit.a` with the compiler of step 4 (`-mmodule`) and puts it, the linker script, the headers and the scripts into the tool chain; it is part of the tarball of step 8.
 
 `build-unixlib.sh` refuses to build with a compiler that does not have stack probing on by default, and a patch that does not apply is a hard error. `check-libunixlib.sh` looks for the code of every fix in the built library.
 (`libunixlib.a` is built too, for `-static`; the SharedUnixLibrary module is built separately by `build-sul.sh`.)
 
-## 6. The runtime packages
+## 6. The runtime packages and the fixed SharedUnixLibrary
 
 ```bash
 PKG_OUT=~/gccsdk-next/release python3 $R/make-c16-package.py 13 ~/gccsdk-next/unixlib/build               # SharedLibs-C-armeabihf 16.2.0-13 (needs GCCSDK's 10.2.0-1 package as the base)
 PKG_OUT=~/gccsdk-next/release python3 $R/make-cxx-package.py 5 ~/gccsdk-next/build-f/arm-riscos-gnueabihf/libstdc++-v3/src/.libs/libstdc++.so.6.0.36
 PKG_OUT=~/gccsdk-next/release python3 $R/make-fortran-package.py 2
+$R/build-sul.sh ~/gccsdk-next/unixlib/root ~/gccsdk-next/sul-build                         # SharedUnixLibrary 1.16: the stock module and the fixed 1.16-vforkfix3, with GCCSDK 10.2.0's tool chain
+PKG_OUT=~/gccsdk-next/release python3 $R/make-sul-package.py ~/gccsdk-next/sul-build       # SharedULibFix_1.16-vforkfix3_arm.zip (optional; see SHAREDULIB-FIX.md)
 ```
 
 The metadata of the packages (maintainer, licence, copyright text) is in `scripts/pkgmeta.py`.
+
+`build-sul.sh` assembles `module/sul.s` of the UnixLib tree of step 5 with the tool chain of GCCSDK 10.2.0 (the seed of step 1), because `sul.s` uses FPA instructions that binutils 2.45.1 no longer assemble. It builds the stock module first and checks that it is **byte for byte GCCSDK's own build**, then applies the three patches one after the other. `make-sul-package.py` compiles the programs of `recipe/gcc-16.2.0-riscos/sulfix` with the cross compiler of step 4 and refuses a module that is not the one that passed the hardware tests (3228 bytes, FNV-1a `efc7dfea`). The package replaces nothing by itself: [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md).
 
 ## 7. The native compiler (about 15 minutes on 22 cores, 13 of them for the compilers)
 
@@ -112,8 +119,8 @@ B=~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts
 $B/build-binutils-native.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils-native ~/gccsdk-next/binutils-native-install   # as, ld, ar, nm ... for RISC OS (8 MB stacks)
 ~/gccsdk-next/recipe/make-4.4.1-riscos/scripts/build-make.sh                                                                           # GNU make 4.4.1 for RISC OS -> make-riscos/install/bin/make
 $R/make-native-tree.sh ~/gccsdk-next/native-tree ~/gccsdk-next/native-stage3-lto ~/gccsdk-next/binutils-native-install ~/gccsdk-next/make-riscos/install/bin/make
-PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 13                                           # Gcc16_16.2.0-13_arm.zip
-PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 13                                                                    # Gcc16SelfTest_16.2.0-13_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 14                                           # Gcc16_16.2.0-14_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 14                                                                    # Gcc16SelfTest_16.2.0-14_arm.zip
 ```
 
 `make-native-tree.sh` and `build-native-lto.sh` take their stage directories as arguments or defaults (read their headers); the LTO build uses `recipe/gcc-16.2.0-riscos/data/no-plugin-ld` so that configure accepts a native `ld` without plugin support.
@@ -123,15 +130,15 @@ What the native build needed, each point learned on the hardware, is in `recipe/
 ## 8. The Linux tarball and the release
 
 ```bash
-$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-13 <a README file>
+$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-14 <a README file>
 ```
 
-It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-13-x86_64-linux.tar.xz`. Check the result the way the release was checked:
+It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-14-x86_64-linux.tar.xz`. Check the result the way the release was checked:
 
 ```bash
 cd ~/gccsdk-next/release
-tar -xf riscos-gcc16-cross-16.2.0-13-x86_64-linux.tar.xz
-~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-13-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
+tar -xf riscos-gcc16-cross-16.2.0-14-x86_64-linux.tar.xz
+~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-14-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
 ```
 
 ## Changing something

@@ -4,7 +4,7 @@ Running real programs on real hardware found bugs in UnixLib, in the SharedUnixL
 with a patch where there is one, a reproducer, and an honest statement of what was measured on the machine and what was only read from the code or run on an interpreter. The drafts, patches, reproducers and the script that re-checks them are in
 [`docs/upstream/`](upstream/00-INDEX.txt).
 
-> **Status:** drafts. They have **not** been sent to the GCCSDK maintainers yet and may be revised before they are. The patches are against the GCCSDK svn trunk r7800 (`patch -p1` from the top of the tree) and are *already in the packages of this release* (UnixLib) or in the fixed module that this release does not ship (SharedUnixLibrary).
+> **Status:** drafts. They have **not** been sent to the GCCSDK maintainers yet and may be revised before they are. The patches are against the GCCSDK svn trunk r7800 (`patch -p1` from the top of the tree) and are *already in the packages of this release* (UnixLib) or in the fixed module that the optional `SharedULibFix` package of this release ships (SharedUnixLibrary: [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md)).
 
 | # | Component | Problem | Patch |
 |---|---|---|---|

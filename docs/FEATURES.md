@@ -85,10 +85,13 @@ How to use it: [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [CROS
 15 fix levels, found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
 `vfork` + `exec` memory, the DDEUtils interaction, `scanf` with `long long`, the `.fini_array` of programs (destructors, the exit hook of libgcov), `getrlimit (RLIMIT_STACK)`, POSIX semaphores and the profiler of `-pg` programs (`gprof`). The list, with symptoms and the matching upstream bug report, is in [RUNTIME.md](RUNTIME.md).
 
+The module side of one of these bugs, **SharedUnixLibrary 1.16** (a `vfork` child that ends without `exec` kills its parent and can freeze the machine), is fixed by the optional package `SharedULibFix`, which replaces the system module and puts the stock one back on request: [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md).
+
 ## Experimental: modules
 
-[modkit](MODULES.md) builds relocatable RISC OS modules with the cross compiler, without any C library: a module header generator compatible with CMHG input, a small C library, SWI veneers, vector and callback veneers, and the relocation step.
-Hardware: a module with SWIs, a service call handler and static data, and a module that claims `TickerV` and uses callbacks, with `RMKill` and reload.
+[modkit](MODULES.md) builds relocatable RISC OS modules with the cross compiler, without any C library, with the commands of GCCSDK 4.7.4 (since 16.2.0-14): **`gcc -mmodule`**, **`cmunge`** (CMunge's command line over a module header generator that reads CMHG input), a small C library (`libmodkit.a`), SWI veneers, vector and callback veneers, and the relocation step, which the driver runs after the link: `gcc -mmodule -o Module,ffa ...` writes the module.
+**On Linux and on RISC OS** (since 16.2.0-14: the tools are C programs, built for both): `gcc -mmodule -o Module main.o header.o oslibv.o` with `cmunge` and `mkoslib` as in the porting section of MODULES.md; on RISC OS name the output without `,ffa` (the driver's post-link step sets the file type).
+Hardware: a module with SWIs, a service call handler and static data; a module that claims `TickerV` and uses callbacks, with `RMKill` and reload; a network module of 800 lines (sockets, files, OS calls: the port of an existing module) built by the new commands on Linux and **on the Pi**, byte for byte the same file, with 39 network checks passed; and a self-test check that builds, loads and runs a module on RISC OS.
 
 ## Not included
 

@@ -1,5 +1,28 @@
 # Changelog
 
+## v16.2.0-14: 2026-10-06, `gcc -mmodule` and `cmunge`: modules the GCCSDK 4.7.4 way
+
+| Asset | Version |
+|---|---|
+| native compiler `Gcc16` | 16.2.0-14 |
+| runtime `SharedLibs-C-armeabihf` | 16.2.0-13 (unchanged) |
+| runtime `SharedLibs-C++-armeabihf` | 16.2.0-5 (unchanged) |
+| runtime `SharedLibs-Fortran-armeabihf` | 16.2.0-2 (unchanged) |
+| self-test `Gcc16SelfTest` | 16.2.0-14 |
+| Linux cross compiler | 16.2.0-14 |
+| optional `SharedULibFix` (the fixed SharedUnixLibrary) | 1.16-vforkfix3 (new) |
+
+New since 16.2.0-13:
+
+* **`-mmodule`**: the option that GCCSDK 4.7.4 used for relocatable modules works: ARMv6, soft float, ARM state, freestanding, no PIC, the headers of modkit instead of UnixLib's, `__TARGET_MODULE__` defined; the linker gets the module linker script and `libmodkit.a`, and no start files. **`gcc -mmodule -o Module,ffa main.o header.o` writes the module**: after the linker the driver runs `modreloc`, which replaces the ELF file by the flat image (an output named `*.elf`, or a partial link with `-r`, stays what it is).
+* **`cmunge`** in `bin/`: CMunge's command line (`-tgcc -32bit -p -D -U -I -d -o -s`) over modkit's header generator; options that do not apply are refused, not ignored.
+* **Modules can be built on RISC OS**: the three module tools (`cmunge`, `mkoslib`, `modreloc`) are C programs now (no Python; `modkit/src`, the same source for Linux and RISC OS), and the native `Gcc16` has them with `libmodkit.a`, the linker script and the headers: `gcc -mmodule` works on the Pi as on Linux. The C tools make the same files as the Python versions they replace, byte for byte (`modkit/tests/test-ctools.py`: 2812 comparisons).
+* **`mkoslib --from-objects`** writes the SWI veneers of the OSLib functions that your objects use: the replacement for `-lOSLib32` (GCCSDK's archive is for the old ABI). `module.mk` has it all as make rules, needs no list of functions and no RISC OS sources (set `RISCOS_SOURCES` to have the one SWI number of the header read from them).
+* The tool chain installs modkit (`libmodkit.a`, `module.ld`, headers, scripts) with `install-modkit.sh` (step 5 of [docs/BUILDING.md](docs/BUILDING.md)). See [docs/MODULES.md](docs/MODULES.md) (with the changes a GCCSDK 4.7.4 module Makefile needs) and [docs/CROSS-COMPILER.md](docs/CROSS-COMPILER.md#risc-os-modules--mmodule-cmunge).
+* **`SharedULibFix`** (new, optional): the fixed **SharedUnixLibrary** module 1.16-vforkfix3, which the author's machine has run since 4 Oct 2026, as a PackMan package with an installer. A `vfork` child that ends without `exec` no longer kills its parent, resizes its Wimp slot or (under a parent that was started by `exec`) freezes the machine. **It replaces a system module**, so the package changes nothing until you run its `Install`: that replaces the module only if it is exactly the stock 1.16 (the whole file is compared), refuses a runtime older than fix level 10, backs the stock module up twice, checks every copy and puts the stock module back if a check fails; `Restore` goes back and `Check` tests the result after the reboot. [docs/SHAREDULIB-FIX.md](docs/SHAREDULIB-FIX.md).
+* Checked: TickMod and the port of a network module, built through the new commands, are byte for byte the images that ran on the Pi; the real source of that module builds unchanged and passes the host simulation; the 34 breakages of the port's host test are all caught; `cross-smoke.sh` has nine new checks, and the self-test has a twelfth check that builds, loads and runs a module on RISC OS.
+* Checked on the Raspberry Pi with the packages of this release, installed with PackMan: the self-test (twelve of twelve checks in 32 seconds; the new one builds, loads and runs a module), the full regression run (all 54 summary lines identical to 16.2.0-13, none failing), and the network module built on the Pi by the commands of its GCCSDK 4.7.4 makefile (3 seconds; byte for byte the module that the cross compiler makes; loaded and run through 39 network checks). The build instructions ([docs/BUILDING.md](docs/BUILDING.md)) were run again in an empty home directory, and `Gcc16`, `Gcc16SelfTest` and the Linux tarball of this release are the output of that run.
+
 ## v16.2.0-13: 2026-10-06, gprof, and throwback from the assembler and the linker, UnixLib fix level 15
 
 | Asset | Version |

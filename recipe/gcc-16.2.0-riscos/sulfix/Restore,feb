@@ -1,0 +1,25 @@
+| Restore - put the STOCK SharedUnixLibrary 1.16 (3 Apr 2020) back, from the copy that Install made next to the module (SharedULib-stock) or, if that is gone, the one in this folder.
+| Both are checked (size and hash of the whole file) before one is used; if neither is the stock module it stops and changes NOTHING.  REBOOT afterwards.
+| TASK WINDOW (Ctrl-F12):    *Obey <SULFix$Dir>.Restore        (Install runs it by itself when one of its last checks fails)
+| If this cannot be run at all:  *Copy <the folder of the module>.SharedULib-stock <the folder of the module>.SharedULib ~CF  and REBOOT.
+Set SULFix$Dir <Obey$Dir>
+Dir <SULFix$Dir>
+Echo ===================== which file is System:Modules.SharedULib?
+Run <SULFix$Dir>.sulfile --real SULFix$Real System:Modules.SharedULib
+Set SULFix$Id <Sys$ReturnCode>
+If "<SULFix$Real>" = "" Then Error The file that System:Modules.SharedULib finds could not be named (see the lines above): NOTHING WAS CHANGED
+If "<SULFix$Id>" = "0" Then Error The STOCK module is already installed (System:Modules.SharedULib finds it): nothing to do
+Echo ===================== which backup of the stock module is there?  (a 'not found' line here only means that that one is not there)
+Set SULFix$Backup <SULFix$Real>-stock
+Run <SULFix$Dir>.sulfile <SULFix$Backup>
+If "<Sys$ReturnCode>" <> "0" Then Set SULFix$Backup <SULFix$Dir>.SharedULib-stock
+Run <SULFix$Dir>.sulfile <SULFix$Backup>
+If "<Sys$ReturnCode>" <> "0" Then Error Neither SharedULib-stock next to the module nor SharedULib-stock in <SULFix$Dir> is the stock module (see the lines above): NOTHING WAS CHANGED.  Get SharedULib 1.16 from your RISC OS !Boot or PackMan
+Echo ===================== putting the STOCK module back
+Copy <SULFix$Backup> <SULFix$Real> ~CF
+Run <SULFix$Dir>.sulfile <SULFix$Real>
+Set SULFix$Id <Sys$ReturnCode>
+If "<SULFix$Id>" <> "0" Then Error The file <SULFix$Real> is not the stock module after the copy (see the lines above).  Copy SharedULib-stock over it by hand
+Run <SULFix$Dir>.sulfile System:Modules.SharedULib
+If "<Sys$ReturnCode>" <> "0" Then Error System:Modules.SharedULib does not find the stock module after the copy (see the lines above)
+Echo ===================== DONE: the stock module is back.  REBOOT now (a module that is loaded stays as it is until the next boot).

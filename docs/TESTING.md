@@ -4,8 +4,8 @@ Four kinds of test, from "check my installation" to "the suites the port was dev
 
 ## 1. Check an installation on RISC OS: `tests/selftest`
 
-After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`), a profile-guided build (`-fprofile-generate`, then `-fprofile-use`) and a gprof run (`-pg`, then `gprof`),
-and checks the fix level of the runtime. It takes about half a minute (29 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
+After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`), a profile-guided build (`-fprofile-generate`, then `-fprofile-use`), a gprof run (`-pg`, then `gprof`) and a module (`cmunge`, `gcc -mmodule`, load it, run its command, remove it),
+and checks the fix level of the runtime. It takes about half a minute (32 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
 
 ## 2. Check the Linux cross compiler: `tests/cross-smoke`
 
@@ -14,7 +14,7 @@ tests/cross-smoke/cross-smoke.sh <toolchain directory> [<reference toolchain>]
 ```
 
 It compiles and links programs in C, C++, Fortran, LTO and as a shared library with the cross compiler in the given directory, checks that every part of the compiler (`cc1`, `lto1`, the linker plugin, `libunixlib.so` ...) is found **inside** that directory, that the objects are ELF 32-bit ARM EABI5 for the shared UnixLib,
-and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 39 checks (35 without the comparison) with the directory it was built in hidden from it, and its programs are byte-identical to those of the compiler it was compared with.
+and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 44 checks with the directory it was built in hidden from it, and all 48 when that tool chain is given as the reference: the four extra checks compare the programs with the reference's, and they are byte-identical.
 
 ## 3. The regression suites (developers)
 
@@ -42,7 +42,7 @@ The test programs of the runtime work, each with the symptom it was written for 
 | `tests/ulinfo.c`, `tests/unixlib16` | `ulinfo` (48 library checks: maths, strings, process, files; it also names the installed library file and its fix level), `readtest*` (a `read()` into a fresh stack buffer), `svc_abort_repro` (the RISC OS stack-page store problem) |
 | `tests/unixlib17` | `seqtest`, `chain`, `stkinfo`, `mmaptest` (23 checks that `mmap` refuses impossible requests), `daprobe`, `heapinfo`: stack sizes, the heap fallback, dynamic area accounting |
 | `tests/unixlib18` | `exittest` (12 checks: every way a process can end), `vforkbare`, `moddump` |
-| `tests/unixlib19`, `tests/sulfix` | `vfork` children that end without `exec` (the SharedUnixLibrary bugs): loops, traces and the host tests of the tracing code. **These can freeze the machine with the stock SharedUnixLibrary 1.16** (a child that ends without `exec` under a parent that was itself started by `exec`): run them only with the fixed module (1.16-vforkfix3, [KNOWN-ISSUES.md](KNOWN-ISSUES.md)) |
+| `tests/unixlib19`, `tests/sulfix` | `vfork` children that end without `exec` (the SharedUnixLibrary bugs): loops, traces and the host tests of the tracing code. **These can freeze the machine with the stock SharedUnixLibrary 1.16** (a child that ends without `exec` under a parent that was itself started by `exec`): run them only with the fixed module (1.16-vforkfix3, the optional package described in [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md)) |
 | `tests/upstream20` | `vforkheap`: the heap of a `vfork` + `exec` child (report 08) |
 | `tests/unixlib24`, `docs/upstream/repro/scanf` | `scantest` (16 `sscanf` cases) and `scanfcheck` with its table (15,066 cases made by glibc) |
 | `tests/unixlib25` | `finitest` (the `.fini_array`: destructors and `atexit` functions in glibc's order), `rlimtest` (`getrlimit (RLIMIT_STACK)`), `semtest` (20 checks of POSIX semaphores with threads), `covtest` (built with `--coverage` and with `-fprofile-generate`: the `.gcda` files); see its [README](../tests/unixlib25/README.md) |
@@ -63,5 +63,8 @@ The expected results of the current release, run on the author's machine: the fi
 | `tests/unixlib-fix/`, `docs/upstream/repro/` | models of the UnixLib fixes (`pthread_once`, timed waits, `fread`/`fwrite`, `sleep`, the `scanf` function against glibc: 47,315 cases) | see each folder |
 | `docs/upstream/verify/run-verify.sh` | re-runs every check behind the upstream reports: patches apply to pristine UnixLib, the patched files compile with GCC 10.2.0 and 16.2.0, the host models, the machine code of the changed functions on an ARM interpreter | needs the GCCSDK svn checkout, the cross compiler and the UnixLib build ([BUILDING.md](BUILDING.md) steps 4 and 5); the last runs: 215 checks in the author's work area, 214 in a fresh copy of the repository, 0 failed |
 | `tools/check-libunixlib.sh <libunixlib.so>` | looks for the code of every fix in a built UnixLib | [BUILDING.md](BUILDING.md) |
+| `tools/sim-sulfix.py` | the installer of the optional `SharedULibFix` package: its three Obey files on a model of the RISC OS command line and of the file layout of the author's machine, with the real `sulfile` built for the host: 28 scenarios (a normal install, a module that is already fixed or not the stock one, a runtime that is too old, damaged copies, `System:` finding another file, `Restore` with a backup missing or damaged, `Check` with the stock module loaded) | `python3 tools/sim-sulfix.py recipe/gcc-16.2.0-riscos/sulfix <the output of build-sul.sh> <the model program>` (the header of the script says how to build it) |
+| `modkit/tests/test-ctools.py` | the C versions of the module tools (`cmunge`, `modreloc`, `mkoslib`) against the Python versions they replace: 400 generated CMHG files and the real ones, the refused ones, the ELF files of several modules (also built with `-g`), a build with `movw` addresses that must be refused, and every one of the 2334 OSLib X functions: the same output byte for byte, or both tools refuse | `TOOLCHAIN=<tool chain>/bin OSLIB=<folder with oslib/> modkit/tests/test-ctools.py` |
+| `modkit/tests/sim-tickmod.py` | the machine code of the TickMod example on the ARM interpreter against a model of the RISC OS kernel (`riscosmodel.py`). The same kind of test was run for a network module (102 checks, and 34 deliberate breakages of it, all caught), but that module is someone else's: its tests are not published | see [MODULES.md](MODULES.md) |
 
 `tools/a32.py` is a small ARMv7 (A32) interpreter used by these checks to run the compiled machine code of the changed functions without hardware.

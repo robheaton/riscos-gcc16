@@ -1,0 +1,53 @@
+| Install - put the FIXED SharedUnixLibrary 1.16-vforkfix3 in place of the stock SharedUnixLibrary 1.16 (3 Apr 2020) that RISC OS ships.  About 10 seconds.  NOTHING ELSE is touched.
+| TASK WINDOW (Ctrl-F12), after opening the folder that contains !SULFix once (the Filer sets SULFix$Dir):    *Obey <SULFix$Dir>.Install
+| It stops with an Error at the first thing that is not as expected; the module file is replaced only in step 5.
+|  1. it finds the file that System:Modules.SharedULib is (the module that UnixLib programs load) and checks the WHOLE file, size and hash: it must be the stock 1.16.  The fixed module
+|     already installed, another version of SharedUnixLibrary, a file it does not know: it stops and changes NOTHING.
+|  2. it checks that the runtime is UnixLib fix level 10 or later (SharedLibs-C-armeabihf 16.2.0-8 or later): the fixed module is NOT safe with an older runtime.
+|  3. it backs the stock module up TWICE, SharedULib-stock in this folder and SharedULib-stock next to the module, and checks both copies.
+|  4. it copies the fixed module next to the installed one (SharedULib-new) and checks that copy THERE: a network or disc error shows up here, before anything is replaced.
+|  5. it copies that file over the module and checks the result, and that System:Modules.SharedULib now finds it; if a check fails it puts the stock module back in the file that it replaced.
+| AFTER IT: REBOOT (a module that is loaded stays as it is until the next boot), then *Obey <SULFix$Dir>.Check as the FIRST thing.   TO GO BACK: *Obey <SULFix$Dir>.Restore and REBOOT.
+| A PackMan update of whatever package ships the stock module puts the STOCK module back: run this again then.
+Set SULFix$Dir <Obey$Dir>
+Dir <SULFix$Dir>
+Echo ===================== 1. which module is installed, and where is its file?
+Run <SULFix$Dir>.sulfile --real SULFix$Real System:Modules.SharedULib
+Set SULFix$Id <Sys$ReturnCode>
+If "<SULFix$Id>" = "2" Then Error The fixed module 1.16-vforkfix3 is ALREADY installed (System:Modules.SharedULib finds it): nothing to do.  REBOOT if you have not since, then *Obey <SULFix$Dir>.Check
+If "<SULFix$Id>" <> "0" Then Error What System:Modules.SharedULib finds is not the stock 1.16 module, or its file could not be read (see the lines above): NOTHING WAS CHANGED
+If "<SULFix$Real>" = "" Then Error The file that System:Modules.SharedULib finds could not be named (see the lines above): NOTHING WAS CHANGED
+Echo ===================== 2. is the runtime new enough?
+Run <SULFix$Dir>.fixlevel 10
+If "<Sys$ReturnCode>" <> "0" Then Error The runtime is too old for the fixed module (see the line above): install SharedLibs-C-armeabihf 16.2.0-13 or later with PackMan and REBOOT first.  NOTHING WAS CHANGED
+Echo ===================== 3. back up the stock module: in this folder, and next to the module
+Copy <SULFix$Real> <SULFix$Dir>.SharedULib-stock ~CF
+Run <SULFix$Dir>.sulfile <SULFix$Dir>.SharedULib-stock
+If "<Sys$ReturnCode>" <> "0" Then Error The backup in this folder is not the stock module (see the lines above): NOTHING WAS CHANGED
+Copy <SULFix$Real> <SULFix$Real>-stock ~CF
+Run <SULFix$Dir>.sulfile <SULFix$Real>-stock
+If "<Sys$ReturnCode>" <> "0" Then Error The backup next to the module is not the stock module (see the lines above): the module itself is untouched
+Echo ===================== 4. the fixed module, copied next to the installed one and checked there
+Copy <SULFix$Dir>.SharedULib <SULFix$Real>-new ~CF
+Run <SULFix$Dir>.sulfile <SULFix$Real>-new
+Set SULFix$Id <Sys$ReturnCode>
+If "<SULFix$Id>" <> "2" Then Remove <SULFix$Real>-new
+If "<SULFix$Id>" <> "2" Then Error The copy of the fixed module next to the installed one does not check out (see the lines above): NOTHING WAS REPLACED
+Echo ===================== 5. replace the module and check the result (if a check fails, the stock module is put back in the file that was replaced)
+Copy <SULFix$Real>-new <SULFix$Real> ~CF
+Run <SULFix$Dir>.sulfile <SULFix$Real>
+Set SULFix$Id <Sys$ReturnCode>
+If "<SULFix$Id>" <> "2" Then Copy <SULFix$Real>-stock <SULFix$Real> ~CF
+If "<SULFix$Id>" <> "2" Then Run <SULFix$Dir>.sulfile <SULFix$Real>
+If "<SULFix$Id>" <> "2" Then Error The new module did not check out after the copy: the stock module was put back (the last lines above must say STOCK).  NOTHING IS INSTALLED
+Run <SULFix$Dir>.sulfile System:Modules.SharedULib
+Set SULFix$Id <Sys$ReturnCode>
+If "<SULFix$Id>" <> "2" Then Copy <SULFix$Real>-stock <SULFix$Real> ~CF
+If "<SULFix$Id>" <> "2" Then Run <SULFix$Dir>.sulfile <SULFix$Real>
+If "<SULFix$Id>" <> "2" Then Error System:Modules.SharedULib does not find the fixed module after the copy (it finds another file, see the lines above): the stock module was put back in <SULFix$Real>.  NOTHING IS INSTALLED
+Remove <SULFix$Real>-new
+Info <SULFix$Real>
+Info <SULFix$Real>-stock
+Echo ===================== DONE: the fixed module 1.16-vforkfix3 is installed (3228 bytes; System:Modules.SharedULib finds it).
+Echo The stock module is saved twice: SharedULib-stock in <SULFix$Dir> and SharedULib-stock next to the module.
+Echo REBOOT now, then as the FIRST thing:  *Obey <SULFix$Dir>.Check     To go back:  *Obey <SULFix$Dir>.Restore  and REBOOT.

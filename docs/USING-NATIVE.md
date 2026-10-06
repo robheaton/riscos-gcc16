@@ -147,6 +147,25 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 * Throwback works only in the desktop. Set `THROWBACK_DEBUG` (to anything) to be told on the screen why no throwback arrives.
 * The assembler and the linker send theirs too, since 16.2.0-13: `-mthrowback` makes the driver give them `--throwback`, and `as --throwback` and `ld --throwback` work on their own. The assembler reports its errors at the lines of your source; the linker reports an error that has a source file and line in the object's debug information (an undefined reference in a file compiled with `-g`) and nothing for the rest. A file name that starts with a path variable (`<Obey$Dir>.s.foo`) is a file like any other.
 
+## Modules (`-mmodule`, `cmunge`), new in 16.2.0-14
+
+Relocatable modules without a C library, built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
+
+```
+cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg     the CMHG file (cmhg/header or cmhg.module: any name): the module header and its veneers (o.header) and the C header (h.header)
+gcc -c -O2 -mmodule -x c -o main.o c/main                      compile (the source must not need a C library beyond the few functions of modkit's headers: see the Limits of MODULES.md)
+mkoslib -I <OSLib>/oslib -o oslibv.c --from-objects main.o     the SWI veneers of the OSLib functions that main.o uses (replaces -lOSLib32); then   gcc -c -mmodule oslibv.c
+gcc -mmodule -o MyModule main.o header.o oslibv.o              the link: the driver runs modreloc after the linker, and the file MyModule is the module (file type &FFA)
+RMLoad MyModule
+```
+
+* **Name the output without `,ffa`** on RISC OS: a UnixLib program does not take a `,ffa` at the end of a name as a file type unless it asks to, so `-o MyModule,ffa` would make a file whose name has a comma in it. The file type &FFA is set by `modreloc`, which is what the driver's post-link step is for. An output named `x.elf` stays an ELF file (for a debugger).
+* **OSLib**: `mkoslib` reads OSLib's C headers (the register layout of every function is in the comment above it): `-I` is the `oslib` folder, with the headers as the compiler finds them (`h.os`, `h.wimp` ... : the OSLib that GCCSDK installs on Linux has `os.h`: copy it as `oslib/h/os`). A module needs the headers that its source includes and what they include (`osf32.h` with `os.h`, for instance). The compile of the generated `oslibv.c` needs the same folder: `-I<the folder that has oslib>`.
+* The tools run in a Task window with the same slot as the compiler (`WimpSlot -min 48M -max 48M`). `cmunge -p` starts `gcc` for the preprocessor; `cmunge -o` starts it for the assembler.
+* **Save your work before `RMLoad`ing a module that is new**: a mistake in a module can crash the machine (the self-test's checker looks at the header and the relocation table of the module it built before it loads it).
+* Tested on the Raspberry Pi: the self-test builds a small module, loads it, runs its command and removes it (check 12); a network module of 800 lines (sockets, files and OS calls through 23 OSLib functions) was built by these commands in 3 seconds and is **byte for byte the module that the Linux cross compiler makes from the same source**; loaded, it passed the network tests (39 checks: banner, commands, files up to 500 KB, a vanishing client, a soak of 300 commands).
+* A makefile written for GCCSDK 4.7.4 needs the compiler names changed, OSLib veneers instead of `-lOSLibH32`, and nothing for the link: see the porting section of [MODULES.md](MODULES.md).
+
 ## Memory, stacks and temporary files
 
 * Every tool keeps its heap in a dynamic area. The maximum is only **reserved address space**: 32 MB for the drivers and `make`, 512 MB for `cc1`, `cc1plus`, `f951` and the binutils. `<program>$HeapMax` (an integer, in MB) changes it, e.g. `SetEval cc1plus$HeapMax 1024`.

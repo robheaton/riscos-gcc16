@@ -9,7 +9,7 @@ This page installs the compiler that runs **on RISC OS**. For the Linux cross co
 | **Machine** | A 32-bit ARM machine with an ARMv7-A (or later) processor and VFPv3, running RISC OS 5. Tested on a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30. Other ARMv7 machines (Pi 2, 3, 4 ...) should work; they have not been tried. |
 | **System modules** | The EABI support modules: *ARMEABISupport*, *Shared Object Manager* and *SharedUnixLibrary* 1.12 or later (`!GCC16` checks that one). The test machine had ARMEABISupport 1.08, Shared Object Manager 3.04 and SharedUnixLibrary 1.16, in `System:Modules`, and the system loaded them when the first EABI program ran. A machine without them has not been tried; these packages do not contain them. |
 | **PackMan** | The RISC OS package manager, to install the zip files. |
-| **Disk space** | 174 MB for the compiler (`Gcc16`, 69 MB to download), 6.9 MB for the C runtime, 1.8 MB and 1.2 MB for the optional C++ and Fortran runtimes (1 MB = 1,000,000 bytes). |
+| **Disk space** | 174 MB for the compiler (`Gcc16`, 70 MB to download), 6.9 MB for the C runtime, 1.8 MB and 1.2 MB for the optional C++ and Fortran runtimes (1 MB = 1,000,000 bytes). |
 | **Memory** | The compiler needs a Task window (or other task) with an application space of **at least 48 MB**: the C++ compiler's program image is 30 MB and the driver that starts it is saved next to it. |
 
 ## 1. Get the files
@@ -17,8 +17,9 @@ This page installs the compiler that runs **on RISC OS**. For the Linux cross co
 Download from the [releases page](https://github.com/robheaton/riscos-gcc16/releases) (check them against `SHA256SUMS` if you can):
 
 * `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` (always needed)
-* `Gcc16_16.2.0-13_arm.zip` (the compiler)
-* `Gcc16SelfTest_16.2.0-13_arm.zip` (optional: a self-test of the installation, see section 3, "Check it")
+* `Gcc16_16.2.0-14_arm.zip` (the compiler)
+* `Gcc16SelfTest_16.2.0-14_arm.zip` (optional: a self-test of the installation, see section 3, "Check it")
+* `SharedULibFix_1.16-vforkfix3_arm.zip` (optional: a fixed SharedUnixLibrary module, which **replaces a system module**: see "The fixed SharedUnixLibrary" below before you install it)
 * `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip` and `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` (optional: only for programs that link libstdc++ or libgfortran dynamically, which is the cross compiler's default; the native compiler links them statically)
 
 Use a RISC OS browser, or download on another computer and copy the files over (USB stick, network share).
@@ -33,7 +34,7 @@ A package zip must have the file type **Zip (&A91)**. If it arrives as Text or D
 ## 2. Install
 
 1. **Drag `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` onto the PackMan icon on the icon bar** and confirm the install.
-2. **Drag `Gcc16_16.2.0-13_arm.zip` onto the PackMan icon** and confirm. PackMan insists on this order, because `Gcc16` depends on `SharedLibs-C-armeabihf` 16.2.0-13 or later.
+2. **Drag `Gcc16_16.2.0-14_arm.zip` onto the PackMan icon** and confirm. PackMan insists on this order, because `Gcc16` depends on `SharedLibs-C-armeabihf` 16.2.0-13 or later.
 3. Optionally do the same for the C++ and Fortran runtime zips.
 
    `SharedLibs-C-armeabihf` 16.2.0-13 **takes the place of** GCCSDK's own package of that name (10.2.0-1): it has the same set of files, with `libunixlib` and `libm` (UnixLib) rebuilt and fixed. Programs built with GCCSDK's 10.2.0 compilers keep working on it (checked with a C++ and a thread test).
@@ -50,7 +51,7 @@ Echo <GCC16$Version>
 gcc --version
 ```
 
-You should see `16.2.0-13` and `gcc (GCCSDK GCC 16.2.0 (experimental forward-port)) 16.2.0`.
+You should see `16.2.0-14` and `gcc (GCCSDK GCC 16.2.0 (experimental forward-port)) 16.2.0`.
 
 To check that the **loaded** UnixLib is the new one, compile and run the small probe [`tests/fixlevel/fixlevel.c`](../tests/fixlevel/fixlevel.c) (put it in a `c` directory as `c.fixlevel`):
 
@@ -66,10 +67,14 @@ To check the whole installation, install the optional `Gcc16SelfTest` package th
 
 Then try the [first program](../README.md#quick-start-compile-on-risc-os), or read [USING-NATIVE.md](USING-NATIVE.md).
 
+## The fixed SharedUnixLibrary (optional)
+
+The stock SharedUnixLibrary 1.16 that RISC OS ships has bugs that show when a program starts a child with `vfork` and the child ends without `exec` (the parent dies, or in a bad case the machine freezes). Compiles and `make` runs do not meet them. If you run programs that do, the optional package `SharedULibFix` has the fixed module with an installer that replaces the system module only when it is exactly the stock 1.16, backs it up twice, checks every copy and can put the stock module back. Installing the package changes nothing until you run its `Install`. Read [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md) first.
+
 ## Upgrading, going back, removing
 
 * **Upgrade:** drag the newer zips onto PackMan the same way (runtime first), then reboot.
-* **Go back:** install the older package from its release (remove the newer one first in PackMan if it refuses to go back), then reboot. `Gcc16` 16.2.0-13 needs a runtime of 16.2.0-13 or later (16.2.0-13 needs 16.2.0-13 or later; `Gcc16` 16.2.0-8 to -11 need 16.2.0-10 or later).
+* **Go back:** install the older package from its release (remove the newer one first in PackMan if it refuses to go back), then reboot. `Gcc16` 16.2.0-14 needs a runtime of 16.2.0-13 or later (16.2.0-13 needs 16.2.0-13 or later; `Gcc16` 16.2.0-8 to -11 need 16.2.0-10 or later).
 * **Remove:** remove `Gcc16` in PackMan. `SharedLibs-C-armeabihf` is the runtime of **every** program built by this tool chain (and of other EABI programs): remove it only if nothing needs it.
 
 ## If something goes wrong

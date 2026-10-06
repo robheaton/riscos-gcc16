@@ -30,7 +30,7 @@ GCCSDK_ZIP = HOME + "/gccsdk/autobuilder/autobuilder_packages/arm/Development/gc
 
 # the extensions UnixLib swaps with a directory (GCCSDK's !Run list plus the Fortran 90+ ones); only those that occur in the tree matter
 SWAP = set("f for F f90 F90 f95 F95 f03 F03 f08 F08 fpp cc cxx cpp c++ C i ii rpo c m h hh s S xrb xrs l o y tcc cmhg adb ads ali".split())
-TOOLS = ("gcc g++ cpp gcov gfortran cc1 cc1plus f951 collect2 lto1 lto-wrapper as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit make").split()
+TOOLS = ("gcc g++ cpp gcov gfortran cc1 cc1plus f951 collect2 lto1 lto-wrapper as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit make cmunge mkoslib modreloc gprof").split()
 
 def riscos_stamp(unix):
     cs = int((unix + 2208988800) * 100)
@@ -211,6 +211,17 @@ GPROF = """Profiling with gprof (-pg), new in 16.2.0-13
   Needs the runtime 16.2.0-13 (UnixLib fix level 15).  gcrt0.o (the start file for -pg) is in !GCC16.arm-riscos-gnueabihf.lib.
 
 """
+MODULES = """Relocatable modules (-mmodule, cmunge), new in 16.2.0-14: as with GCCSDK 4.7.4, without a C library
+  cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg       the CMHG file (cmhg.module): the module header and its veneers (header.o) and a C header (header.h)
+  gcc -O2 -mmodule -c main.c                                       compile: ARMv6, soft float, ARM state, freestanding; the headers of modkit (kernel.h, stdio.h, string.h ...) replace UnixLib's
+  mkoslib -I <OSLib>.oslib -o oslibv.c --from-objects main.o       the OSLib SWI veneers of exactly the OSLib functions that main.o uses (it needs OSLib's C headers); gcc -mmodule -c oslibv.c
+  gcc -mmodule -o MyModule,ffa main.o header.o oslibv.o            the link makes the module (file type &FFA): the driver runs modreloc after the linker.  An output named x.elf stays an ELF file.
+  RMLoad MyModule                                                  (save your work first: a mistake in a module can crash the machine)
+  There is no C library in a module: printf (through OS_WriteC), malloc (from the RMA), snprintf, the string functions and the OS calls through the veneers.  The kit is in !GCC16.arm-riscos-gnueabihf.lib
+  (libmodkit.a, module.ld) and !GCC16.lib.gcc....include-modkit; cmunge, mkoslib and modreloc are in !GCC16.bin.  What is supported of CMHG, and the limits: docs/MODULES.md of the project.
+  A makefile written for GCCSDK 4.7.4 needs the compiler names, the OSLib veneers instead of -lOSLibH32, and nothing for the link (see the porting section of MODULES.md).
+
+"""
 TB_LAST_OLD = "  Throwback needs the desktop: it does nothing outside it.  Not done yet: the assembler and the linker (their messages do not go to the editor).\n"
 TB_LAST_13 = ("  Throwback needs the desktop: it does nothing outside it.  The assembler and the linker send theirs too (new in 16.2.0-13): -mthrowback makes the driver add --throwback to as and ld, and\n"
               "  as --throwback  and  ld --throwback  work on their own (an error of the linker with a source file and a line, an error of the assembler in its source).  A file name that starts with a\n"
@@ -224,6 +235,8 @@ if int(REL) >= 12:
     THROWBACK = THROWBACK + COVERAGE
 if int(REL) >= 13:
     THROWBACK = THROWBACK + GPROF
+if int(REL) >= 14:
+    THROWBACK = THROWBACK + MODULES
 if int(REL) >= 12:
     if int(REL) >= 13:
         readme = readme.replace("@@REQ@@", REQ_13).replace("@@THROWBACK@@", THROWBACK.replace("Throwback (-mthrowback), new in 16.2.0-8\n", "Throwback (-mthrowback), new in 16.2.0-8 (the assembler and the linker: 16.2.0-13)\n"))

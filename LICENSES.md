@@ -24,6 +24,8 @@ Patches and new files that become part of another project's source keep **that p
 | UnixLib (`libunixlib`, `libm`), the loader `ld-riscos`, `libdl` | UnixLib's licence: the revised BSD licence for most files, LGPL for some |
 | `libgcc_s.so.1` in the C runtime package | GPL-3.0-or-later with the GCC Runtime Library Exception (GCC 10.2.0's, from GCCSDK) |
 | the icon sprites in `!GCC16` | GCCSDK's, from its own `gcc` package |
+| the module `SharedULib` in `SharedULibFix` | UnixLib's licence (the revised BSD licence for most files, LGPL for some): it is `sul.s` of UnixLib with three patches |
+| the programs and Obey files of `SharedULibFix` (`sulfile`, `Install` ...) | GPL-3.0-or-later |
 
 The **source** for each binary is the unmodified upstream tarball plus this repository at the release tag: see [SOURCES.md](SOURCES.md). The release also attaches the upstream tarballs and a snapshot of the UnixLib sources.
 

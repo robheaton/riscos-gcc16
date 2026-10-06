@@ -1,5 +1,5 @@
-| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-13 on SharedLibs-C-armeabihf 16.2.0-13).
-| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov, a profile-guided build and a gprof run, and checks that a compile error is reported.
+| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-14 on SharedLibs-C-armeabihf 16.2.0-13 or later).
+| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov, a profile-guided build, a gprof run and a module that is built, loaded and run, and checks that a compile error is reported.
 | BEFORE: install the packages with PackMan, REBOOT, and double-click !GCC16 once (it sets GCC16$Dir and the search path).
 | RUN IT IN A TASK WINDOW (Ctrl-F12):     Obey <GCC16Test$Dir>.RunSelfTest        About a minute or two.
 | The work is done on the local disc (<Wimp$ScrapDir>.GCC16Test); the output is also copied to Results next to this file (and to SelfTest$ResultsTo, if you set that variable first).
@@ -11,17 +11,19 @@ IfThere <SelfTest$Dir> Then Wipe <SelfTest$Dir> R~C~V
 CDir <SelfTest$Dir>
 CDir <SelfTest$Dir>.c
 CDir <SelfTest$Dir>.cc
+CDir <SelfTest$Dir>.cmhg
 CDir <SelfTest$Dir>.f90
 CDir <SelfTest$Dir>.h
 Copy <SelfTest$Src>.c.* <SelfTest$Dir>.c.* F~C~V
 Copy <SelfTest$Src>.cc.* <SelfTest$Dir>.cc.* F~C~V
+Copy <SelfTest$Src>.cmhg.* <SelfTest$Dir>.cmhg.* F~C~V
 Copy <SelfTest$Src>.f90.* <SelfTest$Dir>.f90.* F~C~V
 Copy <SelfTest$Src>.h.* <SelfTest$Dir>.h.* F~C~V
 Copy <SelfTest$Src>.Makefile <SelfTest$Dir>.Makefile F~C~V
 Dir <SelfTest$Dir>
 | what double-clicking !GCC16 does: Run$Path, return code limit and the suffix swapping lists of every tool
 Obey <GCC16$Dir>.!Run
-If "<GCC16$Version>" <> "16.2.0-13" Then Error This self-test is for Gcc16 16.2.0-13 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-13 with PackMan, reboot, double-click !GCC16, then run this again
+If "<GCC16$Version>" <> "16.2.0-14" Then Error This self-test is for Gcc16 16.2.0-14 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-14 with PackMan, reboot, double-click !GCC16, then run this again
 Unset TMPDIR
 WimpSlot -min 48M -max 48M
 Unset SelfTest$Fails
@@ -264,6 +266,44 @@ Set SelfTest$RC <Sys$ReturnCode>
 If "<SelfTest$RC>" = "0" Then Echo PASS: gprof counted the calls of the program right (see the line above)
 If "<SelfTest$RC>" <> "0" Then Echo FAIL: the report of gprof is wrong or missing (pgcheck returned <SelfTest$RC>)
 If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgcheck
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 12. a module (new in 16.2.0-14): cmunge (the CMHG file cmhg.modhello: the header and the veneers), gcc -mmodule, the link makes the module (modreloc runs after the linker), load it, run its command, remove it
+GCC16bin:cmunge -tgcc -32bit -p -d modhello.h -o modhello_hdr.o modhello.cmhg
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: cmunge modhello.cmhg
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: cmunge modhello.cmhg (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cmunge
+GCC16bin:gcc -O2 -mmodule -c modhello.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile modhello.c with -mmodule
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile modhello.c with -mmodule (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> module-compile
+GCC16bin:gcc -mmodule -o modhello modhello.o modhello_hdr.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: link the module (gcc -mmodule -o modhello: the driver runs modreloc and the file gets the type &FFA)
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: link the module (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> module-link
+GCC16bin:gcc -O2 -o modcheck modcheck.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile modcheck.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> modcheck-compile
+Unset SelfTest$ModOk
+IfThere <SelfTest$Dir>.modcheck Then Run <SelfTest$Dir>.modcheck module modhello
+IfThere <SelfTest$Dir>.modcheck Then Set SelfTest$ModOk <Sys$ReturnCode>
+If "<SelfTest$ModOk>" = "0" Then Echo PASS: the output is a module image (not an ELF file) with the right header and relocation table
+If "<SelfTest$ModOk>" <> "0" Then Echo FAIL: the output is not a good module image (modcheck returned <SelfTest$ModOk>): it is NOT loaded
+If "<SelfTest$ModOk>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> module-image
+If "<SelfTest$ModOk>" = "0" Then RMLoad <SelfTest$Dir>.modhello
+If "<SelfTest$ModOk>" = "0" Then ModHello_Sum 2 3 { > <SelfTest$Dir>.sum }
+If "<SelfTest$ModOk>" = "0" Then RMKill ModHello
+Unset SelfTest$RC
+IfThere <SelfTest$Dir>.sum Then Run <SelfTest$Dir>.modcheck text sum 5
+IfThere <SelfTest$Dir>.sum Then Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: the module was loaded, *ModHello_Sum 2 3 printed 5, and the module was removed again
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: the module did not print 5 (modcheck returned <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> module-run
 Time
 Spool
 SpoolOn <SelfTest$Dir>.Results

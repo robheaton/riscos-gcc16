@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""cmunge - a CMunge-compatible command line for the modules of modkit (GCC 16 EABI, no C library).
+
+  cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] FILE.cmhg
+
+The command line of GCCSDK's CMunge 0.xx (what its makefiles use: cmunge -tgcc -32bit -p -d header.h -o header.o file.cmhg), with the work done by mkmodhdr.py:
+  -o FILE   the object: the generated assembler source assembled for ARMv6 (arm-riscos-gnueabihf-gcc, the one next to this script or on PATH; CMUNGE_CC overrides it)
+  -s FILE   the generated assembler source (kept)          -d FILE   the C header (Module_Title, CMD_<name>, ... and the prototypes of your handlers)
+  -p, -px   run the C preprocessor over the file first (-D, -U and -I go to it); the included files are processed as part of the text in both modes
+Accepted and without effect, because the model has nothing to switch: -tgcc, -32bit, -znoscl, -throwback, -cmhg.  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs, -zbase, -zerrors,
+-zoslib, -blank, -x<type>, -depend) is refused with a message instead of being ignored: a module that needs it would be built wrong.
+What of the CMHG language is supported: bin/mkmodhdr.py.  The RISC OS numbers come from the RISC OS Open sources: set RISCOS_SOURCES to a checkout (see modkit/README.md)."""
+import os, shutil, subprocess, sys, tempfile
+
+HERE = os.path.dirname(os.path.realpath(__file__))        # where mkmodhdr.py is (also when this is called through the link <tc>/bin/cmunge)
+BINDIR = os.path.dirname(os.path.abspath(__file__))        # the folder it was called from: <tc>/bin when it is the link
+NOOP = {"-tgcc", "-32bit", "-znoscl", "-throwback", "-cmhg"}
+REFUSED = {"-tnorcroft": "the Norcroft toolchain", "-tlcc": "the LCC toolchain", "-26bit": "26 bit code", "-zbase": "Image__RO_Base", "-zerrors": "-zerrors (errors and veneers only)",
+           "-zoslib": "-zoslib (OSLib types in the header)", "-blank": "-blank", "-h": None}
+
+
+def die(msg):
+    sys.stderr.write("cmunge: %s\n" % msg)
+    sys.exit(1)
+
+
+def find_cc():
+    cc = os.environ.get("CMUNGE_CC")
+    if cc:
+        return cc
+    for c in (os.path.join(BINDIR, "arm-riscos-gnueabihf-gcc"), os.path.join(HERE, "..", "..", "..", "bin", "arm-riscos-gnueabihf-gcc"), shutil.which("arm-riscos-gnueabihf-gcc"), os.path.expanduser("~/gccsdk-next/env-f/bin/arm-riscos-gnueabihf-gcc")):
+        if c and os.path.exists(c):
+            return c
+    die("no arm-riscos-gnueabihf-gcc: put it on PATH or set CMUNGE_CC")
+
+
+def main(argv):
+    out_o = out_s = out_h = infile = None
+    pre = False
+    cpp = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in NOOP:
+            pass
+        elif a in ("-o", "-s", "-d") or a in ("-apcs", "-depend"):
+            if a in ("-apcs", "-depend"):
+                die("%s is not supported (modkit has one calling standard and no AMU dependency files)" % a)
+            i += 1
+            if i >= len(argv):
+                die("%s needs a file name" % a)
+            if a == "-o": out_o = argv[i]
+            elif a == "-s": out_s = argv[i]
+            else: out_h = argv[i]
+        elif a in ("-p", "-px"):
+            pre = True
+        elif a[:2] in ("-D", "-U", "-I") and len(a) > 2:
+            cpp.append(a)
+        elif a in ("-D", "-U", "-I"):
+            i += 1
+            cpp.append(a + argv[i] if i < len(argv) else die("%s needs an argument" % a))
+        elif a in REFUSED:
+            if a == "-h":
+                print(__doc__); return 0
+            die("%s is not supported by the modkit version of cmunge" % (REFUSED[a] or a))
+        elif a.startswith("-x") or a.startswith("-t") or a.startswith("-z"):
+            die("%s is not supported by the modkit version of cmunge" % a)
+        elif a.startswith("-"):
+            die("unknown option %s (cmunge -h)" % a)
+        elif infile is None:
+            infile = a
+        else:
+            die("more than one input file: %s and %s" % (infile, a))
+        i += 1
+    if infile is None:
+        die("no input file (cmunge -h)")
+    if not (out_o or out_s or out_h):
+        die("nothing to do: give -o, -s or -d")
+    tmp = tempfile.mkdtemp(prefix="cmunge-")
+    try:
+        src = infile
+        if pre:
+            src = os.path.join(tmp, os.path.basename(infile))
+            # assembler-with-cpp: the preprocessor does not choke on the apostrophes of the ';' comments
+            r = subprocess.run([find_cc(), "-E", "-P", "-x", "assembler-with-cpp"] + cpp + [infile], capture_output=True, text=True)
+            if r.returncode:
+                sys.stderr.write(r.stderr); die("the preprocessor failed on %s" % infile)
+            open(src, "w").write(r.stdout)
+        asm = out_s or os.path.join(tmp, "module.s")
+        cmd = [sys.executable, os.path.join(HERE, "mkmodhdr.py"), "-s", asm]
+        if out_h:
+            cmd += ["-d", out_h]
+        cmd.append(src)
+        r = subprocess.run(cmd)
+        if r.returncode:
+            return r.returncode
+        if out_o:
+            r = subprocess.run([find_cc(), "-march=armv6", "-c", asm, "-o", out_o])
+            if r.returncode:
+                return r.returncode
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return 0
+
+
+sys.exit(main(sys.argv[1:]))

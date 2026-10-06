@@ -46,7 +46,7 @@ Filer_Run <GCC16Test$Help>
 """
 README = """Self-test for the native GCC 16 tool chain (Gcc16 %(v)s)
 =====================================================
-It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, two -flto builds, a coverage run (--coverage and gcov), a profile-guided build and a gprof run (-pg), and checks that a compile error is reported.
+It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, two -flto builds, a coverage run (--coverage and gcov), a profile-guided build, a gprof run (-pg) and, from 16.2.0-14, a relocatable module (cmunge, -mmodule, load, run, remove), and checks that a compile error is reported.
 Every program checks itself: a PASS means the compiler made a program that ran correctly.  About a minute or two.
 
   1. Install the packages with PackMan (SharedLibs-C-armeabihf, then Gcc16), REBOOT, and double-click !GCC16 once.
@@ -67,11 +67,11 @@ add(APP + "!Help", HELP.encode(), 0xFEB)
 add(APP + "ReadMe", README.encode(), 0xFFF)
 add(APP + "RunSelfTest", open(os.path.join(SRC, "RunSelfTest,feb"), "rb").read(), 0xFEB)
 add(APP + "Makefile", open(os.path.join(SRC, "Makefile"), "rb").read(), 0xFFF)
-for d in ("c", "cc", "f90", "h"):
+for d in ("c", "cc", "cmhg", "f90", "h"):
     for f in sorted(os.listdir(os.path.join(SRC, d))):
         add(APP + d + "/" + f, open(os.path.join(SRC, d, f), "rb").read(), 0xFFF)
 add("RiscPkg/Control", pkgmeta.control("Gcc16SelfTest", VER, "GPL",
-    "Self-test for the native GCC 16 tool chain: compiles and runs small C, C++ and Fortran programs, a make build, -flto builds, a coverage run with gcov, a profile-guided build and a gprof run",
+    "Self-test for the native GCC 16 tool chain: compiles and runs small C, C++ and Fortran programs, a make build, -flto builds, a coverage run with gcov, a profile-guided build, a gprof run and a module that is built, loaded and run",
     depends="Gcc16 (>= %s)" % VER, components="Apps.Utilities.!GCC16Test (Movable LookAt)").encode(), 0xFFF)
 add("RiscPkg/Copyright", ("The self-test of the native GCC 16 tool chain (Gcc16SelfTest %s): small test programs and an Obey file, GNU General Public License, version 3 or later.\n"
                           "Source and documentation: %s (tests/selftest).\n%s\n" % (VER, pkgmeta.REPO, pkgmeta.REPORT)).encode(), 0xFFF)

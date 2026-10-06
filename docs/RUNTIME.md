@@ -47,4 +47,4 @@ Nothing has been sent to the GCCSDK maintainers yet.
 ## What did not change
 
 The dynamic loader, `libgcc_s.so.1` (GCC 10.2.0's) and `libdl` are GCCSDK's files from the 10.2.0-1 package. `libunixlib.a` (static UnixLib) is not rebuilt: the cross compiler's tree still carries the 10.2.0 one.
-The SharedUnixLibrary module (`System:Modules.SharedULib`) is the one that RISC OS ships; its known bugs are in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
+The SharedUnixLibrary module (`System:Modules.SharedULib`) is the one that RISC OS ships; its known bugs are in [KNOWN-ISSUES.md](KNOWN-ISSUES.md); the fixed module is the optional [`SharedULibFix`](SHAREDULIB-FIX.md) package (it needs a runtime at fix level 10 or later).

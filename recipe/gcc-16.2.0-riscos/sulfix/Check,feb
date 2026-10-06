@@ -1,0 +1,24 @@
+| Check - after Install and a REBOOT: is the INSTALLED module the fixed one, is it the one that is LOADED, and does it do what it was made for?  It changes nothing.  About 10 seconds.
+| It stops with an Error BEFORE the vfork tests unless the module that is LOADED is 1.16-vforkfix3 (a module that was loaded before the install stays until the next boot).
+| Run it as the FIRST thing after the reboot, before programs that use UnixLib have started (a browser, !Iris): TASK WINDOW (Ctrl-F12):    *Obey <SULFix$Dir>.Check
+Set SULFix$Dir <Obey$Dir>
+Dir <SULFix$Dir>
+Echo ===================== 1. is the installed FILE the fixed module?
+Run <SULFix$Dir>.sulfile System:Modules.SharedULib
+If "<Sys$ReturnCode>" <> "2" Then Error System:Modules.SharedULib is not the fixed module (see the lines above): nothing was tested.  Run Install first
+Echo ===================== 2. is the runtime new enough?
+Run <SULFix$Dir>.fixlevel 10
+If "<Sys$ReturnCode>" <> "0" Then Error The runtime is too old for the fixed module (see the line above): nothing was tested
+Echo ===================== 3. is the LOADED module the fixed one?  (sulfile and fixlevel are UnixLib programs: the first of them loaded the module)
+Run <SULFix$Dir>.modver SharedUnixLibrary --has vforkfix3
+If "<Sys$ReturnCode>" <> "0" Then Error The module that is LOADED is not 1.16-vforkfix3 (see the lines above): REBOOT, then run this as the first thing.  Nothing was tested
+Run <SULFix$Dir>.modver SharedUnixLibrary --has vforkfix3t
+If "<Sys$ReturnCode>" = "0" Then Error A TRACED test build (1.16-vforkfix3t) is loaded, not the installed module: REBOOT, then run this as the first thing.  Nothing was tested
+Echo ===================== 4. a vfork child that ends WITHOUT exec: the parent must carry on (with the stock module it died)
+Run <SULFix$Dir>.vforkbare
+If "<Sys$ReturnCode>" <> "0" Then Error vforkbare failed (see the lines above)
+Run <SULFix$Dir>.vforkfail early
+If "<Sys$ReturnCode>" <> "0" Then Error vforkfail early failed (see the lines above)
+Run <SULFix$Dir>.vforkfail missing
+If "<Sys$ReturnCode>" <> "0" Then Error vforkfail missing failed (see the lines above)
+Echo ===================== ALL CHECKS PASSED: the fixed SharedUnixLibrary 1.16-vforkfix3 is installed, loaded, and a vfork child that ends without exec leaves its parent alone.
