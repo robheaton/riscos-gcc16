@@ -4,7 +4,7 @@
 
 | Folder | What | Needs |
 |---|---|---|
-| [`selftest/`](selftest) | **start here on RISC OS**: checks a fresh installation of the native compiler (a minute or two) | the packages installed |
+| [`selftest/`](selftest) | **start here on RISC OS**: checks a fresh installation of the native compiler (about half a minute) | the packages installed |
 | [`cross-smoke/`](cross-smoke) | **start here on Linux**: checks the cross compiler in a directory, and that it finds everything inside it | the cross toolchain |
 | [`fixlevel/`](fixlevel) | `fixlevel N`: is the UnixLib in use at fix level N? | any compiler |
 | [`rotest/`](rotest), [`cxx/`](cxx), [`fortran/`](fortran), [`shlib/`](shlib), [`random/`](random), [`bench/`](bench) | the compiler regression suites (34,541 C checks, 139 C++ checks, Fortran, threads, shared libraries, benchmarks): built on Linux, run on RISC OS | the cross toolchain; GCCSDK 10.2.0 for the `g10`/`cx10` comparison variants |

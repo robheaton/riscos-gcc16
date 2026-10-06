@@ -1,6 +1,6 @@
 # Self-test for the native compiler
 
-Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about a minute or two. It compiles and runs
+Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about half a minute. It compiles and runs
 
 1. a probe of the runtime (UnixLib **fix level 13**),
 2. a C program,
@@ -12,6 +12,7 @@ Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about 
 8. a file with an error, which must be **reported** (a non-zero return code).
 
 Every program checks itself and returns 0 only when it is right, so a `PASS` means the compiler produced a program that ran correctly.
+On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all eight checks in 22 seconds.
 
 ## Get it
 

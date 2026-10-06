@@ -5,7 +5,7 @@ Four kinds of test, from "check my installation" to "the suites the port was dev
 ## 1. Check an installation on RISC OS: `tests/selftest`
 
 After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported,
-and checks the fix level of the runtime. It takes a minute or two and ends with `SELFTEST: N checks, M failed -> PASS`. See its [README](../tests/selftest/README.md).
+and checks the fix level of the runtime. It takes about half a minute (22 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
 
 ## 2. Check the Linux cross compiler: `tests/cross-smoke`
 
