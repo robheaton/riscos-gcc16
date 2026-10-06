@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the PackMan package Gcc16SelfTest_16.2.0-<REL>_arm.zip: the self-test of tests/selftest as the application !GCC16Test, with RISC OS file types.
 
-usage: make-selftest-package.py [REL]        (default 11)      output directory: $PKG_OUT, default ../../../release
+usage: make-selftest-package.py [REL]        (default 12)      output directory: $PKG_OUT, default ../../../release
 Files get RISC OS types through the Info-ZIP "ARC0" extra field (Obey &FEB for !Boot, !Run and RunSelfTest, Text &FFF for the rest); see make-native-package.py.
 """
 import os, struct, sys, time, zipfile
@@ -10,8 +10,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pkgmeta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.normpath(os.path.join(HERE, "..", "tests", "selftest"))
-REL = sys.argv[1] if len(sys.argv) > 1 else "11"
+SRC = os.path.normpath(os.path.join(HERE, "..", "tests", "selftest"))           # the author's work area
+if not os.path.isdir(SRC):
+    SRC = os.path.normpath(os.path.join(HERE, "..", "..", "..", "tests", "selftest"))      # this repository: the tests of the recipe are published in tests/
+REL = sys.argv[1] if len(sys.argv) > 1 else "12"
 VER = "16.2.0-" + REL
 OUT = os.environ.get("PKG_OUT") or os.path.normpath(os.path.join(HERE, "..", "..", "..", "release"))
 os.makedirs(OUT, exist_ok=True)
@@ -44,7 +46,7 @@ Filer_Run <GCC16Test$Help>
 """
 README = """Self-test for the native GCC 16 tool chain (Gcc16 %(v)s)
 =====================================================
-It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and two -flto builds, and checks that a compile error is reported.
+It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, two -flto builds, a coverage run (--coverage and gcov) and a profile-guided build, and checks that a compile error is reported.
 Every program checks itself: a PASS means the compiler made a program that ran correctly.  About a minute or two.
 
   1. Install the packages with PackMan (SharedLibs-C-armeabihf, then Gcc16), REBOOT, and double-click !GCC16 once.
@@ -69,7 +71,7 @@ for d in ("c", "cc", "f90", "h"):
     for f in sorted(os.listdir(os.path.join(SRC, d))):
         add(APP + d + "/" + f, open(os.path.join(SRC, d, f), "rb").read(), 0xFFF)
 add("RiscPkg/Control", pkgmeta.control("Gcc16SelfTest", VER, "GPL",
-    "Self-test for the native GCC 16 tool chain: compiles and runs small C, C++ and Fortran programs, a make build and -flto builds",
+    "Self-test for the native GCC 16 tool chain: compiles and runs small C, C++ and Fortran programs, a make build, -flto builds, a coverage run with gcov and a profile-guided build",
     depends="Gcc16 (>= %s)" % VER, components="Apps.Utilities.!GCC16Test (Movable LookAt)").encode(), 0xFFF)
 add("RiscPkg/Copyright", ("The self-test of the native GCC 16 tool chain (Gcc16SelfTest %s): small test programs and an Obey file, GNU General Public License, version 3 or later.\n"
                           "Source and documentation: %s (tests/selftest).\n%s\n" % (VER, pkgmeta.REPO, pkgmeta.REPORT)).encode(), 0xFFF)

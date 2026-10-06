@@ -1,6 +1,6 @@
 # How the port was made
 
-The whole port, from the first compile to this release, was done in five days, 1 to 5 October 2026, by Rob Heaton with an AI assistant (Claude). The assistant read the sources, wrote the patches, tools and test programs, built the packages and analysed the results;
+The whole port, from the first compile to this release, was done in six days, 1 to 6 October 2026, by Rob Heaton with an AI assistant (Claude). The assistant read the sources, wrote the patches, tools and test programs, built the packages and analysed the results;
 **every run on real hardware was done by Rob**, on a Raspberry Pi Compute Module 4 running RISC OS 5.30.
 
 ## The method
@@ -17,6 +17,7 @@ Nothing was called "working" until it had passed on the machine, and the package
 | **3 Oct** | The cause was traced to RISC OS losing a store when the OS itself first touches a lazily mapped stack page, and a 64-byte `vstm` crash on such pages. The fix is to touch each stack page with an ordinary store, so **`-fstack-clash-protection` became the default** for this target. Programs got stacks bigger than 1 MB. The **native compiler** was built and ran on the Pi: `gcc`, `g++`, binutils, GNU `make` and `gfortran` compiled, linked and ran the test suites, and rebuilt `make` itself. A new class of bug appeared: a `vfork` child that ends without `exec` froze the machine, and the freeze hunt began. |
 | **4 Oct** | The freeze was traced to its root in SharedUnixLibrary (a flag left set in a `vfork` child) and fixed. A heap bug of `vfork` + `exec` children was reproduced and fixed. **Throwback** was implemented; making it work on hardware exposed that with the DDEUtils module loaded every native compile failed silently, because GCC 16 compiled UnixLib's inline SWI wrappers differently from GCC 10; fixed. Twenty reports for the GCCSDK maintainers were drafted and checked. The first freestanding **modules** built with GCC 16 ran on the machine. |
 | **5 Oct** | **Native LTO**: every link failed silently (a redirected output file swallowed the messages), and once the messages were visible the cause was UnixLib's `scanf`, which could not read a 64-bit hexadecimal number. The library was fixed (fix level 13) and the bug written up as the 21st report for the GCCSDK maintainers; the package was rebuilt, and the **full regression run passed**: 50 summary lines identical to the previous release. The Linux cross compiler was packaged and checked, and this repository was assembled. |
+| **6 Oct** | The first public release went out and the open items of the progress table were taken one by one. **gcov and profile-guided optimisation**: a program built with `--coverage` ran but never wrote its `.gcda` file. Two causes: libgcov had been built without the C library (`inhibit_libc`), and UnixLib never ran the `.fini_array` of a program (a FIXME in `__main`), so no C destructor and no exit hook ever ran. Both were fixed (fix level 14), together with two more UnixLib problems that the tests turned up (`getrlimit (RLIMIT_STACK)` answered 512 MB for a 1 MB stack; POSIX semaphores polled, leaked and had no `sem_timedwait`), and written up as reports 22 to 24. The tuning of GCC's garbage collector on the Pi was measured and left alone (no setting made a difference). Release 16.2.0-12. |
 
 ## Things that were harder than they looked
 
@@ -26,4 +27,4 @@ Nothing was called "working" until it had passed on the machine, and the package
 
 ## What was left
 
-[KNOWN-ISSUES.md](KNOWN-ISSUES.md) lists it. In short: modules beyond a proof of concept, throwback from the assembler and linker, profiling, and the bugs in system modules that need their maintainers.
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md) lists it. In short: modules beyond a proof of concept, throwback from the assembler and linker, `gprof` (`-pg`), and the bugs in system modules that need their maintainers.

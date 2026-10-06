@@ -89,6 +89,17 @@ apply_patch unixlib-sysconf-fixlevel-12.patch
 apply_patch unixlib-scanf-long-long.patch
 # sysconf (0x4700) answers 13.
 apply_patch unixlib-sysconf-fixlevel-13.patch
+# The .fini_array of an EABI program was never run (crt0.o hands the bounds of the array to __main; "FIXME: what about FINI_ARRAY?"): an __attribute__ ((destructor)) function of a C program
+# and the exit hook of libgcov (it writes the .gcda files) were lost.  __main now registers a function with atexit () that calls them, last entry first, before the constructors run.
+apply_patch unixlib-fini-array.patch
+# getrlimit (RLIMIT_STACK) answered the maximum Wimp slot: the EABI main stack is fixed (1MB unless __stack_size asks for more), and programs size recursion and thread stacks by the limit.
+apply_patch unixlib-getrlimit-stack.patch
+# POSIX semaphores: sem_wait polled with pthread_yield () and leaked a queue entry per call, sem_timedwait was ENOSYS (and C++20 / libgomp need both).  Now a mutex and a condition variable.
+apply_patch unixlib-sem-blocking-timedwait.patch
+# <semaphore.h> did not declare sem_timedwait (prepare-sysroot.sh applies this one to the headers of the cross tool chain too).
+apply_patch unixlib-semaphore-timedwait-decl.patch
+# sysconf (0x4700) answers 14.
+apply_patch unixlib-sysconf-fixlevel-14.patch
 # TEST BUILDS ONLY (debugging aids that are not part of the library): EXTRA_PATCHES="unixlib-ul-trace.patch" EXTRA_DEFS="-DULTRACE" builds a libunixlib that appends a line to a log file at the steps of
 # fork/vfork (see the comment in sys/_vfork.s); the same patch built without EXTRA_DEFS must give the very library of the release (checked by tools/check-ul-trace.sh).  Unset: nothing changes.
 for ep in ${EXTRA_PATCHES:-}; do apply_patch "$ep"; done

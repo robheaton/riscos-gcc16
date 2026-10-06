@@ -14,6 +14,7 @@ Use it
   arm-riscos-gnueabihf-g++      -O2 -o hello,e1f hello.cc       C++     (default -std=gnu++20)
   arm-riscos-gnueabihf-gfortran -O2 -o hello,e1f hello.f90      Fortran
   arm-riscos-gnueabihf-gcc -O2 -flto -o prog,e1f a.c b.c        link time optimisation
+  arm-riscos-gnueabihf-gcc -O0 --coverage -c prog.c ; ... ; arm-riscos-gnueabihf-gcov prog.c     coverage (see docs/CROSS-COMPILER.md in the repository: GCOV_PREFIX)
   The ",e1f" suffix gives the file the RISC OS file type ELF when it is copied to a RISC OS Samba share (or type  *SetType hello &E1F  on RISC OS).
 
 Run the programs on RISC OS

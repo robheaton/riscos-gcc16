@@ -8,7 +8,7 @@ This release ships a UnixLib that was **rebuilt with GCC 16 and fixed**: running
 
 | Package | Version | Contains | Needed for |
 |---|---|---|---|
-| `SharedLibs-C-armeabihf` | **16.2.0-11** | `libunixlib.so.5.0.0` and `libm.so.1.0.0` (UnixLib 5.0 rebuilt with GCC 16 and fixed); the dynamic loader `ld-riscos-eabihf.so`, `libgcc_s.so.1` and `libdl` of GCCSDK's 10.2.0-1 package | **every** program |
+| `SharedLibs-C-armeabihf` | **16.2.0-12** | `libunixlib.so.5.0.0` and `libm.so.1.0.0` (UnixLib 5.0 rebuilt with GCC 16 and fixed); the dynamic loader `ld-riscos-eabihf.so`, `libgcc_s.so.1` and `libdl` of GCCSDK's 10.2.0-1 package | **every** program |
 | `SharedLibs-C++-armeabihf` | 16.2.0-5 | `libstdc++.so.6.0.36` | C++ programs that link it dynamically |
 | `SharedLibs-Fortran-armeabihf` | 16.2.0-2 | `libgfortran.so.5.0.0` | Fortran programs that link it dynamically |
 
@@ -32,7 +32,8 @@ The library file's name does not change, and the Shared Object Manager keeps the
 | 10 | 16.2.0-8 | the `_exit` of a `vfork` child that ends without `exec` no longer frees the program image's RMA block that it shares with its parent | a loop of such children corrupted the RMA heap and froze the machine | 02 |
 | 11 | 16.2.0-9 | the heap of a program started by `vfork` + `exec` never grows over the copy of its parent that SharedUnixLibrary keeps | the parent died with `abort on data transfer` after a native C++ compile although the child ended normally | 08 |
 | 12 | 16.2.0-10 | the inline SWI wrappers no longer read register variables after the `asm` statement; `__get_dde_prefix ()` terminates | with the DDEUtils module loaded (every text editor that does throwback loads it) arguments longer than the program name were cut off, so the native compilers could not compile; a hang when a DDEUtils prefix was set | 19, 20 |
-| **13** | **16.2.0-11** | `scanf` understands `ll`, `q`, `j`, `hh`, `z`, `t` and `%Lf` | `%llx` of a 16-digit number stored only 32 bits (it made the native LTO linker fail), `%hhd` wrote two bytes, `%jd %zu %td %qd` were not understood, `%Lf` stored a float | 21 |
+| 13 | 16.2.0-11 | `scanf` understands `ll`, `q`, `j`, `hh`, `z`, `t` and `%Lf` | `%llx` of a 16-digit number stored only 32 bits (it made the native LTO linker fail), `%hhd` wrote two bytes, `%jd %zu %td %qd` were not understood, `%Lf` stored a float | 21 |
+| **14** | **16.2.0-12** | the `.fini_array` functions of a program run at exit (after the `atexit` functions, last entry first); `getrlimit (RLIMIT_STACK)` is the size of the main stack of an EABI program; POSIX semaphores block on a condition variable, `sem_timedwait` works and is declared | no C destructor ever ran, and a program built with `--coverage` or `-fprofile-generate` never wrote its `.gcda` file (the exit function of libgcov is a destructor); `RLIMIT_STACK` said 512 MB for a 1 MB stack, so a recursion sized by it overflowed; `sem_timedwait` was `ENOSYS` and not declared, `sem_wait` polled and leaked 16 bytes per call | 22, 23, 24 |
 
 Report numbers refer to the draft mails in [`docs/upstream/`](upstream/00-INDEX.txt); report 01 (SharedUnixLibrary) and the other module-side bugs are described in [KNOWN-ISSUES.md](KNOWN-ISSUES.md#bugs-in-risc-os-modules-that-this-release-does-not-change).
 Nothing has been sent to the GCCSDK maintainers yet.

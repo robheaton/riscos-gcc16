@@ -20,6 +20,8 @@ for f in ld-riscos-eabihf.so ld-riscos.so.2 libdl.*; do [ -e "$f" ] && cp -a "$f
 # right question; against an old libunixlib sysconf () answers -1 (unknown) instead of 2048 processors
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 patch -p2 -N -d "$P/$T" < "$HERE/patches-unixlib/unixlib-sysconf-nprocessors.patch" > /dev/null || { echo "ERROR: unistd.h patch failed"; exit 1; }
+# <semaphore.h> did not declare sem_timedwait (the UnixLib of the runtime packages has had a real one since 16.2.0-12)
+patch -p2 -N -d "$P/$T" < "$HERE/patches-unixlib/unixlib-semaphore-timedwait-decl.patch" > /dev/null || { echo "ERROR: semaphore.h patch failed"; exit 1; }
 # no absolute or escaping symlinks may have been copied (a later `make install` could write through them)
 if find "$P" -type l \( -lname '/*' -o -lname '../../*' \) | grep -q .; then echo "ERROR: escaping symlinks in $P"; exit 1; fi
 for t in ar as ld ld.bfd nm objcopy objdump ranlib readelf strip; do ln -s "$NEW/$T/bin/$t" "$P/$T/bin/$t"; done

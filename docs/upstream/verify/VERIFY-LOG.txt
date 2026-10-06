@@ -1,4 +1,4 @@
-VERIFY-LOG  2026-10-05 19:24   run by verify/run-verify.sh
+VERIFY-LOG  2026-10-06 09:08   run by verify/run-verify.sh
 upstream: svn://svn.riscos.info/gccsdk/trunk/gcc4 revision 7800; working copy changes in the files used: 0
 
 1. every patch applies to pristine upstream
@@ -10,14 +10,17 @@ upstream: svn://svn.riscos.info/gccsdk/trunk/gcc4 revision 7800; working copy ch
   ok    unixlib-da-heap-fallback.patch alone
   ok    unixlib-ddeutils-prefix-loop.patch alone
   ok    unixlib-eabi-stack-size.patch alone
+  ok    unixlib-fini-array.patch alone
   ok    unixlib-free-signal-stack.patch alone
   ok    unixlib-gcc14-implicit-declarations.patch alone
+  ok    unixlib-getrlimit-stack.patch alone
   ok    unixlib-inline-swi-register-variables.patch alone
   ok    unixlib-memcpy-split-vstm.patch alone
   ok    unixlib-mmap-refuse-impossible.patch alone
   ok    unixlib-pthread-cond-timedwait.patch alone
   ok    unixlib-pthread-once.patch alone
   ok    unixlib-scanf-long-long.patch alone
+  ok    unixlib-semaphores.patch alone
   ok    unixlib-sleep-threads.patch alone
   ok    unixlib-stdio-short-transfers.patch alone
   ok    unixlib-sysconf-nprocessors.patch alone
@@ -193,8 +196,8 @@ PASS
   ok    cond: cond_deadline () extracted from the patched cond.c: 3000000 random deadlines, never early, at most 1.1 cs late
 
 8. the UnixLib patches against the release build, and the test programs of reports 10 - 18 compile
-ok   27 files of the 17 UnixLib patches, applied in sequence, equal the release build's sources (comments stripped)
-  ok    the 17 UnixLib patches applied in sequence = the sources of the 16.2.0-11 release build
+ok   31 files of the 20 UnixLib patches, applied in sequence, equal the release build's sources (comments stripped)
+  ok    the 20 UnixLib patches applied in sequence = the sources of the 16.2.0-12 release build
   ok    GCC 10.2.0 compiles repro/unixlib-models/threadtest.cc (-std=c++17)
   ok    GCC 10.2.0 compiles repro/unixlib-models/stkinfo.c
   ok    GCC 10.2.0 compiles repro/unixlib-models/chain.c
@@ -269,5 +272,38 @@ MUTANTS: 5 of 5 caught
   ok    scanf model: the table of 15066 cases (made by glibc) on the patched function: 0 failed
   ok    scanf model: the same table on the unpatched function: 5502 failed (the number the machine gave)
   ok    scanf model: the table on glibc itself: 0 failed (the table is right)
+
+11. reports 22 - 24: the .fini_array (stdlib/atexit.c, sys/_syslib.s), getrlimit (RLIMIT_STACK) (resource/initialise.c, sys/_syslib.s), POSIX semaphores (pthread/sem.c, include/semaphore.h)
+  ok    GCC 10.2.0 compiles stdlib/atexit.c (patched by unixlib-fini-array)
+  ok    GCC 10.2.0 compiles resource/initialise.c (patched by unixlib-getrlimit-stack)
+  ok    GCC 10.2.0 compiles pthread/sem.c (patched by unixlib-semaphores)
+  ok    GCC 10.2.0 assembles sys/_syslib.s (patched by unixlib-fini-array)
+  ok    GCC 10.2.0 assembles sys/_syslib.s (patched by unixlib-getrlimit-stack)
+  ok    GCC 10.2.0 compiles repro/fini-array/finitest.c
+  ok    GCC 10.2.0 compiles repro/stack-limit/rlimtest.c
+~/gccsdk-next/report/upstream-2026-10-04/repro/semaphores/semtest.c: In function 'main':
+~/gccsdk-next/report/upstream-2026-10-04/repro/semaphores/semtest.c:118:8: warning: implicit declaration of function 'sem_timedwait'; did you mean 'sem_trywait'? [-Wimplicit-function-declaration]
+  118 |   rc = sem_timedwait (&s, &ts);
+      |        ^~~~~~~~~~~~~
+      |        sem_trywait
+  ok    GCC 10.2.0 compiles repro/semaphores/semtest.c
+  ok    GCC 16.2.0 compiles stdlib/atexit.c (patched by unixlib-fini-array)
+  ok    GCC 16.2.0 compiles resource/initialise.c (patched by unixlib-getrlimit-stack)
+  ok    GCC 16.2.0 compiles pthread/sem.c (patched by unixlib-semaphores)
+  ok    GCC 16.2.0 assembles sys/_syslib.s (patched by unixlib-fini-array)
+  ok    GCC 16.2.0 assembles sys/_syslib.s (patched by unixlib-getrlimit-stack)
+  ok    GCC 16.2.0 compiles repro/fini-array/finitest.c
+  ok    GCC 16.2.0 compiles repro/stack-limit/rlimtest.c
+  ok    GCC 16.2.0 compiles repro/semaphores/semtest.c
+  ok    GCC 16.2.0 compiles repro/stack-limit/rlimtest.c with -DBIGSTACK (__stack_size = 64 MB)
+  ok    the host gcc compiles repro/fini-array/finitest.c
+  ok    the host gcc compiles repro/stack-limit/rlimtest.c
+  ok    the host gcc compiles repro/semaphores/semtest.c
+SUMMARY [finitest]: 8 checks, 0 failed -> PASS
+  ok    finitest on glibc: the events come in the order that the patch gives (8 checks, 0 failed)
+SUMMARY [rlimtest]: 6 checks, 0 failed -> PASS
+  ok    rlimtest on glibc with a 1 MB stack: 6 checks, 0 failed
+SUMMARY [semtest]: 18 checks, 0 failed -> PASS
+  ok    semtest on glibc: 18 checks, 0 failed
 
 RESULT: 0 check(s) failed

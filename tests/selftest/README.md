@@ -2,21 +2,23 @@
 
 Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about half a minute. It compiles and runs
 
-1. a probe of the runtime (UnixLib **fix level 13**),
+1. a probe of the runtime (UnixLib **fix level 14**),
 2. a C program,
 3. a C++ program with an exception, a thread and `std::async`,
 4. a Fortran program,
 5. a two-file project, then `ar` and `nm`,
 6. a build with **GNU make**,
 7. two **`-flto`** builds (one with `-flto=2`),
-8. a file with an error, which must be **reported** (a non-zero return code).
+8. a file with an error, which must be **reported** (a non-zero return code),
+9. a **coverage** run: `--coverage`, the program writes its counts when it ends, `gcov` annotates the source, and a small program checks the counts,
+10. a **profile-guided** build: `-fprofile-generate`, run, then `-fprofile-use` (which must find the profile).
 
 Every program checks itself and returns 0 only when it is right, so a `PASS` means the compiler produced a program that ran correctly.
-On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all eight checks in 22 seconds.
+On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all ten checks in 26 seconds.
 
 ## Get it
 
-**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-11_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-11 and installs `!GCC16Test`.
+**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-12_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-12 and installs `!GCC16Test`.
 
 Or copy this folder to RISC OS yourself: the files are in the RISC OS layout (directories `c`, `cc`, `f90` and `h`; `RunSelfTest,feb` is the Obey file: on RISC OS it must have the file type Obey, `*SetType RunSelfTest Obey`).
 
@@ -37,7 +39,7 @@ The work is done on the local disc, in `<Wimp$ScrapDir>.GCC16Test`, so the folde
 
 ```
 PASS: compile fixlevel.c
-PASS: the runtime is at fix level 13
+PASS: the runtime is at fix level 14
 PASS: compile hello.c
 PASS: run hello
 ...
@@ -45,5 +47,5 @@ PASS: the error in bad.c was reported (return code 1)
 SELFTEST: ALL CHECKS PASSED
 ```
 
-Between the lines you also see the programs' own output (`hello from C`, `lto: 42`, `2 + 3 = 5, 10 squared = 100`, the error messages of `bad.c`, a warning about serial compilation for `-flto=2`).
+Between the lines you also see the programs' own output (`hello from C`, `lto: 42`, `2 + 3 = 5, 10 squared = 100`, the error messages of `bad.c`, a warning about serial compilation for `-flto=2`, the percentages that `gcov` prints, `covcheck`'s line about the counts).
 If something fails, the last line lists the failed checks (`SELFTEST: FAILED: fixlevel-run ...`): see [INSTALL-RISCOS.md](../../docs/INSTALL-RISCOS.md#if-something-goes-wrong) and send the `Results` file with a bug report.

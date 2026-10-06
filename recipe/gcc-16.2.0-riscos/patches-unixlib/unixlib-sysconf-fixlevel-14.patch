@@ -1,0 +1,19 @@
+--- a/libunixlib/unix/sysconf.c
++++ b/libunixlib/unix/sysconf.c
+@@ -149,11 +149,14 @@
+ 	 no longer read a register variable after the asm, so that the
+ 	 arguments of a program survive the DDEUtils module being loaded;
+ 	 13: scanf understands ll, hh, j, z, t and q, and %Lf stores a long
+-	 double).  Lets a
++	 double; 14: the .fini_array functions of a program run at exit,
++	 getrlimit (RLIMIT_STACK) reports the size of the EABI main stack, and
++	 POSIX semaphores block instead of polling and have sem_timedwait).
++	 Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 13;
++	return 14;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

@@ -4,8 +4,8 @@ Four kinds of test, from "check my installation" to "the suites the port was dev
 
 ## 1. Check an installation on RISC OS: `tests/selftest`
 
-After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported,
-and checks the fix level of the runtime. It takes about half a minute (22 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
+After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`) and a profile-guided build (`-fprofile-generate`, then `-fprofile-use`),
+and checks the fix level of the runtime. It takes about half a minute (26 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
 
 ## 2. Check the Linux cross compiler: `tests/cross-smoke`
 
@@ -14,7 +14,7 @@ tests/cross-smoke/cross-smoke.sh <toolchain directory> [<reference toolchain>]
 ```
 
 It compiles and links programs in C, C++, Fortran, LTO and as a shared library with the cross compiler in the given directory, checks that every part of the compiler (`cc1`, `lto1`, the linker plugin, `libunixlib.so` ...) is found **inside** that directory, that the objects are ELF 32-bit ARM EABI5 for the shared UnixLib,
-and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 29 checks (25 without the comparison) with the directory it was built in hidden from it, and its programs are byte-identical to those of the compiler it was compared with.
+and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 33 checks (29 without the comparison) with the directory it was built in hidden from it, and its programs are byte-identical to those of the compiler it was compared with.
 
 ## 3. The regression suites (developers)
 
@@ -45,12 +45,13 @@ The test programs of the runtime work, each with the symptom it was written for 
 | `tests/unixlib19`, `tests/sulfix` | `vfork` children that end without `exec` (the SharedUnixLibrary bugs): loops, traces and the host tests of the tracing code. **These can freeze the machine with the stock SharedUnixLibrary 1.16** (a child that ends without `exec` under a parent that was itself started by `exec`): run them only with the fixed module (1.16-vforkfix3, [KNOWN-ISSUES.md](KNOWN-ISSUES.md)) |
 | `tests/upstream20` | `vforkheap`: the heap of a `vfork` + `exec` child (report 08) |
 | `tests/unixlib24`, `docs/upstream/repro/scanf` | `scantest` (16 `sscanf` cases) and `scanfcheck` with its table (15,066 cases made by glibc) |
+| `tests/unixlib25` | `finitest` (the `.fini_array`: destructors and `atexit` functions in glibc's order), `rlimtest` (`getrlimit (RLIMIT_STACK)`), `semtest` (20 checks of POSIX semaphores with threads), `covtest` (built with `--coverage` and with `-fprofile-generate`: the `.gcda` files); see its [README](../tests/unixlib25/README.md) |
 | `tests/fixlevel` | `fixlevel N`: exit status 0 when the running UnixLib has fix level N |
 
 Each hardware test prints lines like `SUMMARY [name]: 48 checks, 0 failed -> PASS` and sets its exit status; the Obey runners `Spool` everything to a results file. The Obey files all begin with `Set X$Dir <Obey$Dir>` because the first EABI program
 that runs changes `<Obey$Dir>`.
 
-The expected results of the current release, run on the author's machine: the final regression run (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests) gave **50 `SUMMARY` lines, identical to the previous release's run, none failing**.
+The expected results of the current release, run on the author's machine: the final regression run (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests) gave **all 50 `SUMMARY` lines of the previous release's run, identical, and four new ones** (`finitest`, `rlimtest` twice, `semtest`), **none failing**.
 
 ## 5. Host tests (no RISC OS needed)
 
@@ -59,7 +60,7 @@ The expected results of the current release, run on the author's machine: the fi
 | `tests/throwback/build-and-run.sh` | the throwback sink: text handling, the DDEUtils transport against a mock kernel, the syslog transport against a UDP socket: 66 checks, and with `mutate` 27 deliberate breakages of the source, all caught | `build-and-run.sh [mutate]` |
 | `tests/armeabisupport-model` | a host model of ARMEABISupport's `mmap` code, unpatched against patched (30 failed checks against none) | needs the ARMEABISupport sources from the GCCSDK svn |
 | `tests/unixlib-fix/`, `docs/upstream/repro/` | models of the UnixLib fixes (`pthread_once`, timed waits, `fread`/`fwrite`, `sleep`, the `scanf` function against glibc: 47,315 cases) | see each folder |
-| `docs/upstream/verify/run-verify.sh` | re-runs every check behind the upstream reports: patches apply to pristine UnixLib, the patched files compile with GCC 10.2.0 and 16.2.0, the host models, the machine code of the changed functions on an ARM interpreter | needs the GCCSDK svn checkout, the cross compiler and the UnixLib build ([BUILDING.md](BUILDING.md) steps 4 and 5); the last runs: 189 checks in the author's work area, 188 in a fresh copy of the repository, 0 failed |
+| `docs/upstream/verify/run-verify.sh` | re-runs every check behind the upstream reports: patches apply to pristine UnixLib, the patched files compile with GCC 10.2.0 and 16.2.0, the host models, the machine code of the changed functions on an ARM interpreter | needs the GCCSDK svn checkout, the cross compiler and the UnixLib build ([BUILDING.md](BUILDING.md) steps 4 and 5); the last runs: 215 checks in the author's work area, 214 in a fresh copy of the repository, 0 failed |
 | `tools/check-libunixlib.sh <libunixlib.so>` | looks for the code of every fix in a built UnixLib | [BUILDING.md](BUILDING.md) |
 
 `tools/a32.py` is a small ARMv7 (A32) interpreter used by these checks to run the compiled machine code of the changed functions without hardware.

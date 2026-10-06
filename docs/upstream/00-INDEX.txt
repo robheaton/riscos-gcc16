@@ -1,11 +1,14 @@
 Upstream reports for the GCCSDK maintainers - bundle of 2026-10-04
 ==================================================================
 
-Twenty-one reports, one problem per report, in four parts: 01 - 08
+Twenty-four reports, one problem per report, in five parts: 01 - 08
 (SharedUnixLibrary, UnixLib, ARMEABISupport, the kernel: the serious problems),
 09 - 18 (ten smaller UnixLib patches), 19 - 20 (two UnixLib fixes for programs
-that run with the DDEUtils module loaded) and 21 (one UnixLib fix, found
-through the native LTO work; it stands alone). Each is a complete
+that run with the DDEUtils module loaded), 21 (one UnixLib fix, found
+through the native LTO work; it stands alone) and 22 - 24 (three UnixLib
+fixes found while making gcov, profile-guided optimisation and the
+semaphore calls work: the .fini_array, getrlimit (RLIMIT_STACK), POSIX
+semaphores). Each is a complete
 plain-text e-mail (the first lines - From / To / Subject / Attach - are the
 mail headers, the body starts after the blank line), with patches,
 reproducers and the checks behind them. NOTHING HAS BEEN SENT. Everything is
@@ -100,6 +103,19 @@ The reports
      are not understood, %Lf stores a float.  This is why the native GCC's
      lto1 could not find the sections of its own objects (sscanf ".%llx").
      Patch: unixlib-scanf-long-long (204 lines, one file).
+ 22 UnixLib: the .fini_array of an EABI program is never run (the FIXME in
+     __main): C destructors do not run, and a program built with --coverage or
+     -fprofile-generate never writes its .gcda file (libgcov's exit function
+     is a static destructor that GCC adds to every instrumented object).
+     Patch: unixlib-fini-array (77 lines, three files).
+ 23 UnixLib: getrlimit (RLIMIT_STACK) of an EABI program answers the largest
+     possible Wimp slot (512 MB), not the size of its main stack (1 MB unless
+     __stack_size says more): a recursion that is sized by the limit overflows
+     the real stack.  Patch: unixlib-getrlimit-stack (64 lines, three files).
+ 24 UnixLib: POSIX semaphores: sem_timedwait () is ENOSYS and not declared,
+     sem_wait () polls with pthread_yield () and leaks a queue entry per call,
+     sem_destroy () never says EBUSY.  Patch: unixlib-semaphores (378 lines,
+     two files).
 
 What each rests on (all hardware work: Raspberry Pi Compute Module 4,
 Cortex-A72, RISC OS 5.30, ARMEABISupport 1.08, SOManager 3.04,
@@ -193,6 +209,23 @@ GCC 16.2.0):
      suites of my port give the same 50 summary lines on the patched library
      as on the unpatched one (none fails).
 
+ 22 Measured on the machine, unpatched and patched: finitest (a C program with
+     constructors, destructors and atexit () functions: unpatched it prints
+     nothing, patched 8 of 8 checks in the order glibc uses, which the same
+     program gives on a Linux host); a --coverage program: unpatched no .gcda
+     file, patched the file (232 bytes), read by the cross gcov on Linux with
+     the real counts; -fprofile-generate: the same, and -fprofile-use accepts
+     the file.  The regression suites: see the last section of the report.
+ 23 Measured on the machine, unpatched and patched: rlimtest reads 536838144
+     for a 1 MB stack and then overflows the stack in a recursion sized by
+     it (status 199); patched it reads 1048576 (and 67108864 with a 64 MB
+     __stack_size) and passes.  The same program on a Linux host.
+ 24 Measured on the machine, unpatched and patched: semtest, 20 checks:
+     unpatched 11 fail (sem_timedwait is ENOSYS, the heap grows by 1597440
+     bytes in 100000 calls of sem_wait, and some failures that follow from
+     those), patched 0.  The same program on a Linux host (18 checks).  The
+     timings depend on report 11.
+
 Suggested order: 01 first (it is the serious one, and 02 / 03 / 05 build on
 it), then 02, 03, 04, 05, 08, and 06 / 07 last (06 is minor, 07 is unresolved);
 then, with 00-COVER-NOTE-2.txt, the second batch: the bug fixes 09 - 14, then
@@ -201,7 +234,10 @@ and 18; then, with 00-COVER-NOTE-3.txt, 19 and 20 (19 is the one that
 matters: with the DDEUtils module loaded it breaks every program that is
 started with long arguments, in a UnixLib built by GCC 16; 20 is one word).
 Report 21 can follow at any time, as a mail of its own: it needs no cover note
-and does not depend on the others.
+and does not depend on the others.  Reports 22 - 24 are the last batch
+(00-COVER-NOTE-4.txt): each stands alone; 22 is the one that matters (nothing in
+a C program that is in .fini_array ever runs); 24 depends on 11 only for the
+accuracy of its timings; 23 uses 17 only for its second measurement.
 Each report refers to the others by number where they relate.
 
 Things to decide or fill in before sending
@@ -227,13 +263,13 @@ Things to decide or fill in before sending
  * The first mail.  00-COVER-NOTE.txt is a short introduction to send before
    report 01: the list may not know you, and it says that eight mails follow.
    Skip it if you prefer to send the reports alone.  00-COVER-NOTE-2.txt does
-   the same for reports 09 - 18, and 00-COVER-NOTE-3.txt for reports 19 - 20;
-   they need not be sent at once: the first batch is the one that matters.
+   the same for reports 09 - 18, 00-COVER-NOTE-3.txt for reports 19 - 20 and
+   00-COVER-NOTE-4.txt for reports 22 - 24; they need not be sent at once: the
+   first batch is the one that matters.
  * The ten patches of the second batch.  They are in the release build of my
-   port (libunixlib 16.2.0-11, which also has the patches of reports 19, 20
-   and 21), and verify/run-verify.sh checks that the 17 UnixLib patches of
-   this bundle, applied in sequence to trunk, give the same code as that
-   build.  Two of them (15, 16) are workarounds for report 07 and
+   port (libunixlib 16.2.0-12, which also has the patches of reports 19 - 24),
+   and verify/run-verify.sh checks that the 20 UnixLib patches of this
+   bundle, applied in sequence to trunk, give the same code as that build.  Two of them (15, 16) are workarounds for report 07 and
    become unnecessary if 07 is fixed; 12 has no evidence of the old failure;
    09 has none from the machine (both say so).  Some of the machine runs used
    my port's test programs, which ask for a private 'fix level' of the library
@@ -248,6 +284,14 @@ Things to decide or fill in before sending
    second, separate problem of the native build (the output of a process
    that collect2 starts with a redirected stdout) as handled in my port and
    not part of the report.
+ * The three patches of the last batch (22 - 24).  They are in the release build
+   of my port (libunixlib 16.2.0-12, fix level 14).  Each has measurements
+   from the machine for the unpatched and the patched library and the same
+   program on a Linux host; report 24 says which of its failures I did not
+   trace to their cause, and what I did not test (cancellation, signals,
+   process-shared semaphores).  The patches are independent of each other
+   and of the older ones: 22 and 23 both touch sys/_syslib.s and vscript
+   in different places, and apply in either order.
  * The two patches of the third batch.  19 is mechanical (generated by
    repro/regvar/fix-unixlib-regvars.py, 738 lines) and its report lists what
    I did not change: the other files that declare register variables for SWI
@@ -260,7 +304,8 @@ Layout of this directory
   00-COVER-NOTE.txt       an optional first mail (introduction): reports 01-08
   00-COVER-NOTE-2.txt     the same for the second batch, reports 09 - 18
   00-COVER-NOTE-3.txt     the same for the third batch, reports 19 - 20
-  01-... 21-...           the reports
+  00-COVER-NOTE-4.txt     the same for the last batch, reports 22 - 24
+  01-... 24-...           the reports
   patches/                the patches (against trunk r7800; patch -p1)
   repro/sul/              reproducers for 01, 02, 03, 05 (seqtest, daprobe,
                           vforkbare, vforkfail, vforkloop, vforkrma, exittest,
@@ -285,6 +330,10 @@ Layout of this directory
                           scanfcheck.c + scantab (15066 cases made by glibc),
                           the programs of the machine runs; build-model.sh:
                           the host model of the old and the patched vfscanf
+  repro/fini-array/       report 22: finitest.c (builds for any UnixLib target
+                          and for a Linux host)
+  repro/stack-limit/      report 23: rlimtest.c (-DBIGSTACK: __stack_size 64 MB)
+  repro/semaphores/       report 24: semtest.c
   repro/regvar/           report 19: regvar1.c (the reproducer, builds on any
                           ARM target), fix-unixlib-regvars.py (the generator
                           of the patch), argtest.c / rawarg.c / ddecl.c (the
@@ -300,8 +349,11 @@ Layout of this directory
                           interpreter checks of reports 08, 17 and 18 also need
                           a built patched libunixlib.so, and the fidelity
                           check a copy of the release build's sources
-                          (~/gccsdk-next/unixlib-v18); they are skipped when
+                          (~/gccsdk-next/unixlib/root, step 5 of docs/BUILDING.md); they are skipped when
                           it is not there.  Section 9 (reports 19, 20) also
                           uses the GCCSDK 4.7.4 compiler (~/gccsdk/cross) for
                           the reproducer.  Section 10 (report 21) runs
                           repro/scanf/build-model.sh (a host gcc with ASan).
+                          Section 11 (reports 22 - 24) compiles the patched
+                          files and the three programs of the machine runs, and
+                          runs the programs on the host (glibc).

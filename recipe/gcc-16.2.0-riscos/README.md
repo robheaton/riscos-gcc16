@@ -5,7 +5,7 @@ real RISC OS machine (Cortex-A72).  This file describes the recipe; the user doc
 Nothing under `~/gccsdk` is modified by any of this: it is only read (UnixLib sources, the 10.2.0 install used as sysroot, GMP/MPFR/MPC).
 
 ## What is here
-    patches/            GCC core: arm backend, config.gcc, dwarf2cfi, ira, libgcc, and -fstack-clash-protection on by default (8 patches, ~220 lines)
+    patches/            GCC core: arm backend, config.gcc, dwarf2cfi, ira, libgcc, libgcov, and -fstack-clash-protection on by default (10 patches, ~270 lines)
     new-files/          the RISC OS target files (gcc/config/arm/riscos-elf.h, riscos.opt, t-riscos..., libgcc crt files)
     patches-cxx/        libstdc++ (8 patches: crossconfig, cmath long-double guards, EH personality, timed-wait and hardware_concurrency fixes)
     new-files-cxx/      libstdc++ os/riscos glue
@@ -79,6 +79,17 @@ which the GCCSDK module SysLogD turns into DDEUtils throwback.  `THROWBACK_DEBUG
 is handled (the front end's %C / %L formats are not repeatable for a second sink: they come out as "(2)").  Tests: `tests/throwback` (host: `build-and-run.sh`: the text cutting and both transports, 66 checks, 27 mutations
 of the source all caught; `hw/`: the programs of the hardware pack `throwback22`: tbprobe, tbtest (the same source as a program), tbsink (a Wimp receiver), build-ddeutils.sh (DDEUtils 1.75 built from the RISC OS sources with asasm)).
 
+## Coverage and profile-guided optimisation (16.2.0-12)
+`--coverage`, `gcov` and `-fprofile-generate` / `-fprofile-use` needed two repairs, one in the compiler's libraries and one in UnixLib:
+  * `patches/gcc.libgcc.libgcov-with-libc.patch`: the cross compiler is configured without `--with-sysroot` or `--with-headers`, so GCC's build compiles all of libgcc with `-Dinhibit_libc` (`INHIBIT_LIBC_CFLAGS` in
+    `gcc/libgcc.mvars`), which for libgcov means "no C library": the `.a` had no `__gcov_exit`, `__gcov_dump` and the file functions, and every `--coverage` link failed. libgcov is now compiled without that flag (the port's target
+    has UnixLib, and the headers are there when libgcc is built).  The native compilers' `libgcov.a` is the cross build's.
+  * `patches-unixlib/unixlib-fini-array.patch` (fix level 14, upstream report 22): UnixLib never ran the `.fini_array` of a program, and the exit function of libgcov is a static destructor that GCC puts into every instrumented object
+    (`coverage.cc`, `build_gcov_exit_decl`), so no `.gcda` file was ever written. `__main` now registers one `atexit ()` function that runs the array, last entry first, after the program's own `atexit ()` functions (glibc's order).
+The `.gcda` file of a cross-built program is named with the absolute Linux path it was compiled at: `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` redirect it ([docs/CROSS-COMPILER.md](../../docs/CROSS-COMPILER.md#coverage-and-profile-guided-optimisation)).
+`gcov` is one of the programs of the native tree (`scripts/make-native-tree.sh`) and of the cross tarball.  `gprof` (`-pg`) is not done: UnixLib's profiler (`gmon/_profile.s`) is compiled out for EABI, takes over the IRQ vector, and `STARTFILE_SPEC` links
+`crt0.o` also for `-pg`.
+
 ## Stack probing (`-fstack-clash-protection` is the default)
 The stack of an EABI program (1 MB, made by ARMEABISupport) is mapped one 4 KB page at a time, from a data abort handler, when a page is first touched.  On the Cortex-A72
 machine this was tested on, that goes wrong when the first touch of a page is not an ordinary store: RISC OS itself (supervisor mode: OS_GBPB filling the buffer of `read()`, OS_GSTrans, ...)
@@ -93,7 +104,7 @@ libstdc++, libgfortran) is built with it, and `scripts/build-unixlib.sh` refuses
 `scripts/build-unixlib.sh` rebuilds UnixLib 5.0 with the new compiler (out of tree, from a `cp -rL` copy of the 10.2.0 sources) and applies
 `patches-unixlib/`: GCC 14+ implicit-declaration fixes, `pthread_once` (no global lock across the init routine; exception-safe; compiled with
 -fexceptions), `pthread_cond_timedwait` (centisecond-accurate deadlines), `sleep`/`usleep`/`nanosleep` with several threads, the
-`_SC_NPROCESSORS_ONLN` enum fix, and `fread()`/`fwrite()` (after a short `read()`/`write()` the direct-transfer loops never advanced the data pointer: right byte count,
+`_SC_NPROCESSORS_ONLN` enum fix, the `.fini_array` (`unixlib-fini-array.patch`), `getrlimit (RLIMIT_STACK)` (`unixlib-getrlimit-stack.patch`: the EABI main stack is fixed, so that is the limit), POSIX semaphores (`unixlib-sem-blocking-timedwait.patch`: a mutex and a condition variable instead of polling, a real `sem_timedwait`; `unixlib-semaphore-timedwait-decl.patch` declares it, also in the cross sysroot) and `fread()`/`fwrite()` (after a short `read()`/`write()` the direct-transfer loops never advanced the data pointer: right byte count,
 wrong data; an upstream UnixLib bug; the fread/fwrite fix is only in the GCC-16-built package) and `read`/`fread`/`recv`/`recvfrom` touching a stack buffer first (`unixlib-touch-stack-buffers.patch`: RISC OS loses the store that first touches a lazily mapped EABI stack page; see `docs/upstream/15-UnixLib-touch-stack-buffers-before-handing-them-to-the-OS.txt`), and `memcpy`/`memmove` without the 64-byte store-multiple (`unixlib-memcpy-split-vstm.patch`: each `vstm` of 8 d registers becomes two of 4).  The runtime packages 10.2.0-N carry a libunixlib built by the OLD compiler
 (GCC 10.2/binutils 2.30) so that every behavioural difference comes from the source changes alone;
 16.2.0-N carry one built by the new compiler (`make-c16-package.py`; hardware-proven with 16.2.0-1 .. -4: -2 adds the stdio fix, -3/-4 the stack-buffer touch and the fix level; 16.2.0-5 adds the split memcpy and is itself built with the probing default, `tools/check-libunixlib.sh` verifies every fix in the built library).

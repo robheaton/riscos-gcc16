@@ -67,6 +67,14 @@ if REL.isdigit() and int(REL) >= 11:
              "stored a short (over its neighbour), \"%jd\", \"%zu\", \"%td\" and \"%qd\" were not understood, and \"%Lf\" stored a float.  Now ll, q and j (strtoll / strtoull into a long long), hh (a char), z and t "
              "(as big as size_t and ptrdiff_t), \"%n\" with them, and \"%Lf\" (strtold) work as in the C standard.  The first program that needed it was the native GCC's lto1, which reads the 64 bit id of the "
              "sections of its objects with sscanf (\".%llx\") and so could never find them: no -flto link worked.  Nothing else in the library changed (every other object file of the build is identical).")
+if REL.isdigit() and int(REL) >= 12:
+    NOTE += (" 16.2.0-12 and later answer sysconf (0x4700) with 14 and repair three bugs: (1) the .fini_array of a program was never run.  The start-up code called the .init_array functions and then "
+             "registered only the _fini function of the executable, which with GCC's .fini_array does nothing (the source said \"FIXME: what about FINI_ARRAY?\"), so an __attribute__ ((destructor)) function of a "
+             "C program never ran and neither did the exit hook of libgcov, which writes the .gcda files of a program built with --coverage or -fprofile-generate.  __main now registers a function with atexit (), "
+             "before the constructors run, that calls the .fini_array functions last entry first, as glibc does; (2) getrlimit (RLIMIT_STACK) answered the maximum Wimp slot, but the main stack of an EABI "
+             "program has a fixed size (1MB unless the program defines __stack_size), and programs size their recursion and their thread stacks by that limit: it now answers the real size; (3) POSIX semaphores: "
+             "sem_wait polled with pthread_yield () and leaked a list entry on every call, and sem_timedwait was ENOSYS (and not even declared in <semaphore.h>).  A semaphore is now a counter with a mutex "
+             "and a condition variable, sem_wait blocks, and sem_timedwait works.")
 # the packages from 16.2.0-4 on must contain the code of every fix: look for it in the built library (a silently skipped patch once shipped a package without the fix-level answer)
 if REL.isdigit() and int(REL) >= 4:
     import subprocess

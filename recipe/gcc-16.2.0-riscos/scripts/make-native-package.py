@@ -30,7 +30,7 @@ GCCSDK_ZIP = HOME + "/gccsdk/autobuilder/autobuilder_packages/arm/Development/gc
 
 # the extensions UnixLib swaps with a directory (GCCSDK's !Run list plus the Fortran 90+ ones); only those that occur in the tree matter
 SWAP = set("f for F f90 F90 f95 F95 f03 F03 f08 F08 fpp cc cxx cpp c++ C i ii rpo c m h hh s S xrb xrs l o y tcc cmhg adb ads ali".split())
-TOOLS = ("gcc g++ cpp gfortran cc1 cc1plus f951 collect2 lto1 lto-wrapper as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit make").split()
+TOOLS = ("gcc g++ cpp gcov gfortran cc1 cc1plus f951 collect2 lto1 lto-wrapper as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit make").split()
 
 def riscos_stamp(unix):
     cs = int((unix + 2208988800) * 100)
@@ -161,6 +161,8 @@ REQ_OLD = """Needs the SharedLibs-C-armeabihf package, version 16.2.0-5 or later
 main stacks (see Notes); with 16.2.0-5 everything works as before, with 1 MB stacks."""
 REQ_NEW = """Needs the SharedLibs-C-armeabihf package, version 16.2.0-10 or later (UnixLib with the stack fixes and the repair for the DDEUtils module: with an older UnixLib the compilers cannot run
 while the DDEUtils module is loaded, and every text editor that does throwback loads it), and ARMEABISupport / SOManager."""
+REQ_12 = """Needs the SharedLibs-C-armeabihf package, version 16.2.0-12 or later (UnixLib fix level 14: the stack fixes, the repair for the DDEUtils module and, new in 16.2.0-12, the exit functions
+of programs: the counts of a --coverage program are written by one), and ARMEABISupport / SOManager."""
 THROWBACK = """Throwback (-mthrowback), new in 16.2.0-8
   gcc -Wall -mthrowback -c main.c         g++ -mthrowback ...         gfortran -mthrowback ...         (add it to the compiler options of your makefile)
   Every diagnostic that has a file and a line (errors, warnings, notes, fatal errors; C, C++ and Fortran) is also sent to your text editor through the DDEUtils module, as the Norcroft DDE does:
@@ -184,15 +186,39 @@ LTO = """Link time optimisation (-flto), new in 16.2.0-10
   that UnixLib before 16.2.0-11 does not have.)
 
 """
+COVERAGE = """Coverage and profile-guided optimisation, new in 16.2.0-12
+  gcc -O0 --coverage -c prog.c         compile with instrumentation (also g++ and gfortran); the compiler writes prog.gcno next to the object file
+  gcc --coverage -o prog prog.o        link
+  prog                                 when the program ends it adds its counts to prog.gcda
+  gcov prog.c                          prints the percentage of the lines that ran and writes the annotated source prog.c.gcov   (-b: branches, -c: counts)
+  Compile with -c and link in a second step: in one command (gcc --coverage -o prog prog.c) GCC names the data files prog-prog.gcno and prog-prog.gcda after the output AND the source.
+  Profile-guided optimisation: gcc -O2 -fprofile-generate -c prog.c ; gcc -fprofile-generate -o prog prog.o ; prog (on typical input) ; gcc -O2 -fprofile-use -c prog.c ; gcc -o prog prog.o
+  gcov is in !GCC16.bin.  The counts are written by a destructor of the program, which UnixLib runs from 16.2.0-12 on (a program that ends with _exit, abort or a crash writes nothing).
+  The file names follow the usual UnixLib rule: prog.gcno, prog.gcda and prog.c.gcov are the RISC OS files prog/gcno, prog/gcda and prog/c/gcov.  (UnixLib would take prog.c.gcov for a RISC OS path,
+  the file gcov in the directories prog and c: gcov asks for Unix names only, and a program of your own that opens such a file needs  int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;
+  with  #include <unixlib/local.h> .)  Not available: gprof and -pg (the program links and runs but writes no gmon.out).
+
+"""
 if int(REL) >= 9:
     THROWBACK = THROWBACK + LTO
-if int(REL) >= 8:
+if int(REL) >= 12:
+    THROWBACK = THROWBACK + COVERAGE
+if int(REL) >= 12:
+    readme = readme.replace("@@REQ@@", REQ_12).replace("@@THROWBACK@@", THROWBACK)
+    # the binutils programs have the 8 MB stack request again (data/riscos-da-big.c: the 16.2.0-11 build was made before it was added)
+    ra = "make for 8 MB, as, ld, the other binutils programs and the drivers for nothing (1 MB, UnixLib's default)."
+    assert ra in readme
+    readme = readme.replace(ra, "make and the binutils programs (as, ld ...) for 8 MB, the drivers for nothing (1 MB, UnixLib's default).")
+    rb = "make: 8 MB; the binutils and the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-8 needs 16.2.0-10)."
+    assert rb in run
+    run = run.replace(rb, "make and the binutils: 8 MB; the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-12 needs 16.2.0-12).")
+elif int(REL) >= 8:
     readme = readme.replace("@@REQ@@", REQ_NEW).replace("@@THROWBACK@@", THROWBACK)
 else:
     readme = readme.replace("@@REQ@@", REQ_OLD).replace("@@THROWBACK@@", "")
 control = pkgmeta.control("Gcc16", "%s-%s" % (V, REL), "GPL",
                           "Experimental native GCC 16.2.0 (C, C++, Fortran), binutils 2.45.1 and GNU make 4.4.1 for RISC OS (forward-port of the GCCSDK EABI tool chain)",
-                          depends="SharedLibs-C-armeabihf (>= %s)" % ("16.2.0-10" if int(REL) >= 8 else "16.2.0-5"),
+                          depends="SharedLibs-C-armeabihf (>= %s)" % ("16.2.0-12" if int(REL) >= 12 else "16.2.0-10" if int(REL) >= 8 else "16.2.0-5"),
                           components="Apps.Utilities.!GCC16 (Movable LookAt)")
 copyright = pkgmeta.copyright_gcc16("%s-%s" % (V, REL))
 add_file(APP + "!Boot", boot.encode(), 0xFEB)

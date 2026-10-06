@@ -12,6 +12,8 @@
 #     patched __get_dde_prefix run on the interpreter (11 cases, 5 mutants), the generator reproduces the patched header
 #   * report 21 (scanf with long long conversions, stdio/scanf.c): the patched file and the two programs of the machine runs compile with both compilers; the host model of the old and the
 #     patched vfscanf (repro/scanf/build-model.sh): 47315 cases 0 failures, the table of 15066 cases made by glibc: new 0 failed, old 5502, glibc 0
+#   * reports 22 - 24 (the .fini_array, getrlimit (RLIMIT_STACK), POSIX semaphores): the patched files compile and assemble with both compilers, the three programs of the machine runs compile
+#     with both compilers and with the host's gcc, and pass on a Linux host with glibc (the reference for what they expect: finitest 8 checks, rlimtest 6, semtest 18)
 # usage: run-verify.sh      (needs: ~/gccsdk = a clean svn working copy of trunk (svn status clean), ~/gccsdk-next = this repository with the cross compiler env-f (docs/BUILDING.md step 4)
 #                            and UnixLib built (step 5: ~/gccsdk-next/unixlib); Python 3, patch, gcc)
 set -u
@@ -134,7 +136,7 @@ $W/once_model new 2>&1 | tee -a "$LOG" | grep -q "all checks passed"; chk $? "on
 rm -rf $W/cm && cp -r $B/repro/unixlib-models/cond $W/cm && ( cd $W/cm && ./build-model.sh 2>&1 | tee -a "$LOG" | grep -q "^PASS" ); chk $? "cond: cond_deadline () extracted from the patched cond.c: 3000000 random deadlines, never early, at most 1.1 cs late"
 say ""; say "8. the UnixLib patches against the release build, and the test programs of reports 10 - 18 compile"
 if [ -d $N/unixlib/root/libunixlib ]; then
-  $T/check-fidelity.sh $B $G $N/unixlib/root/libunixlib 2>&1 | tee -a "$LOG" | grep -q "^ok"; chk $? "the 17 UnixLib patches applied in sequence = the sources of the 16.2.0-11 release build"
+  $T/check-fidelity.sh $B $G $N/unixlib/root/libunixlib 2>&1 | tee -a "$LOG" | grep -q "^ok"; chk $? "the 20 UnixLib patches applied in sequence = the sources of the 16.2.0-12 release build"
 else say "  (no copy of the release build's sources at $N/unixlib: the fidelity check is skipped)"; fi
 for cc in "$CC10|GCC 10.2.0|-std=c++17" "$CC16|GCC 16.2.0|-std=c++20"; do C=${cc%%|*}; r=${cc#*|}; NAME=${r%%|*}; CXXSTD=${r#*|}; CXX=${C%gcc}g++
   $CXX $CXXSTD -O2 -w -c $B/repro/unixlib-models/threadtest.cc -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles repro/unixlib-models/threadtest.cc ($CXXSTD)"
@@ -185,6 +187,20 @@ sc() { awk -v m="$1" 'index($0, m) {f=1; next} f && /^scanfcheck:/ {print; exit}
 sc "table on the NEW code" | grep -q "15066 cases, 0 failed"; chk $? "scanf model: the table of 15066 cases (made by glibc) on the patched function: 0 failed"
 sc "table on the OLD code" | grep -q "15066 cases, 5502 failed"; chk $? "scanf model: the same table on the unpatched function: 5502 failed (the number the machine gave)"
 sc "table on glibc itself" | grep -q "15066 cases, 0 failed"; chk $? "scanf model: the table on glibc itself: 0 failed (the table is right)"
+say ""; say "11. reports 22 - 24: the .fini_array (stdlib/atexit.c, sys/_syslib.s), getrlimit (RLIMIT_STACK) (resource/initialise.c, sys/_syslib.s), POSIX semaphores (pthread/sem.c, include/semaphore.h)"
+FL11="$FL -I$N/unixlib/build"
+for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
+  for spec in "stdlib/atexit.c|unixlib-fini-array|" "resource/initialise.c|unixlib-getrlimit-stack|" "pthread/sem.c|unixlib-semaphores|-isystem $B/src/unixlib-semaphores/include"; do
+    f=${spec%%|*}; r=${spec#*|}; pn=${r%%|*}; extra=${r#*|}
+    $C $FL11 $extra -isystem $G/$U/include -I $G/$U/incl-local -c $B/src/$pn/$f -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles $f (patched by $pn)"; done
+  for pn in unixlib-fini-array unixlib-getrlimit-stack; do
+    $C -xassembler-with-cpp -isystem $G/$U/include -I $G/$U/incl-local -D__UNIXLIB_CHUNKED_STACK=0 -g -O2 -fPIC -DPIC -c $B/src/$pn/sys/_syslib.s -o $W/x.o 2>>"$LOG"; chk $? "$NAME assembles sys/_syslib.s (patched by $pn)"; done
+  for f in fini-array/finitest stack-limit/rlimtest semaphores/semtest; do $C -std=gnu11 -O2 -o $W/x.e1f $B/repro/$f.c 2>>"$LOG"; chk $? "$NAME compiles repro/$f.c"; done; done
+$CC16 -std=gnu11 -O2 -DBIGSTACK -o $W/x.e1f $B/repro/stack-limit/rlimtest.c 2>>"$LOG"; chk $? "GCC 16.2.0 compiles repro/stack-limit/rlimtest.c with -DBIGSTACK (__stack_size = 64 MB)"
+for f in fini-array/finitest stack-limit/rlimtest semaphores/semtest; do gcc -O2 -pthread -o $W/h_${f#*/} $B/repro/$f.c 2>>"$LOG"; chk $? "the host gcc compiles repro/$f.c"; done
+$W/h_finitest 2>&1 | tail -1 | tee -a "$LOG" | grep -q "8 checks, 0 failed"; chk $? "finitest on glibc: the events come in the order that the patch gives (8 checks, 0 failed)"
+( ulimit -s 1024; $W/h_rlimtest 1048576 2>&1 | tail -1 | tee -a "$LOG" | grep -q "6 checks, 0 failed" ); chk $? "rlimtest on glibc with a 1 MB stack: 6 checks, 0 failed"
+$W/h_semtest 2>&1 | tail -1 | tee -a "$LOG" | grep -q "18 checks, 0 failed"; chk $? "semtest on glibc: 18 checks, 0 failed"
 rm -rf $W
 sed -i "s#$HOME#~#g" "$LOG"
 say ""; say "RESULT: $fails check(s) failed"

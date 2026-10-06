@@ -1,5 +1,5 @@
-| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-11 on SharedLibs-C-armeabihf 16.2.0-11).
-| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, and checks that a compile error is reported.
+| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-12 on SharedLibs-C-armeabihf 16.2.0-12).
+| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov and a profile-guided build, and checks that a compile error is reported.
 | BEFORE: install the packages with PackMan, REBOOT, and double-click !GCC16 once (it sets GCC16$Dir and the search path).
 | RUN IT IN A TASK WINDOW (Ctrl-F12):     Obey <GCC16Test$Dir>.RunSelfTest        About a minute or two.
 | The work is done on the local disc (<Wimp$ScrapDir>.GCC16Test); the output is also copied to Results next to this file (and to SelfTest$ResultsTo, if you set that variable first).
@@ -21,7 +21,7 @@ Copy <SelfTest$Src>.Makefile <SelfTest$Dir>.Makefile F~C~V
 Dir <SelfTest$Dir>
 | what double-clicking !GCC16 does: Run$Path, return code limit and the suffix swapping lists of every tool
 Obey <GCC16$Dir>.!Run
-If "<GCC16$Version>" <> "16.2.0-11" Then Error This self-test is for Gcc16 16.2.0-11 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-11 with PackMan, reboot, double-click !GCC16, then run this again
+If "<GCC16$Version>" <> "16.2.0-12" Then Error This self-test is for Gcc16 16.2.0-12 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-12 with PackMan, reboot, double-click !GCC16, then run this again
 Unset TMPDIR
 WimpSlot -min 48M -max 48M
 Unset SelfTest$Fails
@@ -30,16 +30,16 @@ Time
 Echo GCC16 <GCC16$Version> is in <GCC16$Dir>.  The test directory is <SelfTest$Dir>.
 Spool
 SpoolOn <SelfTest$Dir>.Results
-Echo ===================== 1. the runtime: UnixLib fix level 13 (SharedLibs-C-armeabihf 16.2.0-11)
+Echo ===================== 1. the runtime: UnixLib fix level 14 (SharedLibs-C-armeabihf 16.2.0-12)
 GCC16bin:gcc -O2 -o fixlevel fixlevel.c
 Set SelfTest$RC <Sys$ReturnCode>
 If "<SelfTest$RC>" = "0" Then Echo PASS: compile fixlevel.c
 If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile fixlevel.c (return code <SelfTest$RC>)
 If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> fixlevel-compile
-IfThere <SelfTest$Dir>.fixlevel Then Run <SelfTest$Dir>.fixlevel 13
+IfThere <SelfTest$Dir>.fixlevel Then Run <SelfTest$Dir>.fixlevel 14
 Set SelfTest$RC <Sys$ReturnCode>
-If "<SelfTest$RC>" = "0" Then Echo PASS: the runtime is at fix level 13
-If "<SelfTest$RC>" <> "0" Then Echo FAIL: the runtime is not at fix level 13: install SharedLibs-C-armeabihf 16.2.0-11 with PackMan and REBOOT
+If "<SelfTest$RC>" = "0" Then Echo PASS: the runtime is at fix level 14
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: the runtime is not at fix level 14: install SharedLibs-C-armeabihf 16.2.0-12 with PackMan and REBOOT
 If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> fixlevel-run
 Time
 Spool
@@ -162,6 +162,75 @@ Set SelfTest$RC <Sys$ReturnCode>
 If "<SelfTest$RC>" <> "0" Then Echo PASS: the error in bad.c was reported (return code <SelfTest$RC>)
 If "<SelfTest$RC>" = "0" Then Echo FAIL: gcc returned 0 for a file with an error
 If "<SelfTest$RC>" = "0" Then Set SelfTest$Fails <SelfTest$Fails> error-not-reported
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 9. coverage:  gcc -O0 --coverage -c cov.c, link, run cov (it writes cov.gcda when it ends), gcov cov.c, then covcheck reads the annotated source
+GCC16bin:gcc -O0 --coverage -c cov.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile cov.c with --coverage (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cov-compile
+GCC16bin:gcc --coverage -o cov cov.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile and link with --coverage
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: link with --coverage (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cov-link
+IfThere <SelfTest$Dir>.cov Then Run <SelfTest$Dir>.cov
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the --coverage program
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the --coverage program (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cov-run
+Unset SelfTest$Have
+IfThere <SelfTest$Dir>.cov/gcda Then Set SelfTest$Have yes
+If "<SelfTest$Have>" = "yes" Then Echo PASS: the program wrote its counts (cov.gcda) when it ended
+If "<SelfTest$Have>" <> "yes" Then Echo FAIL: cov.gcda was not written when the program ended
+If "<SelfTest$Have>" <> "yes" Then Set SelfTest$Fails <SelfTest$Fails> cov-gcda
+GCC16bin:gcov cov.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: gcov cov.c
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: gcov cov.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> gcov
+GCC16bin:gcc -O2 -o covcheck covcheck.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile covcheck.c (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> covcheck-compile
+IfThere <SelfTest$Dir>.covcheck Then Run <SelfTest$Dir>.covcheck
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: gcov counted the lines of the program right (see the line above)
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: the counts of gcov are wrong or missing (covcheck returned <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> covcheck
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 10. profile-guided optimisation:  -fprofile-generate, run, then -fprofile-use (-Werror=missing-profile: the profile file must be found)
+GCC16bin:gcc -O2 -fprofile-generate -c pgo.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile pgo.c with -fprofile-generate (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgo-generate
+GCC16bin:gcc -fprofile-generate -o pgo pgo.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile and link with -fprofile-generate
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: link with -fprofile-generate (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgo-link
+IfThere <SelfTest$Dir>.pgo Then Run <SelfTest$Dir>.pgo
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the instrumented program
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the instrumented program (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgo-run
+GCC16bin:gcc -O2 -fprofile-use -Werror=missing-profile -c pgo.c
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: -fprofile-use found the profile and compiled
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: -fprofile-use (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgo-use
+GCC16bin:gcc -o pgo pgo.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: link the optimised program (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgo-link2
+IfThere <SelfTest$Dir>.pgo Then Run <SelfTest$Dir>.pgo
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: run the profile-optimised program
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: run the profile-optimised program (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> pgo-run2
 Time
 Spool
 SpoolOn <SelfTest$Dir>.Results

@@ -1,0 +1,118 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: getrlimit (RLIMIT_STACK) of an EABI program answers the
+         largest possible Wimp slot (512 MB), not the size of its main stack
+         (1 MB)
+Attach:  patches/unixlib-getrlimit-stack.patch (64 lines, three files)
+         repro/stack-limit/rlimtest.c
+
+Summary
+-------
+__resource_initialise () in libunixlib/resource/initialise.c sets
+
+    p->limit[RLIMIT_STACK].rlim_max = max_wimpslot;
+    p->limit[RLIMIT_STACK].rlim_cur = p->limit[RLIMIT_STACK].rlim_max;
+
+with the comment "As the stack is extensible then it can grow up to the maximum
+wimpslot size". That holds for a program with UnixLib's chunked stack. It does
+not hold for an EABI program: its main stack is one block that ARMEABISupport
+makes for it (ARMEABISupport_StackOp; the stack_ok code in sys/_syslib.s),
+1 MB unless the program defines __stack_size (report 17), and it never grows.
+So getrlimit (RLIMIT_STACK) tells such a program that it has 536838144 bytes
+(on the machine below: the largest Wimp slot, 512 MB less the 32 KB below the application space), 512 times
+what it has. A program that sizes its recursion, or the stacks of its threads,
+by the limit then overflows the real stack.
+
+The patch records the size of the stack that __main got, in bytes, in a new
+variable, __eabi_main_stack_size, and __resource_initialise () reports that
+size as both limits when it is not zero. A program without such a stack (the
+chunked stack of the APCS-32 builds) has the variable at 0 and gets max_wimpslot
+as before.
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+SOManager 3.04, SharedUnixLibrary 1.16, UnixLib 5.0 from trunk r7800 built with
+GCC 16.2.0 (libunixlib 16.2.0-11 of my port for the unpatched runs: the files
+in question are those of trunk, unchanged). The same code is in GCCSDK 10.2.0.
+The main stack of 64 MB in the second run needs the __stack_size patch of
+report 17 (it is in my library; without it the program has the 1 MB stack and
+the library answers 1 MB, which is also right).
+
+What I measured, and what I did not
+-----------------------------------
+On the machine, with rlimtest (repro/stack-limit): it reads the limit, checks it
+against the size the program must have (the argument), recurses with 1 KB
+frames to 75% of the reported soft limit (at most 8 MB), then lowers the soft
+limit and reads it back.
+
+1. A plain EABI program (1 MB stack), "rlimtest 1048576".
+   Unpatched:
+     RLIMIT_STACK: cur = 536838144, max = 536838144
+     FAIL the limit is the size of the main stack of this program
+     recursing 6049 frames of about 1KB (6143 KB)
+     Fatal signal received: EMT trap
+     Unixlib detected stack overflow            (exit status 199)
+   Patched:
+     RLIMIT_STACK: cur = 1048576, max = 1048576
+     the recursion up to 75% of the limit (756 frames, 767 KB) completes
+     SUMMARY [rlimtest]: 6 checks, 0 failed -> PASS
+
+2. The same program with  int __stack_size = 64 * 1024 * 1024;  built in
+   ("rlimtest64 67108864"). Unpatched: the same 536838144 and a FAIL on the
+   size (the 6 MB recursion happens to fit in the real 64 MB stack, so the
+   program does not crash, but the answer is still wrong). Patched:
+   cur = max = 67108864, 6 checks, 0 failed.
+
+3. On a Linux host with glibc the same program, run with  ulimit -s 1024
+   ("rlimtest 1048576"), prints cur = max = 1048576 and passes all 6 checks,
+   as the patched RISC OS run does; it is the reference for what the checks
+   expect.
+
+The size is the number of pages that StackOp returned (the register that
+__main already keeps for it), shifted by 12. When ARMEABISupport refuses the
+size that was asked for and the library tries half, and so on (report 17), the
+number reported is the size that was actually granted: the patched value
+follows the real stack.
+
+What I did not test: threads (I did not look at what UnixLib's pthread_create
+uses as a default stack size, nor whether anything in UnixLib itself reads
+RLIMIT_STACK), a vfork child that runs its own program in the parent's
+stack range, and the APCS-32 build, which keeps the old answer by construction.
+
+The regression suites of my port, run on the machine with the patched library (fix level 14, together with the other patches of this bundle that are in my port's library) and
+the native compilers of my port: the library checks (48 checks of the C library, the mmap guard, the process-exit tests, the six heap stages), the thread tests in C, C++ and
+Fortran, the programs that use the shared libstdc++ and libgfortran, the main stack sizes and the heap fallback, and the native compile, make and Fortran tests. All 50 summary
+lines have the same counts as in the run on the library of the previous release (fix level 13), and none fails; four more summary lines (finitest, rlimtest twice, semtest) are the
+programs of reports 22 - 24 and pass.
+
+The patch
+---------
+ * sys/_syslib.s: at stack_ok, after the stack was set up (EABI only), store
+   v2 << 12 into __eabi_main_stack_size; the symbol is reached
+   through a literal pool entry, with the indirection of the PIC build, as
+   __stack_size is a few lines above.
+ * resource/initialise.c: define unsigned int __eabi_main_stack_size = 0; use
+   it for both limits when not zero; the comment says why.
+ * vscript: __eabi_main_stack_size is a local symbol.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* resource/initialise.c (__eabi_main_stack_size): New.
+	(__resource_initialise): Report the size of the EABI main stack as
+	RLIMIT_STACK.
+	* sys/_syslib.s (__main): Store the size of the main stack in it.
+	* vscript: Add __eabi_main_stack_size.
+
+What I did not do
+-----------------
+I did not look at the history of the file in svn, nor search the mailing list
+or the bug tracker, so I do not know whether the problem is known. I did not
+look at the other limits of the table (RLIMIT_DATA, RLIMIT_AS ...), which I did
+not need.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

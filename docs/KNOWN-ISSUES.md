@@ -11,8 +11,8 @@ The programs are 32-bit ARMv7 with VFPv3: other ARMv7 machines should work, but 
 |---|---|
 | OpenMP (`-fopenmp`) | not built: the driver stops with an error |
 | Sanitizers (`-fsanitize=...`) | not built |
-| `gcov`, `--coverage`, profile-guided optimisation | not available: `libgcov` is missing, so the link fails (`__gcov_exit`) |
-| `gprof` (`-pg`) | builds and links; not tested on RISC OS |
+| `gprof` (`-pg`) | the program links and runs but writes **no** `gmon.out`: UnixLib's profiler is compiled out for EABI programs (its source takes over the interrupt vector, and was not tried). `gcov` and profile-guided optimisation work (see below) |
+| `-ftime-report` (native compiler) | prints, but the times are wrong (cause not investigated) |
 | Wide-character iostreams (`std::wcout`, `std::wcin` ...) | libstdc++ is built without them |
 | `std::stacktrace` | does not link |
 | C++17 parallel algorithms (`std::execution::par`) | compile; this build has no threading back end for them, so they should run in sequence (not tested) |
@@ -27,9 +27,10 @@ The programs are 32-bit ARMv7 with VFPv3: other ARMv7 machines should work, but 
 
 * **make** never uses a shell: no pipes, redirections or `&&` in recipes; `-jN` runs one job at a time (a `vfork` child runs to completion before `vfork` returns).
 * **`-flto`**: the native linker has no plugin support, so objects inside an archive (`libfoo.a`) are not optimised across modules (give the object files to the link), and the optimisation jobs run one after the other. The Linux cross compiler uses the linker plugin and does not have these limits.
+* **Coverage**: `gcov` and the `--coverage` and `-fprofile-generate` programs need the runtime 16.2.0-12 (the counts are written by an exit function that earlier runtimes never ran). A program that ends with `_exit`, `abort` or a crash writes no counts. A program built by the *cross* compiler names its `.gcda` file with the Linux path it was built at: set `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` on RISC OS ([CROSS-COMPILER.md](CROSS-COMPILER.md#coverage-and-profile-guided-optimisation)). `-fprofile-update=atomic` and the coverage of threads were not tested.
 * **Throwback**: the assembler and the linker send none. It needs the DDEUtils module and an editor that has registered with it (tested with StrongED), and works only in the desktop.
 * **Memory**: the Task window needs at least 48 MB. RISC OS may clamp the maximum size of a dynamic area (128 MB was seen), so the compilers get less than the 512 MB they ask for; that is enough for ordinary sources, and a compile that ends with `out of memory` or `virtual memory exhausted` has hit it.
-* **Stack**: the compilers run with 64 MB stacks, so deep template or `constexpr` recursion works to the compiler's own limits; every other EABI program has a 1 MB stack unless it sets `__stack_size`.
+* **Stack**: the compilers run with 64 MB stacks, so deep template or `constexpr` recursion works to the compiler's own limits; `make` and the binutils programs have 8 MB; every other EABI program has a 1 MB stack unless it sets `__stack_size` (and `getrlimit (RLIMIT_STACK)` reports what it has).
 * **Speed** (one run on the Compute Module 4, to give an idea): `gcc -O2` compiles and links a "hello world" in about 1 second, `g++` in about 7 seconds (the C++ headers and the static libstdc++), and the four-file, 34,541-check C test program in about 12 seconds. Keep temporary files on a local disc (`TMPDIR`): on a network share the compiler was about 20% slower.
 * `!GCC16` is not a desktop program: double-clicking it only sets system variables (it opens no window). Do it after every boot and work in a Task window.
 
@@ -39,7 +40,8 @@ The programs are 32-bit ARMv7 with VFPv3: other ARMv7 machines should work, but 
   (`OS_GBPB`, `OS_GSTrans` ...), the store that takes the page fault is **lost**: the buffer comes back with wrong bytes, and the SWI reports success. This tool chain avoids it for your compiled code (stack probing, on by default) and for UnixLib (`read`, `fread`, `recv`, `recvfrom` touch the buffer first), but
   **your own SWI calls** can still hit it: pass such SWIs `malloc`'d or static memory, or write one byte to each 4 KB page of the buffer first.
 * **A 64-byte `vstm`** (a store of eight D registers) that is the first access to a stack page is not restarted and the program dies with `SIGSEGV`. UnixLib's `memcpy` was changed to avoid it; hand-written NEON code should too.
-* Whether these two are bugs in RISC OS, in ARMEABISupport or by design is not known; a reproducer and the questions are in [`docs/upstream/07-...`](upstream/07-RISCOS-svc-mode-store-to-unmapped-stack-page-lost.txt).
+* Whether the two problems above are bugs in RISC OS, in ARMEABISupport or by design is not known; a reproducer and the questions are in [`docs/upstream/07-...`](upstream/07-RISCOS-svc-mode-store-to-unmapped-stack-page-lost.txt).
+* **UnixLib guesses whether a relative file name is a Unix or a RISC OS name**, and takes a name such as `foo.c.gcov` or `foo.h.bak` (a suffix from the swap list in the middle) for a RISC OS path. A program that opens such a name fails or finds nothing; the tools of this package ask for Unix names, a program of your own does the same with `int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;` ([USING-NATIVE.md](USING-NATIVE.md#file-names-unix-names-risc-os-directories)).
 
 ## Bugs in RISC OS modules that this release does not change
 
@@ -55,7 +57,7 @@ The runtime packages fix UnixLib. They do not replace system modules. These bugs
 ## Packaging
 
 * The packages are **not in a PackMan repository**: install the zips from the releases page by hand (drag them onto PackMan).
-* The compilers' internal-error message still points at `http://gccsdk.riscos.info/` (the bug URL was set at configure time). **Ignore it and report problems [here](https://github.com/robheaton/riscos-gcc16/issues)**; GCCSDK does not maintain this port.
+* The compilers' internal-error message points at this repository's [issue tracker](https://github.com/robheaton/riscos-gcc16/issues) (releases before 16.2.0-12 pointed at `http://gccsdk.riscos.info/`: ignore that and report problems here; GCCSDK does not maintain this port).
 * The loader, `libgcc_s.so.1` and `libdl` in the C runtime package are GCCSDK's 10.2.0 files, unchanged.
 
 ## Reporting a problem

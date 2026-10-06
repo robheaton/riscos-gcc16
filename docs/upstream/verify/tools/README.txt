@@ -12,7 +12,7 @@ object files: set NM=/path/to/nm if the default one cannot).  They run the code 
                          opposite condition, changed immediate; 76 breakages) and runs sim-startup-loops.py on each: every breakage must be caught.  (sim-startup-loops.py itself runs
                          25 stack and 13 + 3 heap-area scenarios; it reads the library's own symbols stack_try, stack_ok, da_try, da_last, da_done, ___program_name.)
   check-vstm-split.py    report 16: the patched _memcpymove-v7l.o differs from the original only by the split of each 64-byte vstm (needs objdump of the target)
-  check-fidelity.sh      the 16 UnixLib patches of the bundle, applied in sequence to pristine trunk, equal (comments stripped) the sources of the release build of my port
+  check-fidelity.sh      the 20 UnixLib patches of the bundle, applied in sequence to pristine trunk, equal (comments stripped) the sources of the release build of my port
   a32.py                 the A32 interpreter as a module (ELF static image, writable data overlay, SWI hook) that the scripts below import
   sim-regvar.py          report 19: runs repro/regvar/regvar1.c's f () on the interpreter, compiled by each compiler given, with the wrapper as in os.h and with -DFIXED
                          sim-regvar.py REGVAR1.C CC [CC ...]

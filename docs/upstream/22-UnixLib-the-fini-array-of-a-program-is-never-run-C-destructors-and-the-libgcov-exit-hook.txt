@@ -1,0 +1,157 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: the .fini_array of an EABI program is never run (C
+         destructors do not run, and no .gcda file is ever written by a
+         --coverage program)
+Attach:  patches/unixlib-fini-array.patch (77 lines, three files)
+         repro/fini-array/finitest.c
+
+Summary
+-------
+__main () in libunixlib/sys/_syslib.s calls the functions of the program's
+.init_array (crt0.o passes the bounds in the CRT1_INIT_ARRAY_START / _END words
+of the block it hands to __main) and, right there, has the comment
+
+	@ FIXME: what about FINI_ARRAY?
+
+Nothing runs the .fini_array. crt0.o already passes its bounds
+(CRT1_FINI_ARRAY_START / CRT1_FINI_ARRAY_END, the next two words), and the
+library ignores them. So for an EABI program on UnixLib
+
+  * a function declared  __attribute__ ((destructor))  never runs,
+  * the static destructor that GCC puts into every object compiled with
+    --coverage or -fprofile-generate never runs (gcc/coverage.cc,
+    build_gcov_exit_decl: a destructor that calls __gcov_exit ()), so libgcov
+    never writes its counts: no .gcda file is ever made, and gcov and
+    profile-guided optimisation cannot be used,
+  * and whatever else a program or a library puts into .fini_array
+    (crtbegin.o's __do_global_dtors_aux among them) does not run either.
+
+C++ static destructors are not affected: the constructors register them with
+__cxa_atexit (), which UnixLib runs.  Only what GCC puts into .fini_array
+directly is lost.
+
+The patch adds a function, __register_fini_array (start, end), to
+stdlib/atexit.c, and calls it from __main before the constructors run. It
+registers one function with atexit () that calls the entries of the array from
+the last to the first. Registered first, it runs last: after the atexit ()
+functions of the program and the static destructors that the constructors
+register. That is the order glibc uses (the atexit () list, then the
+.fini_array, last entry first, so a destructor with a larger priority number
+runs first). finitest.c checks the whole sequence, and gives the same answer
+on a Linux host with glibc.
+
+How I found it
+--------------
+I wanted gcov and profile-guided optimisation for programs on RISC OS. An
+instrumented program (gcc --coverage, -fprofile-generate) ran and printed the
+right output but left no .gcda file. libgcov writes its counts from the
+destructor that the compiler adds to every instrumented object, and that
+destructor sits in .fini_array. A small test then showed that no destructor of
+a plain C program ran at all.
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+SOManager 3.04, SharedUnixLibrary 1.16, UnixLib 5.0 from trunk r7800 built with
+GCC 16.2.0 (libunixlib 16.2.0-11 of my port for the unpatched runs: the files
+in question are those of trunk, unchanged). The programs are built by the
+GCC 16.2.0 cross compiler of my port. The code in question is the same in the
+GCCSDK 10.2.0 sources; nothing here depends on the compiler.
+
+What I measured, and what I did not
+-----------------------------------
+On the machine, with the unpatched and then the patched library:
+
+1. finitest (repro/fini-array): two constructors, three destructors with
+   different priorities, two atexit () functions; the last destructor
+   (priority 101) compares the sequence of the events with glibc's and ends
+   the program with _exit.
+   Unpatched: the program ends with status 0 and prints nothing: the
+   destructors, among them the one that prints, never ran. Patched:
+
+     0  expected ctor 101       got ctor 101       ok
+     1  expected ctor default   got ctor default   ok
+     2  expected main           got main           ok
+     3  expected atexit second  got atexit second  ok
+     4  expected atexit first   got atexit first   ok
+     5  expected dtor default   got dtor default   ok
+     6  expected dtor 102       got dtor 102       ok
+     SUMMARY [finitest]: 8 checks, 0 failed -> PASS
+
+   On a Linux host with glibc the same program prints the same eight lines.
+
+2. A program compiled with --coverage (a 33 line program with a loop and two
+   small functions), unpatched and patched. Unpatched: it runs, prints its
+   output and no .gcda file appears. Patched: covtest.gcda (232 bytes) is
+   written when the program ends, and gcov (run on Linux with the cross
+   gcov of the same GCC, the file is portable) reads it and prints the real
+   counts: "function collatz called 100 returned 100% blocks executed 100%",
+   3242 executions of the loop test, the branch percentages, and #####
+   on the one line that never ran.
+
+3. The same with -fprofile-generate: pgotest.gcda (168 bytes) is written, and
+   -fprofile-use accepts it (no missing-profile warning) and compiles code
+   that differs from the build without the profile.
+
+   (A program built on Linux names the .gcda file with the absolute Linux
+   path of the object file; on RISC OS GCOV_PREFIX=. and GCOV_PREFIX_STRIP=n
+   bring it to the current directory. That is libgcov's business and not part
+   of this report. The libgcov I used is the one of GCC 16.2.0, built for
+   the target with the C library available.)
+
+4. The same with the native GCC 16.2.0 of my port, running on the machine: gcc --coverage -c, then the link, then the run. The program leaves cov.gcda when it ends, and the
+   native gcov (built from the same GCC) reads it and prints "Lines executed:80.00% of 15" (12 of the 15 lines of the small test program run: right). I did not run this
+   native test on the unpatched library; item 2 is the control.
+
+5. What the patch does not touch and I did not test: the program's .fini
+   section (_fini, DT_FINI); the .fini_array of shared libraries (the loader
+   runs those, I did not look at it); programs that end with _exit (), abort
+   () or a fatal signal (no handler runs there in glibc either); and a vfork
+   child that ends without exec. A destructor that itself calls exit () was
+   not tested. The patched code is only reached by EABI programs: crt0.o of
+   the APCS tool chains does not pass the words, and the call is inside
+   #ifdef __ARM_EABI__ in the assembler file.
+
+The regression suites of my port, run on the machine with the patched library (fix level 14, together with the other patches of this bundle that are in my port's library) and
+the native compilers of my port: the library checks (48 checks of the C library, the mmap guard, the process-exit tests, the six heap stages), the thread tests in C, C++ and
+Fortran, the programs that use the shared libstdc++ and libgfortran, the main stack sizes and the heap fallback, and the native compile, make and Fortran tests. All 50 summary
+lines have the same counts as in the run on the library of the previous release (fix level 13), and none fails; four more summary lines (finitest, rlimtest twice, semtest) are the
+programs of reports 22 - 24 and pass.
+Because every program now runs the .fini_array at exit, this also shows that the compilers and the test programs, which never ran it before, end as they did.
+
+The patch
+---------
+ * stdlib/atexit.c: __register_fini_array (void (**start) (void),
+   void (**end) (void)): does nothing for an empty or absent array, otherwise
+   remembers the bounds and registers __run_fini_array with atexit ().
+   __run_fini_array calls the entries from the end to the start (it skips
+   NULL and -1 entries, which the linker may leave).
+ * sys/_syslib.s: in __main (EABI only), before "Executable Initialisation"
+   (before _init and the .init_array functions): load the two words from the
+   crt0 block and call __register_fini_array; the FIXME comment is replaced
+   by a pointer to it.
+ * vscript: __register_fini_array is a local symbol, as the other private
+   functions of the library.
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* stdlib/atexit.c (__register_fini_array, __run_fini_array): New.
+	* sys/_syslib.s (__main): Register the program's .fini_array
+	functions with atexit () before the constructors run.
+	* vscript: Add __register_fini_array.
+
+What I did not do
+-----------------
+I did not look at the history of the file in svn, nor search the mailing list
+or the bug tracker, so I do not know whether the problem is known or since when
+it is there. I did not look at how the dynamic loader treats the .fini_array of
+shared libraries, and I did not try an APCS-32 build. The order of the
+.fini_array functions relative to the atexit () functions is the one of
+glibc; if you want another, only the place of the call in __main changes.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

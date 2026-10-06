@@ -3,18 +3,18 @@
 You only need this to change the tool chain or to rebuild it. To **use** it, install the [packages](INSTALL-RISCOS.md) or the [cross compiler tarball](CROSS-COMPILER.md).
 
 > **Status of these instructions.** They are the scripts that built the released binaries, on one machine (Ubuntu 26.04, host GCC 15.2, 22 cores) in September and October 2026.
-> Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused).
-> That run found several scripts that had only worked in the author's work area; they are fixed. Compared with what was released, the rebuild gave:
+> Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). All eight steps ran without an error, in 33 minutes.
+> The directory had a name as long as the home directory the release was built in, so every file could be compared with the released one byte for byte after replacing the one path by the other. The rebuild gave:
 >
 > | Step | Result |
 > |---|---|
-> | 4. the cross compiler | [`cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) passes. The test programs of [TESTING.md](TESTING.md) compile to **byte-identical object files** (61 of 64; the other three differ only in an install path that C++ header strings carry, and have identical machine code). Linked programs differ from the released ones only in debug information and in the source file names that the static libraries carry. |
-> | 5. UnixLib | `libunixlib.so` and `libm.so` are identical in every loadable section (only the debug information differs). |
-> | 6. the runtime packages | C: as step 5. Fortran: identical code (only source file names differ). C++: 198 of the 199 objects of libstdc++ are identical; in the released library the 11 small functions of `std::ios_base::failure` have no stack probe (their object was compiled before probing became the default), in the rebuild they have it. |
-> | 7. the native compiler and the `Gcc16` package | rebuilt in the directory the release was built in (a mount namespace made the fresh copy appear under that path) with the original cross compiler: **1072 of the 1102 files of the package are byte-identical**, among them `f951`, `lto1`, `lto-wrapper` and `make`. The nine static libraries have identical members (only the dates in the `ar` headers differ). The rest differ for known reasons: `cc1` and `cc1plus` in 16 bytes each (the checksum that GCC builds into its compilers); `collect2` and the four drivers in the path of the `no-plugin-ld` helper that configure writes into them (the release used an earlier location of that file); and the 14 binutils programs, which in the release lack the 8 MB stack request (`__stack_size`) that `data/riscos-da-big.c` now gives them (they were built before it was added, so the released binutils have UnixLib's default 1 MB stack; `make` and the compilers have the bigger ones). Built in another directory the same files differ in the source paths they contain |
-> | 8. the Linux tarball | the unpacked tarball passes `cross-smoke.sh` (29 checks) with the directory it was built in hidden, and the programs it makes are byte-identical to those of the cross compiler of the first build. **The tarball on the releases page is this rebuilt one.** |
+> | 4. the cross compiler | [`cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) passes. The test programs of [TESTING.md](TESTING.md) and the smoke test were compiled with the cross compiler of the first build and with the rebuilt one (both at the same path): **160 of the 163 files are byte-identical** (73 objects, 6 linked programs, the compiler messages, the Fortran module files). The other three are outputs of `--coverage` and `-fprofile-generate`, which carry a time stamp (two runs of the same compiler differ in them as well). |
+> | 5. UnixLib | `libunixlib.so` and `libm.so` are identical in every loadable section. Only debug information differs (the released library was built in a directory with another name). |
+> | 6. the runtime packages | C: as step 5. Fortran: identical after the path change. C++: the same, except for 11 small functions (the constructors and destructors of `std::ios_base::failure` and `__throw_ios_failure`): the released library (16.2.0-5) was built before stack probing became the default and lacks the 12-byte probe in them. |
+> | 7. the native compiler and the `Gcc16` package | **1070 of the 1103 files of the package are byte-identical** (of `Gcc16SelfTest` all 21), and 22 more are identical after the path change (the four drivers, `collect2`, `f951`, `lto1`, `lto-wrapper`, `gcov` and the 13 binutils programs). The nine static libraries have identical members (only the dates in the `ar` headers differ). `cc1` and `cc1plus` differ in 16 bytes each: the checksum that GCC builds into its compilers is computed over objects that contain the path. |
+> | 8. the Linux tarball | the unpacked tarball passes `cross-smoke.sh` (33 checks, among them four that compare its programs with those of step 4) and, with the directories it was built in hidden, the 29 checks that do not compare. **The tarball on the releases page is this rebuilt one.** Compared with the tarball of the first build (2547 files and 11 links): 2490 are byte-identical and 6 more after the path change; of the other 62, 37 differ only in debug information (the order of the strings follows a hash of the path) and the build-id; 22 are binutils programs, which differ in the build-id and in 13 line numbers of assertions in `bfd/opncls.c` (the first build was made before `04-bfd-riscos-elf-filetype.patch` existed: its 24 lines are inside `#ifdef __riscos__`, so Linux programs behave the same); `cc1` and `cc1plus` differ in the build-id and the checksum, and `BUILD-INFO.txt` in the time. |
 >
-> Every binary contains the path it was built in (assertion messages, debug information), so a rebuild in another directory differs in those strings; the checks above allow for that, and the native packages were compared in the directory they were built in (below).
+> Every binary contains the path it was built in (assertion messages, debug information), so a rebuild in a directory with a name of another length differs in those strings; the checks above allow for that.
 > The packages for RISC OS on the releases page are the ones that were tested on the Raspberry Pi; they were not replaced by the rebuilt ones. The least reproducible part is step 1 (GCCSDK itself).
 
 ## What gets built
@@ -102,7 +102,7 @@ $R/build-unixlib.sh                                              # UnixLib 5.0 f
 ## 6. The runtime packages
 
 ```bash
-PKG_OUT=~/gccsdk-next/release python3 $R/make-c16-package.py 11 ~/gccsdk-next/unixlib/build               # SharedLibs-C-armeabihf 16.2.0-11 (needs GCCSDK's 10.2.0-1 package as the base)
+PKG_OUT=~/gccsdk-next/release python3 $R/make-c16-package.py 12 ~/gccsdk-next/unixlib/build               # SharedLibs-C-armeabihf 16.2.0-12 (needs GCCSDK's 10.2.0-1 package as the base)
 PKG_OUT=~/gccsdk-next/release python3 $R/make-cxx-package.py 5 ~/gccsdk-next/build-f/arm-riscos-gnueabihf/libstdc++-v3/src/.libs/libstdc++.so.6.0.36
 PKG_OUT=~/gccsdk-next/release python3 $R/make-fortran-package.py 2
 ```
@@ -117,10 +117,11 @@ $R/prepare-native-src.sh                                         # a fresh tree 
 $R/build-native-lto.sh                                           # cc1, cc1plus, f951, lto1, lto-wrapper, collect2 ... compiled for RISC OS with LTO support (-> native-stage3-lto)
 # without LTO:  $R/build-native-all.sh O2
 B=~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts
-$B/build-binutils-native.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils-native ~/gccsdk-next/binutils-native-install2   # as, ld, ar, nm ... for RISC OS
+$B/build-binutils-native.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils-native ~/gccsdk-next/binutils-native-install   # as, ld, ar, nm ... for RISC OS (8 MB stacks)
 ~/gccsdk-next/recipe/make-4.4.1-riscos/scripts/build-make.sh                                                                           # GNU make 4.4.1 for RISC OS -> make-riscos/install/bin/make
-$R/make-native-tree.sh ~/gccsdk-next/native-tree ~/gccsdk-next/native-stage3-lto ~/gccsdk-next/binutils-native-install2 ~/gccsdk-next/make-riscos/install/bin/make
-PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 11                                           # Gcc16_16.2.0-11_arm.zip
+$R/make-native-tree.sh ~/gccsdk-next/native-tree ~/gccsdk-next/native-stage3-lto ~/gccsdk-next/binutils-native-install ~/gccsdk-next/make-riscos/install/bin/make
+PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 12                                           # Gcc16_16.2.0-12_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 12                                                                    # Gcc16SelfTest_16.2.0-12_arm.zip
 ```
 
 `make-native-tree.sh` and `build-native-lto.sh` take their stage directories as arguments or defaults (read their headers); the LTO build uses `recipe/gcc-16.2.0-riscos/data/no-plugin-ld` so that configure accepts a native `ld` without plugin support.
@@ -130,15 +131,15 @@ What the native build needed, each point learned on the hardware, is in `recipe/
 ## 8. The Linux tarball and the release
 
 ```bash
-$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-11 <a README file>
+$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-12 <a README file>
 ```
 
-It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-11-x86_64-linux.tar.xz`. Check the result the way the release was checked:
+It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-12-x86_64-linux.tar.xz`. Check the result the way the release was checked:
 
 ```bash
 cd ~/gccsdk-next/release
-tar -xf riscos-gcc16-cross-16.2.0-11-x86_64-linux.tar.xz
-~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-11-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
+tar -xf riscos-gcc16-cross-16.2.0-12-x86_64-linux.tar.xz
+~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-12-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
 ```
 
 ## Changing something

@@ -21,7 +21,7 @@ need recv      'bic[[:space:]]+[a-z0-9]+, r[0-9]+, #4080'  "touches the pages of
 need pthread_once 'bl|b' "pthread_once present"
 # 16.2.0-6 (fix level 8): sysconf answers 8; the main stack of an EABI program is allocated in a loop that retries with half the size (stack_try); the heap dynamic area is created
 # in a loop that retries with half the maximum size (da_try: the X form of OS_DynamicArea, a retry on error)
-need sysconf   'mov[[:space:]]+r0, #13([[:space:]]|$)'     "answers fix level 13"
+need sysconf   'mov[[:space:]]+r0, #14([[:space:]]|$)'     "answers fix level 14"
 need stack_try 'svc[[:space:]]+0x00079d02'                  "asks ARMEABISupport for the stack (StackOp)"
 need stack_try 'lsr[[:space:]]+r[0-9]+, r[0-9]+, #1$'       "retries with half the stack size when there is no room"
 need da_try    'svc[[:space:]]+0x00020066'                  "creates the heap dynamic area with the X form of OS_DynamicArea"
@@ -95,4 +95,14 @@ read -r addr size <<< "$("$NM" -S "$LIB" | awk '$4 == "vfscanf" && $3 == "T" {pr
 if [ -z "$addr" ]; then echo "  FAIL vfscanf: symbol not found"; fail=1
 elif [ $(( 0x$size )) -lt $(( 0xf00 )) ]; then echo "  FAIL vfscanf: only $(( 0x$size )) bytes (0xe08 = 3592 is the unpatched one): the long long scanf patch is not in"; fail=1
 else echo "  ok   vfscanf: $(( 0x$size )) bytes (the unpatched one is 3592): the long long conversions are in"; fi
+# 16.2.0-12 (fix level 14): the .fini_array of the program is run at exit (__main registers a function with atexit before the constructors run), getrlimit (RLIMIT_STACK) reports the size of the
+# EABI main stack (__main stores it in __eabi_main_stack_size), POSIX semaphores wait on a condition variable and sem_timedwait works (it was a 24 byte ENOSYS stub).
+if "$OD" -d --no-show-raw-insn "$LIB" | grep -q -E 'bl[[:space:]]+[0-9a-f]+ <__register_fini_array>'; then echo "  ok   __main: registers the runner of the .fini_array functions with atexit () before the constructors run"
+else echo "  FAIL __main: nothing calls __register_fini_array: the .fini_array functions of a program would not run"; fail=1; fi
+need __register_fini_array 'bx(eq|ne)?[[:space:]]+lr'            "does nothing for an empty .fini_array"
+if "$NM" "$LIB" | grep -q " __eabi_main_stack_size$"; then echo "  ok   __eabi_main_stack_size exists (getrlimit (RLIMIT_STACK) reports the EABI main stack)"
+else echo "  FAIL __eabi_main_stack_size is missing"; fail=1; fi
+read -r semsize <<< "$("$NM" -S "$LIB" | awk '$4 == "sem_timedwait" {print $2; exit}')"
+if [ -n "$semsize" ] && [ $(( 0x$semsize )) -gt 64 ]; then echo "  ok   sem_timedwait: $(( 0x$semsize )) bytes (a real wait; the old stub was 24 bytes of ENOSYS)"
+else echo "  FAIL sem_timedwait is missing or still the ENOSYS stub (${semsize:-no symbol})"; fail=1; fi
 [ $fail = 0 ] && echo "libunixlib check: OK" || { echo "libunixlib check: FAILED"; exit 1; }

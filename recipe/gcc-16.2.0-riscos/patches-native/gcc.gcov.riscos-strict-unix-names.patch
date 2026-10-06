@@ -1,0 +1,16 @@
+--- a/gcc/gcov.cc
++++ b/gcc/gcov.cc
+@@ -55,6 +55,13 @@
+ 
+ #include "md5.h"
+ 
++#ifdef __riscos__
++/* UnixLib decides for itself whether a relative file name is a Unix name or a RISC OS name, and takes "foo.c.gcov" (the file that gcov writes for foo.c) for the RISC OS
++   path foo.c.gcov: the file "gcov" in the directory "c" in the directory "foo", which does not exist.  gcov only has Unix names: say so.  */
++#include <unixlib/local.h>
++int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;
++#endif
++
+ using namespace std;
+ 
+ #define IN_GCOV 1

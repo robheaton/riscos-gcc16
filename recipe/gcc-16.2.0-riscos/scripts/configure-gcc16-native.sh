@@ -38,7 +38,7 @@ mkdir -p "$B"; cd "$B"
   --disable-libssp --disable-libgomp --disable-libitm --disable-libatomic \
   --disable-libsanitizer --disable-libvtv --disable-libcc1 --disable-multilib \
   --with-pkgversion='GCCSDK GCC 16.2.0 (experimental forward-port)' \
-  --with-bugurl=http://gccsdk.riscos.info/ \
+  --with-bugurl=https://github.com/robheaton/riscos-gcc16/issues \
   --with-abi=aapcs-linux --with-float=hard --with-fpu=vfpv3 --with-arch=armv7-a \
   ${EXTRA_CONFIGURE_ARGS:-} \
   CFLAGS="${HOST_OPT:--O2}" CXXFLAGS="${HOST_OPT:--O2}" LDFLAGS="-L$NOLIBM $B/riscos-da.o -static-libstdc++ -static-libgcc -Wl,--allow-shlib-undefined" \

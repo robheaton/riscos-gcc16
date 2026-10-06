@@ -1,0 +1,45 @@
+/* covcheck -- reads cov.c.gcov, the annotated source that gcov made from the counts of the program cov, and checks three of its lines:
+   the body of the loop in work () ran 700 times (7 calls of 100 turns), the call of work () ran 7 times, and never () was not called (the line is marked #####).
+   It prints what it found and returns 0 when all three are right (2 if the file is not there). */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef __riscos__
+/* UnixLib guesses whether a relative file name is a Unix or a RISC OS name, and takes "cov.c.gcov" for the RISC OS path cov.c.gcov (the file "gcov" in the directories "cov" and "c").
+   gcov wrote the Unix name (its own source says so: __riscosify_control), and so must this program read it: Unix names only. */
+#include <unixlib/local.h>
+int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;
+#endif
+
+int main (void)
+{
+  FILE *f = fopen ("cov.c.gcov", "r");
+  char line[512];
+  int loop = -2, call = -2, dead = -2;      /* -2: line not found, -1: marked #####, else the count */
+  if (!f)
+    {
+      puts ("covcheck: cov.c.gcov cannot be opened (gcov did not write it)");
+      return 2;
+    }
+  while (fgets (line, sizeof line, f))
+    {
+      char *c1 = strchr (line, ':');
+      char *c2 = c1 ? strchr (c1 + 1, ':') : NULL;
+      int n;
+      if (!c2)
+        continue;
+      *c1 = 0;
+      n = strstr (line, "#####") ? -1 : (int) strtol (line, NULL, 10);
+      if (strstr (c2 + 1, "s += i;"))
+        loop = n;
+      else if (strstr (c2 + 1, "t += work (100);"))
+        call = n;
+      else if (strstr (c2 + 1, "return 42;"))
+        dead = n;
+    }
+  fclose (f);
+  printf ("covcheck: the loop body ran %d times (expected 700), work () was called %d times (expected 7), never () %s\n",
+          loop, call, dead == -1 ? "was not called (expected)" : "WAS COUNTED (wrong)");
+  return (loop == 700 && call == 7 && dead == -1) ? 0 : 1;
+}

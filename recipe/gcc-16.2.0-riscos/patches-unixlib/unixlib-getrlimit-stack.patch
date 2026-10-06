@@ -1,0 +1,64 @@
+--- a/libunixlib/sys/_syslib.s
++++ b/libunixlib/sys/_syslib.s
+@@ -272,6 +272,11 @@
+ 	LDR	a3, [fp, #MEM_APPSPACE_HIMEM]
+ 	SUB	a3, a3, #4
+ 	STR	a3, [fp, #MEM_STACK]	@ __ul_memory.stack = bottom of stack
++	@ Remember the size of the main stack (getrlimit (RLIMIT_STACK) reports it): v2 = the pages that StackOp gave us
++	LDR	a1, ___eabi_main_stack_size
++ PICEQ "LDR	a1, [v4, a1]"
++	MOV	a2, v2, LSL #12
++	STR	a2, [a1, #0]		@ __eabi_main_stack_size, in bytes
+ #endif
+ 
+ 	MOV	v1, ip		@ Temporary variable
+@@ -765,6 +770,9 @@
+ ___stack_size:
+ 	WORD	__stack_size
+ 	DECLARE_OBJECT ___stack_size
++___eabi_main_stack_size:
++	WORD	__eabi_main_stack_size
++	DECLARE_OBJECT ___eabi_main_stack_size
+ 
+ 	@ Can only be used to report fatal errors under certain conditions.
+ 	@ Be sure that at this point the UnixLib environment handlers
+--- a/libunixlib/vscript
++++ b/libunixlib/vscript
+@@ -18,6 +18,7 @@
+      __dsp*;
+      __dynamic_area_exit;
+      __dynamic_area_refcount;
++     __eabi_main_stack_size;
+      __env_read;
+      __env_riscos;
+      __env_unixlib;
+--- a/libunixlib/resource/initialise.c
++++ b/libunixlib/resource/initialise.c
+@@ -10,6 +10,10 @@
+ 
+ #include <internal/os.h>
+ #include <internal/unix.h>
++
++/* The size in bytes of the main stack of an EABI program, set by __main (sys/_syslib.s) when ARMEABISupport has given it its stack; 0 when the program has
++   no such stack.  */
++unsigned int __eabi_main_stack_size = 0;
+ 
+ /* Initialise the resource limits to calculated initial values.
+    Best guesses are taken where information is hard to obtain. :-(  */
+@@ -64,8 +68,14 @@
+ 
+ 
+   /* The maximum stack size for the process. As the stack is extensible then
+-     it can grow up to the maximum wimpslot size */
+-  p->limit[RLIMIT_STACK].rlim_max = max_wimpslot;
++     it can grow up to the maximum wimpslot size.  The main stack of an EABI
++     program is NOT extensible: ARMEABISupport gave it a fixed size (1MB unless
++     the program defines __stack_size), so that is the limit that programs
++     must be told (they size recursion and thread stacks by it).  */
++  if (__eabi_main_stack_size != 0)
++    p->limit[RLIMIT_STACK].rlim_max = __eabi_main_stack_size;
++  else
++    p->limit[RLIMIT_STACK].rlim_max = max_wimpslot;
+   p->limit[RLIMIT_STACK].rlim_cur = p->limit[RLIMIT_STACK].rlim_max;
+ 
+ 

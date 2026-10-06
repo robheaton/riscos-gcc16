@@ -1,0 +1,41 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: Three more UnixLib fixes, found while making gcov and the semaphore
+         calls work (reports follow, one per mail)
+Attach:  none
+
+Hello,
+
+This is the last batch from the same work as my earlier mails. Getting gcov and
+profile-guided optimisation to work for programs on RISC OS (GCC 16.2.0 on a
+Raspberry Pi Compute Module 4, RISC OS 5.30) turned up three more problems in
+UnixLib. Each is against the trunk r7800 sources, and each can be taken on its
+own:
+
+  22  The .fini_array of an EABI program is never run (there is a FIXME in
+      __main).  C destructors do not run, and a program built with --coverage
+      or -fprofile-generate never writes its .gcda file, because the exit
+      function of libgcov is a destructor that GCC adds to every instrumented
+      object.  The patch registers one function with atexit () that runs the
+      array in glibc's order.  Measured on the machine, unpatched and patched.
+  23  getrlimit (RLIMIT_STACK) tells an EABI program that its stack is the
+      largest possible Wimp slot (512 MB); its main stack is 1 MB unless it
+      asks for more, and cannot grow.  A recursion sized by the limit overflows
+      the real stack.  The patch reports the size that __main got.  Measured on
+      the machine.
+  24  The POSIX semaphores: sem_timedwait () is ENOSYS (and not declared in
+      <semaphore.h>), sem_wait () polls with pthread_yield () and leaks a queue
+      entry per call.  The patch rewrites them on a mutex and a condition
+      variable.  Measured on the machine, unpatched and patched.
+
+Each mail says what was measured on the machine and what was only read from the
+code, and where it did not run at all. I can run a test build on the machine if
+that helps.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Thanks,
+
+Rob Heaton

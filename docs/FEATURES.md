@@ -1,6 +1,6 @@
 # What is included
 
-Version 16.2.0-11. "Hardware" means the test was run on the author's Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30; "host" means it was checked on the Linux build machine only.
+Version 16.2.0-12. "Hardware" means the test was run on the author's Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30; "host" means it was checked on the Linux build machine only.
 See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 
 ## Components
@@ -9,8 +9,9 @@ See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 |---|---|---|---|
 | GCC: `gcc`, `g++`, `cpp`, `gfortran` | 16.2.0 | yes | yes |
 | binutils: `as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit` | 2.45.1 | yes | yes (with the `arm-riscos-gnueabihf-` prefix) |
+| `gcov` (coverage reports), `gcov-tool`, `gcov-dump` | 16.2.0 | `gcov` | yes (`arm-riscos-gnueabihf-gcov`: reads the `.gcda` files that RISC OS programs write) |
 | GNU make | 4.4.1 | yes | (use the host's) |
-| UnixLib (C library) | 5.0 from GCCSDK r7800, rebuilt with GCC 16, fix level 13 | the runtime package | the runtime package, and its headers inside the tool chain |
+| UnixLib (C library) | 5.0 from GCCSDK r7800, rebuilt with GCC 16, fix level 14 | the runtime package | the runtime package, and its headers inside the tool chain |
 | libstdc++ | 6.0.36 (GCC 16.2.0) | linked statically | dynamic or static |
 | libgfortran | 5.0.0 (GCC 16.2.0) | linked statically | dynamic or static |
 | libgcc, libgcc_s | GCC 16.2.0 (static), 10.2.0 (`libgcc_s.so.1` in the runtime package) | yes | yes |
@@ -47,6 +48,17 @@ See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 | `-flto=N`, `-flto=auto` | accepted | accepted; the jobs run one after the other |
 | Tested | hardware: an LTO matrix of the C and C++ test programs | hardware: C, C++ and Fortran of two files, `-g -flto`, an archive in the link, `rotest` and `cxxtest` (the whole programs), zlib 1.3.1 (16 files in one link), and the stock `lto1` against the fixed runtime |
 
+## Coverage and profile-guided optimisation
+
+| | Cross | Native |
+|---|---|---|
+| `--coverage` (`-fprofile-arcs -ftest-coverage`): the program writes `name.gcda` when it ends; `gcov` reads it with `name.gcno` | yes: `arm-riscos-gnueabihf-gcov` on Linux reads the `.gcda` that the RISC OS program wrote | yes: `gcov` is part of the package |
+| `-fprofile-generate`, then `-fprofile-use` (profile-guided optimisation) | yes | yes |
+| Tested | hardware: programs built on Linux wrote their `.gcda` files on the Pi; the Linux `gcov` read one (real counts, branch percentages, the unexecuted line marked) and `-fprofile-use` on Linux accepted the profile of the other; host: the link of both flows (`cross-smoke.sh`) | hardware: the self-test compiles with `--coverage -c`, links and runs a program (it writes `cov.gcda`), runs `gcov cov.c` (80.00% of 15 lines) and checks every line count of the annotated source; then `-fprofile-generate`, a run, and `-fprofile-use -Werror=missing-profile` (the profile is found) |
+
+The counts are written by an exit function of libgcov, which runs from the program's `.fini_array`: that needs the runtime 16.2.0-12 (earlier runtimes never ran the `.fini_array`). A program that ends with `_exit`, `abort` or a crash writes nothing, as with glibc.
+`gprof` (`-pg`) does not work: see [KNOWN-ISSUES.md](KNOWN-ISSUES.md). How to use it: [USING-NATIVE.md](USING-NATIVE.md#coverage-and-profile-guided-optimisation) and [CROSS-COMPILER.md](CROSS-COMPILER.md#coverage-and-profile-guided-optimisation).
+
 ## Native tools
 
 | Feature | Notes | Tested |
@@ -58,8 +70,8 @@ See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 
 ## The runtime (UnixLib) fixes
 
-13 fix levels, found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
-`vfork` + `exec` memory, the DDEUtils interaction, `scanf` with `long long`. The list, with symptoms and the matching upstream bug report, is in [RUNTIME.md](RUNTIME.md).
+14 fix levels, found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
+`vfork` + `exec` memory, the DDEUtils interaction, `scanf` with `long long`, the `.fini_array` of programs (destructors, the exit hook of libgcov), `getrlimit (RLIMIT_STACK)` and POSIX semaphores. The list, with symptoms and the matching upstream bug report, is in [RUNTIME.md](RUNTIME.md).
 
 ## Experimental: modules
 
@@ -68,5 +80,5 @@ Hardware: a module with SWIs, a service call handler and static data, and a modu
 
 ## Not included
 
-OpenMP, the sanitizers, `gcov` and profile-guided optimisation, `gprof` (builds, untested), wide-character iostreams (`std::wcout`), `std::stacktrace`, `REAL(16)` in Fortran, multi-image coarrays, a debugger, OSLib and other RISC OS libraries,
+OpenMP, the sanitizers, `gprof` and `-pg` (the program links and runs but writes no `gmon.out`), wide-character iostreams (`std::wcout`), `std::stacktrace`, `REAL(16)` in Fortran, multi-image coarrays, a debugger, OSLib and other RISC OS libraries,
 and any machine other than the one it was tested on. Details and workarounds: [KNOWN-ISSUES.md](KNOWN-ISSUES.md).

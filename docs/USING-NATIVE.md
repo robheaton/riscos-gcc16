@@ -31,6 +31,9 @@ The tools use Unix-style names on the command line and UnixLib translates them: 
 So source files live in `c`, `cc`, `f90` and `h` directories, objects in `o`, and `#include "util.h"` finds `h.util`. Names with other extensions (`libutil.a`, `Makefile`) and names without one (`hello`) are used as they are.
 The linker gives a program the file type **ELF (&E1F)**: run it by typing its name (it needs the `SharedLibs-C-armeabihf` runtime).
 
+**A trap in UnixLib's guess.** For a *relative* name UnixLib has to guess whether it is a Unix name or a RISC OS name, and a name whose middle part is one of those suffixes, such as `prog.c.gcov`, is taken for the RISC OS path `prog.c.gcov`: the file `gcov` in the directory `c` in the directory `prog`. The tools of this package only use Unix names and say so (`gcov` writes `prog.c.gcov` as the file `prog/c/gcov`).
+A program of your own that opens such a file must do the same: `#include <unixlib/local.h>` and define `int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;`, which makes every relative name of that program a Unix name.
+
 ## Compiling
 
 ```
@@ -84,6 +87,33 @@ The native linker has no plugin support, so this goes through `collect2` and `lt
 * objects inside an **archive** (`libfoo.a` made with `ar`) are **not** optimised across modules: give the object files to the link directly;
 * the optimisation jobs run one after the other (`-flto=N`, `-flto=auto` and a make job server are accepted and do the same as `-flto`);
 * the link needs more memory and time than a plain link (`lto1` is as big as `cc1`).
+
+## Coverage and profile-guided optimisation
+
+```
+gcc -O0 --coverage -c prog.c          compile with instrumentation: o.prog, and the notes file prog.gcno
+gcc --coverage -o prog prog.o         link (libgcov is added)
+prog                                  run it: when it ends it writes, or adds its counts to, prog.gcda
+gcov prog.c                           prints the percentage of the lines that ran and writes the annotated source prog.c.gcov
+```
+
+`gcov -b prog.c` adds the branches, `-c` the counts instead of percentages, `-f` the functions. Run the program as often as you like (also with different input): every run adds to `prog.gcda`; delete the file to start again.
+Compile with `-c` and link in a second step, as above: compiling and linking in one command (`gcc --coverage -o prog prog.c`) makes GCC name the data files after the output *and* the source, `prog-prog.gcno` and `prog-prog.gcda`.
+UnixLib turns the names into RISC OS files as usual: `prog.gcno` is the file `prog/gcno`, `prog.gcda` is `prog/gcda` and the annotated source `prog.c.gcov` is `prog/c/gcov` (see the note on file names above).
+
+Profile-guided optimisation is the same idea: build with `-fprofile-generate`, run the program on typical input, then build again with `-fprofile-use`, which reads the profile that the run left next to the object file:
+
+```
+gcc -O2 -fprofile-generate -c prog.c
+gcc -fprofile-generate -o prog prog.o
+prog                                  typical input: writes prog.gcda
+gcc -O2 -fprofile-use -Werror=missing-profile -c prog.c       (the error makes sure that the profile was found)
+gcc -o prog prog.o
+```
+
+* This needs the runtime `SharedLibs-C-armeabihf` 16.2.0-12 or later: the counts are written by an exit function that runs from the program's `.fini_array`, which earlier runtimes never ran. A program that ends with `_exit`, `abort` or a crash writes nothing.
+* The program has the absolute name of its `.gcda` file built in (the directory the object file was built in), so the counts go there wherever you run it from; `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` change that, as [CROSS-COMPILER.md](CROSS-COMPILER.md#coverage-and-profile-guided-optimisation) explains.
+* `gprof` (`-pg`) is not available: the program links and runs but writes no `gmon.out`.
 
 ## Throwback
 

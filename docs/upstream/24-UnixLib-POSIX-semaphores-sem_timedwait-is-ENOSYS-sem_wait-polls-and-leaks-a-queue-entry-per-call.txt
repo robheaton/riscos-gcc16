@@ -1,0 +1,135 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: POSIX semaphores: sem_timedwait () is ENOSYS (and not
+         declared), sem_wait () polls and leaks a queue entry per call
+Attach:  patches/unixlib-semaphores.patch (378 lines, two files)
+         repro/semaphores/semtest.c
+
+Summary
+-------
+libunixlib/pthread/sem.c is the NetBSD libpthread code, with a queue of the
+waiting threads that is never filled:
+
+  * sem_wait () allocates a struct pthread_queue_t with malloc () at every
+    call, and the entry is only ever put on the list in a branch that runs
+    when usem_waiters is not NULL, which it never is. So the entry is not
+    freed on any path: every sem_wait () leaks one. A waiting thread does not
+    sleep either: it loops on pthread_yield () until the count is not zero,
+    which takes its whole share of the time of a thread that has nothing to
+    do.
+  * sem_post () looks at the (always empty) queue, and then calls
+    pthread_yield () on every post.
+  * sem_timedwait () is  return __set_errno (ENOSYS);  and it is not declared
+    in <semaphore.h>, so a program that calls it does not compile with GCC 14
+    or later (implicit declaration); older compilers only warn, and the call
+    then fails with ENOSYS at run time.
+  * sem_destroy () refuses with EBUSY when usem_waiters is not NULL, which it
+    never is: a semaphore with waiting threads is destroyed.
+
+The patch keeps sem_t as it is (the usem_waiters member now points to a
+malloc'd state: a mutex and a condition variable) and rewrites the functions on
+those two: sem_wait () and sem_timedwait () wait on the condition variable
+(pthread_cond_wait / pthread_cond_timedwait; the threads of UnixLib are
+scheduled by the library, and a thread that waits on a condition variable is
+not run again until it is signalled or its deadline has passed), sem_post ()
+signals it, sem_trywait () and sem_getvalue () take the mutex, sem_destroy ()
+frees the state and says EBUSY while a thread waits (the condition variable's
+waiting list is not empty). <semaphore.h> gets the declaration of
+sem_timedwait ().
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+SOManager 3.04, SharedUnixLibrary 1.16, UnixLib 5.0 from trunk r7800 built with
+GCC 16.2.0 (libunixlib 16.2.0-11 of my port for the unpatched runs: sem.c and
+semaphore.h in it are the files of trunk, unchanged). The same code is in
+GCCSDK 10.2.0. The library of my port also has the patch of report 11
+(pthread_cond_timedwait with a correct deadline), and the timings below
+depend on it: sem_timedwait () is only as exact as pthread_cond_timedwait ()
+(without that patch a timed wait overruns by up to a second, as report 11
+says).
+
+What I measured, and what I did not
+-----------------------------------
+On the machine, with semtest (repro/semaphores), unpatched and patched: 20
+checks in seven parts, and the same program built for a Linux host with glibc
+(18 checks: the two that are marked  __riscos__  are not compiled there: the
+EBUSY of sem_destroy () and the leak, which glibc does not have; all 18 pass).
+
+Unpatched: 11 of 20 checks fail.
+
+  3. sem_timedwait: all six checks fail. The call returns at once (the program
+     prints "timed out after 0 ms, asked for 300"), because it is ENOSYS.
+  6. ping-pong between two threads with two semaphores, 1000 round trips: it
+     uses sem_timedwait for the answer, so the loop ends at the first round
+     ("0 round trips in 0 ms").
+  7. leak: 100000 calls of sem_wait () and sem_post () on a semaphore that is
+     available make the heap grow by 1597440 bytes (15.97 bytes per call: the
+     8 byte entry in the smallest chunk of malloc ()).
+  4. "two posts wake exactly two of four waiting threads", and
+  5. "sem_destroy () while a thread waits gives EBUSY" and "sem_destroy ()
+     afterwards" fail as well. I did not separate their cause from the
+     failures before them: the parts run one after the other on the same
+     semaphore, and the failed timed waits of part 3 leave posts that nobody
+     took, so the counts at the start of parts 4 and 5 are not the ones the
+     checks assume. (The EBUSY of sem_destroy () is also what I read in the
+     code: it never happens.)
+
+Patched: 20 checks, 0 failed. The numbers it prints: "timed out after 310 ms,
+asked for 300"; a post after 100 ms ends a wait that would last 3 s, with
+success, after 100 ms; 1000 round trips in 0 ms (the threads of UnixLib are
+cooperative, a post and the answer need no wait); and "the heap grew by 0
+bytes over 100000 sem_wait calls".
+
+What I did not test: thread cancellation while a thread waits on a semaphore
+(the old sem_wait () looked at self->cancelpending in its polling loop and
+called pthread_exit (); the new one keeps the PTHREAD_SAFE_CANCELLATION line at
+the start and does not look at it again: what happens to a thread that is
+cancelled while it waits is whatever pthread_cond_wait () does, and I did not
+read that code or run it); signals; sem_open () and friends; process-shared semaphores
+(sem_init () with pshared != 0 is still ENOSYS, as before); and a SEM_VALUE_MAX
+overflow (sem_post () now returns EOVERFLOW there, from the code only).
+
+The regression suites of my port, run on the machine with the patched library (fix level 14, together with the other patches of this bundle that are in my port's library) and
+the native compilers of my port: the library checks (48 checks of the C library, the mmap guard, the process-exit tests, the six heap stages), the thread tests in C, C++ and
+Fortran, the programs that use the shared libstdc++ and libgfortran, the main stack sizes and the heap fallback, and the native compile, make and Fortran tests. All 50 summary
+lines have the same counts as in the run on the library of the previous release (fix level 13), and none fails; four more summary lines (finitest, rlimtest twice, semtest) are the
+programs of reports 22 - 24 and pass.
+
+The patch
+---------
+ * pthread/sem.c: struct sem_state { pthread_mutex_t lock; pthread_cond_t
+   cond; }, allocated by sem_init () and hung on usem_waiters (so the size
+   and the other members of sem_t, the NetBSD layout, are unchanged);
+   sem_check_validity () also checks that the state is there; a static helper
+   sem_wait_until (sem, abstime) does the waiting for sem_wait () and
+   sem_timedwait (): it loops on pthread_cond_wait / pthread_cond_timedwait
+   while the count is zero; when the deadline has passed but the semaphore
+   has been posted at the same time, the semaphore is taken (the wait returns
+   0), otherwise ETIMEDOUT; sem_timedwait () with a NULL deadline is EINVAL.
+   The unused queue structure, the debug output of the old file and the use
+   of the interlock (rwlock) member are gone.
+ * include/semaphore.h: the declaration of sem_timedwait ().
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* pthread/sem.c: Rewrite on a mutex and a condition variable kept in
+	the state that sem_init allocates.  (sem_wait): Block instead of
+	polling and do not leak.  (sem_timedwait): Implement.  (sem_destroy):
+	Free the state; fail with EBUSY while a thread waits.
+	* include/semaphore.h (sem_timedwait): Declare.
+
+What I did not do
+-----------------
+I did not look at the history of the file in svn, nor search the mailing list
+or the bug tracker, so I do not know whether the problem is known. I did not
+look at which other UnixLib or library code uses these functions (libstdc++'s
+<semaphore> and OpenMP's libgomp can use POSIX semaphores; I did not build
+either with them). The cooperative scheduling is what makes the code short;
+a build where threads can be pre-empted would have to look at it again.
+
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

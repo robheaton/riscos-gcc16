@@ -25,6 +25,6 @@ mkdir -p "$B"; cd "$B"
   --disable-libssp --disable-libgomp --disable-libitm --disable-libatomic \
   --disable-libsanitizer --disable-libvtv --disable-libcc1 \
   --with-pkgversion='GCCSDK GCC 16.2.0 (experimental forward-port)' \
-  --with-bugurl=http://gccsdk.riscos.info/ \
+  --with-bugurl=https://github.com/robheaton/riscos-gcc16/issues \
   --with-abi=aapcs-linux --with-float=hard --with-fpu=vfpv3 --with-arch=armv7-a \
   CFLAGS_FOR_TARGET="-O2 -g" CXXFLAGS_FOR_TARGET="-O2 -g"

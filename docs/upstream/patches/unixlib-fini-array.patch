@@ -1,0 +1,77 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/stdlib/atexit.c
++++ b/gcc4/recipe/files/gcc/libunixlib/stdlib/atexit.c
+@@ -117,3 +117,37 @@
+   return __cxa_atexit ((void (*) (void *))atexit_function, NULL, NULL);
+ }
+ #endif
++
++#ifndef __TARGET_SCL__
++/* The program's .fini_array (EABI).  crt0 hands the bounds of the array to the runtime (CRT1_FINI_ARRAY_START / _END) and __main calls
++   __register_fini_array before the program's .init_array functions run, so that the functions of the array are called at exit AFTER the atexit () functions
++   and the static destructors that the constructors register, last entry first: what glibc's __libc_csu_fini does.  Before, nothing called them: an
++   __attribute__ ((destructor)) function of a C program never ran, and neither did the exit hook of libgcov (no .gcda file was ever written).  */
++static void (**fini_array_start) (void);
++static void (**fini_array_end) (void);
++
++static void
++__run_fini_array (void)
++{
++  void (**p) (void) = fini_array_end;
++
++  while (p > fini_array_start)
++    {
++      void (*fn) (void) = *--p;
++
++      if (fn != NULL && fn != (void (*) (void)) -1)
++	fn ();
++    }
++}
++
++void
++__register_fini_array (void (**start) (void), void (**end) (void))
++{
++  if (start == NULL || start == end)
++    return;
++
++  fini_array_start = start;
++  fini_array_end = end;
++  atexit (__run_fini_array);
++}
++#endif
+--- a/gcc4/recipe/files/gcc/libunixlib/sys/_syslib.s
++++ b/gcc4/recipe/files/gcc/libunixlib/sys/_syslib.s
+@@ -622,6 +622,15 @@
+  PICEQ "TEQ	a1, #0"
+  PICEQ "BLNE	atexit"
+ 
++#ifdef __ARM_EABI__
++	@ --- Executable Finalisation, part 1: the .fini_array functions ---
++	@ Register a function that calls the program's .fini_array functions at exit.  It is registered BEFORE the constructors below run, so that it runs
++	@ after the atexit () functions and the static destructors that they register (as in glibc).  See stdlib/atexit.c.
++	LDR	a1, [v2, #CRT1_FINI_ARRAY_START]
++	LDR	a2, [v2, #CRT1_FINI_ARRAY_END]
++	BL	__register_fini_array
++#endif
++
+ 	@ --- Executable Initialisation ---
+ 	@ Call the program's _init function.
+ 	LDR	a1, [v2, #CRT1_EXEC_INIT]
+@@ -630,7 +639,7 @@
+ 
+ #ifdef __ARM_EABI__
+ 	@ Call the program's .init_array functions.
+-	@ FIXME: what about FINI_ARRAY?
++	@ (The .fini_array functions are registered with atexit () above.)
+ 	LDR	v1, [v2, #CRT1_INIT_ARRAY_START]
+ 	LDR	v3, [v2, #CRT1_INIT_ARRAY_END]
+ 	TEQ	v1, v3
+--- a/gcc4/recipe/files/gcc/libunixlib/vscript
++++ b/gcc4/recipe/files/gcc/libunixlib/vscript
+@@ -77,6 +77,7 @@
+      __pwddefault;
+      __pwdread;
+      realloc_unlocked;
++     __register_fini_array;
+      __remenv_from_os;
+      __resource_initialise;
+      res_init;

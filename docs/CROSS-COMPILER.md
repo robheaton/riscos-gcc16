@@ -9,15 +9,15 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-11-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-11-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-12-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-12-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 
 The tree (about 380 MB unpacked) is relocatable: unpack it anywhere, or move it later. To check an unpacked copy, run [`tests/cross-smoke/cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) on it
 (it compiles and links C, C++, Fortran, LTO and shared-library programs and checks that the compiler finds everything inside the tree).
 
-The programs are `arm-riscos-gnueabihf-gcc`, `-g++`, `-gfortran`, `-cpp`, and the binutils `-as`, `-ld`, `-ar`, `-nm`, `-objdump`, `-objcopy`, `-readelf`, `-strip`, `-ranlib`, `-size`, `-strings`, `-addr2line`, `-c++filt` and `-elfedit`.
+The programs are `arm-riscos-gnueabihf-gcc`, `-g++`, `-gfortran`, `-cpp`, `-gcov` (with `-gcov-dump` and `-gcov-tool`), and the binutils `-as`, `-ld`, `-ar`, `-nm`, `-objdump`, `-objcopy`, `-readelf`, `-strip`, `-ranlib`, `-size`, `-strings`, `-addr2line`, `-c++filt` and `-elfedit`.
 The UnixLib headers and libraries (the "sysroot") are inside the tree, so no `--sysroot` option is needed. RISC OS libraries such as OSLib are not included.
 
 ## Compile
@@ -47,7 +47,42 @@ Install the runtime packages from the same release with PackMan (see [INSTALL-RI
 
 Do not use `-static-libgcc`: the link then fails, because UnixLib refers to libgcc symbols (it works only with `-Wl,--allow-shlib-undefined`).
 Check what a program needs with `arm-riscos-gnueabihf-readelf -d prog,e1f | grep NEEDED`.
-Use the runtime of the same release (`SharedLibs-C-armeabihf` 16.2.0-11): older ones lack the fixes listed in [RUNTIME.md](RUNTIME.md).
+Use the runtime of the same release (`SharedLibs-C-armeabihf` 16.2.0-12): older ones lack the fixes listed in [RUNTIME.md](RUNTIME.md).
+
+## Coverage and profile-guided optimisation
+
+Build on Linux, run on RISC OS (with the runtime `SharedLibs-C-armeabihf` 16.2.0-12 or later: earlier ones never ran the exit function that writes the counts), read the result on Linux:
+
+```bash
+arm-riscos-gnueabihf-gcc -O0 --coverage -c prog.c                 # prog.o and prog.gcno
+arm-riscos-gnueabihf-gcc --coverage -o prog,e1f prog.o
+```
+
+Copy `prog,e1f` to RISC OS and run it. The program writes `prog.gcda` to the **absolute Linux path** of the object file it was built from, and that path does not exist on RISC OS: tell libgcov where to write instead, with two variables.
+`GCOV_PREFIX` is the directory to write in; `GCOV_PREFIX_STRIP` is the number of leading directories of the Linux path that are cut off. For an object built in `/home/me/work` the file is `/home/me/work/prog.gcda`, and cutting off its three directories (`home`, `me`, `work`) leaves `prog.gcda`:
+
+```
+*Set GCOV_PREFIX .
+*Set GCOV_PREFIX_STRIP 3
+*prog
+```
+
+writes `prog.gcda` (the RISC OS file `prog/gcda`) in the current directory. Copy the file back and read it with the cross `gcov`, next to `prog.gcno` and `prog.c`:
+
+```bash
+arm-riscos-gnueabihf-gcov -b -c prog.gcda       # or: arm-riscos-gnueabihf-gcov prog.c
+```
+
+For profile-guided optimisation build with `-fprofile-generate`, run on RISC OS as above on typical input, copy the `.gcda` file to Linux **next to the object file, with the same name**, and build again with `-fprofile-use`:
+
+```bash
+arm-riscos-gnueabihf-gcc -O2 -fprofile-generate -c prog.c && arm-riscos-gnueabihf-gcc -fprofile-generate -o prog,e1f prog.o
+# ... run on RISC OS, copy prog.gcda back to this directory ...
+arm-riscos-gnueabihf-gcc -O2 -fprofile-use -Werror=missing-profile -c prog.c && arm-riscos-gnueabihf-gcc -o prog,e1f prog.o
+```
+
+(Do not use `-fprofile-dir`: it makes GCC name the files with `#` characters, which RISC OS does not accept. Compile with `-c` and link in a second step: in one step GCC names the data files after the output and the source, `prog-prog.gcno`.)
+`gprof` (`-pg`) does not work; see [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 
 ## Throwback from the cross compiler
 

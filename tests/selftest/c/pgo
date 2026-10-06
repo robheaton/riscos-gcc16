@@ -1,0 +1,23 @@
+/* pgo -- the program of check 10 of the self-test: compiled with -fprofile-generate and run, then compiled again with -fprofile-use, which must find the profile it wrote
+   (the second compile uses -Werror=missing-profile).  It returns 0 when its result is right: the total of the Collatz steps for 1 to 1000 is 59542. */
+#include <stdio.h>
+
+static int collatz (unsigned n)
+{
+  int steps = 0;
+  while (n != 1)
+    {
+      n = (n % 2) ? 3 * n + 1 : n / 2;
+      steps++;
+    }
+  return steps;
+}
+
+int main (void)
+{
+  long total = 0;
+  for (unsigned i = 1; i <= 1000; i++)
+    total += collatz (i);
+  printf ("pgo: %ld steps\n", total);
+  return total == 59542 ? 0 : 1;
+}

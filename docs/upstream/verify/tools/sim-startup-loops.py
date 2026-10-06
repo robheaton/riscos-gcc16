@@ -232,7 +232,9 @@ def run_stack(elf, size_bytes, free_pages, scramble=False, noname=False):
     imm = ldr_ss & 0xFFF
     assert ldr_ss & 0xFFFFF000 == 0xE59F5000, "unexpected first instruction %08x" % ldr_ss
     lit_ss = first + 8 + imm
-    got_off_ss = elf.read32(lit_ss)
+    # the GOT slot of __stack_size is found from the literal's own symbol when the library has it, NOT through the instruction: a load that has been made to point at the next literal
+    # (which belongs to another variable) then finds an empty slot and the scenarios notice it (the next literal of a patched library is the one of __eabi_main_stack_size)
+    got_off_ss = elf.read32(elf.syms["___stack_size"]) if "___stack_size" in elf.syms else elf.read32(lit_ss)
     sizevar = 0x50000000
     cpu.wr32(GOT + got_off_ss, 0 if size_bytes is None else sizevar)
     if size_bytes is not None: cpu.wr32(sizevar, size_bytes & 0xFFFFFFFF)

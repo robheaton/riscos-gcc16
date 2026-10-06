@@ -1,0 +1,27 @@
+/* cov -- the program of check 9 of the self-test.  It is compiled with --coverage and run; when it ends the counts are written to cov.gcda, and gcov (then covcheck) reads them.
+   It returns 0 when its own result is right.  The text of the lines below is what covcheck looks for: do not change it without changing covcheck. */
+#include <stdio.h>
+
+static int work (int n)
+{
+  int s = 0;
+  for (int i = 0; i < n; i++)
+    s += i;
+  return s;
+}
+
+static int never (void)
+{
+  return 42;
+}
+
+int main (int argc, char **argv)
+{
+  int t = 0;
+  for (int k = 0; k < 7; k++)
+    t += work (100);
+  if (argc > 1)
+    t += never ();
+  printf ("cov: %d\n", t);
+  return t == 7 * 4950 ? 0 : 1;
+}
