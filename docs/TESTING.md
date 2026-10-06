@@ -4,8 +4,8 @@ Four kinds of test, from "check my installation" to "the suites the port was dev
 
 ## 1. Check an installation on RISC OS: `tests/selftest`
 
-After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`) and a profile-guided build (`-fprofile-generate`, then `-fprofile-use`),
-and checks the fix level of the runtime. It takes about half a minute (26 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
+After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`), a profile-guided build (`-fprofile-generate`, then `-fprofile-use`) and a gprof run (`-pg`, then `gprof`),
+and checks the fix level of the runtime. It takes about half a minute (29 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
 
 ## 2. Check the Linux cross compiler: `tests/cross-smoke`
 
@@ -14,7 +14,7 @@ tests/cross-smoke/cross-smoke.sh <toolchain directory> [<reference toolchain>]
 ```
 
 It compiles and links programs in C, C++, Fortran, LTO and as a shared library with the cross compiler in the given directory, checks that every part of the compiler (`cc1`, `lto1`, the linker plugin, `libunixlib.so` ...) is found **inside** that directory, that the objects are ELF 32-bit ARM EABI5 for the shared UnixLib,
-and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 33 checks (29 without the comparison) with the directory it was built in hidden from it, and its programs are byte-identical to those of the compiler it was compared with.
+and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 39 checks (35 without the comparison) with the directory it was built in hidden from it, and its programs are byte-identical to those of the compiler it was compared with.
 
 ## 3. The regression suites (developers)
 
@@ -46,6 +46,7 @@ The test programs of the runtime work, each with the symptom it was written for 
 | `tests/upstream20` | `vforkheap`: the heap of a `vfork` + `exec` child (report 08) |
 | `tests/unixlib24`, `docs/upstream/repro/scanf` | `scantest` (16 `sscanf` cases) and `scanfcheck` with its table (15,066 cases made by glibc) |
 | `tests/unixlib25` | `finitest` (the `.fini_array`: destructors and `atexit` functions in glibc's order), `rlimtest` (`getrlimit (RLIMIT_STACK)`), `semtest` (20 checks of POSIX semaphores with threads), `covtest` (built with `--coverage` and with `-fprofile-generate`: the `.gcda` files); see its [README](../tests/unixlib25/README.md) |
+| `tests/gprof` | `pgtest` (built with `-pg` and without): `gmon.out` is written, gprof shows the program's own call counts; see its [README](../tests/gprof/README.md) |
 | `tests/fixlevel` | `fixlevel N`: exit status 0 when the running UnixLib has fix level N |
 
 Each hardware test prints lines like `SUMMARY [name]: 48 checks, 0 failed -> PASS` and sets its exit status; the Obey runners `Spool` everything to a results file. The Obey files all begin with `Set X$Dir <Obey$Dir>` because the first EABI program

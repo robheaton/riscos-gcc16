@@ -517,8 +517,11 @@ channel::report (const entry &e)
   if (m_state == STATE_OFF || !m_transport)
     return;
 
-  /* Locations that are not files.  */
-  if (e.m_file.empty () || e.m_file[0] == '<')
+  /* Locations that are not files: "<built-in>", "<command-line>", "<stdin>".  A name with a path variable in front ("<Obey$Dir>.c.main") is a file.  */
+  if (e.m_file.empty ()
+      || (e.m_file[0] == '<'
+	  && (e.m_file.find ('>') == std::string::npos
+	      || e.m_file.find ('>') + 1 == e.m_file.size ())))
     return;
 
   if (m_state == STATE_NEW)

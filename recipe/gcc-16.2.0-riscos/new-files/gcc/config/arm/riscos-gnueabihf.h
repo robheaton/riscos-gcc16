@@ -41,6 +41,17 @@
 #define INIT_ARRAY_SECTION_ASM_OP ARM_EABI_CTORS_SECTION_OP
 #define FINI_ARRAY_SECTION_ASM_OP ARM_EABI_DTORS_SECTION_OP
 
+/* -pg: the AAPCS profiling call of bpabi.h.  The legacy one of arm.h (mov ip, lr ; bl mcount) assumes an APCS frame and hands the caller's return address over in ip,
+   which the PLT stub of a call into libunixlib.so overwrites.  __gnu_mcount_nc (libunixlib) is entered with the caller's return address on the stack and no counter word.  */
+#undef  NO_PROFILE_COUNTERS
+#define NO_PROFILE_COUNTERS 1
+#undef  ARM_FUNCTION_PROFILER
+#define ARM_FUNCTION_PROFILER(STREAM, LABELNO)	\
+{						\
+  fprintf (STREAM, "\tpush\t{lr}\n");		\
+  fprintf (STREAM, "\tbl\t__gnu_mcount_nc\n");	\
+}
+
 #undef  LIB_SPEC
 #define LIB_SPEC \
   "%{!nostdlib:-lunixlib }"
@@ -92,16 +103,20 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
 
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC	" crti.o%s" \
-			" %{!shared:crt0.o%s}" \
+			" %{!shared:%{pg:gcrt0.o%s;:crt0.o%s}}" \
 			" %{shared:crtbeginS.o%s;:crtbegin.o%s}"
 
 #undef ENDFILE_SPEC
 #define ENDFILE_SPEC	" %{shared:crtendS.o%s;:crtend.o%s}" \
 			" crtn.o%s"
 
+/* -mthrowback: the assembler and the linker also send their errors and warnings to the text editor (binutils patch 05-throwback).  */
+#undef  SUBTARGET_EXTRA_ASM_SPEC
+#define SUBTARGET_EXTRA_ASM_SPEC " %{mthrowback:--throwback}"
+
 #undef  LINK_SPEC
 #define LINK_SPEC "%{h*} %{version:-v} \
-   %{b} %{Wl,*:%*} \
+   %{b} %{Wl,*:%*} %{mthrowback:--throwback} \
    %{static:-Bstatic} \
    %{shared:-shared} \
    %{symbolic:-Bsymbolic} \

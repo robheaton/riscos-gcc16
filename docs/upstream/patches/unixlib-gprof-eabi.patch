@@ -1,0 +1,312 @@
+--- a/gcc4/recipe/files/gcc/libunixlib/gmon/gmon-start.c
++++ b/gcc4/recipe/files/gcc/libunixlib/gmon/gmon-start.c
+@@ -30,8 +30,16 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ 
+-#ifndef __ARM_EABI__
++#ifdef __ARM_EABI__
++#include <internal/unix.h>
+ 
++/* The part of the program image that is profiled: from the start of the executable (robase = __executable_start) to the start of its read/write
++   data (rwbase = __data_start), as __main knows them from crt0.o / gcrt0.o.  (A symbol such as etext would have to be exported by the program.)  */
++#define TEXT_START ((void *) __ul_memory.robase)
++/* rounded up to a multiple of 8: then the histogram has exactly one counter for every 4 bytes of code (kcountsize = textsize / 2 is a multiple of
++   sizeof (*froms) = 4 and the scale is exactly 1/2), as gprof expects; with another size the bins are 3.99 bytes wide and gprof's addresses drift.  */
++#define TEXT_END ((void *) ((__ul_memory.rwbase + 7) & ~7u))
++#else
+ /* Beginning and end of our code segment. We cannot declare them
+    as the external functions since we want the addresses of those
+    labels. Taking the address of a function may have different
+@@ -40,10 +48,13 @@
+ extern void etext;
+ 
+ #define TEXT_START &__text_start
++#define TEXT_END &etext
++#endif
+ 
+ /* In ELF and COFF, we cannot use the normal constructor mechanism to call
+    __gmon_start__ because gcrt1.o appears before crtbegin.o in the link.
+-   Instead crti.o calls it specially (see initfini.c).  */
++   Instead crti.o calls it specially (see initfini.c).  For EABI programs
++   __main calls it when gcrt0.o set the profiling flag (-pg).  */
+ extern void __gmon_start__ (void);
+ 
+ void
+@@ -61,11 +72,9 @@
+ #endif
+ 
+   /* Start keeping profiling records.  */
+-  __monstartup ((u_long) TEXT_START, (u_long) &etext);
++  __monstartup ((u_long) TEXT_START, (u_long) TEXT_END);
+ 
+   /* Call _mcleanup before exiting; it will write out gmon.out from the
+      collected data.  */
+   atexit (&_mcleanup);
+ }
+-
+-#endif
+--- a/gcc4/recipe/files/gcc/libunixlib/gmon/machine-gmon.c
++++ b/gcc4/recipe/files/gcc/libunixlib/gmon/machine-gmon.c
+@@ -30,6 +30,34 @@
+ 
+ struct profiler_data_t profiler attribute_hidden;
+ 
++#ifdef __ARM_EABI__
++/* EABI: no HAL timer, no interrupt handler, no dynamic area.  The program is sampled by a thread of its own (profil.c), the tables of the
++   call graph and the histogram are plain memory, and everything ends with the process.  */
++#include <stdlib.h>
++
++extern unsigned int __profil_overflowed attribute_hidden;
++
++attribute_hidden void
++gmon_machine_cleanup (void)
++{
++}
++
++/* Memory for the three tables (the histogram of samples, the call graph arcs and their hash).  */
++attribute_hidden char *
++gmon_machine_init (int size)
++{
++  profiler.timer_frequency = PROFIL_RATE;
++  return calloc (1, size);
++}
++
++attribute_hidden unsigned int
++gmon_machine_sample_overflowed (void)
++{
++  return __profil_overflowed;
++}
++
++#else /* !__ARM_EABI__ */
++
+ extern void *__profiler_interrupt_handler_start;
+ extern void *__profiler_interrupt_handler_end;
+ 
+@@ -272,3 +300,5 @@
+ {
+   return profiler.handler_data->flags & INT_HANDLER_FLAG_OVERFLOWED;
+ }
++
++#endif /* !__ARM_EABI__ */
+--- a/gcc4/recipe/files/gcc/libunixlib/gmon/profil.c
++++ b/gcc4/recipe/files/gcc/libunixlib/gmon/profil.c
+@@ -37,6 +37,115 @@
+ #  include <sys/debug.h>
+ #endif
+ 
++#ifdef __ARM_EABI__
++/* EABI: the program is sampled by a thread of its own.
++
++   The threads of UnixLib are scheduled by a ticker (OS_CallEvery, pthread/_context.s).  At a tick the running thread is interrupted, its registers - the
++   program counter among them - are saved in its context, and the next runnable thread gets the processor.  The sampler is a second thread that does
++   nothing but read the saved program counter of the thread that was interrupted (__pthread_prev_running_thread, set by the scheduler), count it in the
++   histogram and give the processor back with pthread_yield: one sample per tick.  That works wherever threads work, in a Task window and in the desktop
++   (an interval timer, setitimer, is refused there), and needs no hardware timer, no interrupt handler and no memory outside the program.
++
++   A tick that falls into a region where UnixLib does not allow a context switch (malloc, stdio: __pthread_disable_ints) is not taken.  A program that has
++   threads of its own is sampled only at every other thread's turn: the profile has the right shape but the time is too small.  */
++#include <pthread.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <time.h>
++
++unsigned int __profil_overflowed attribute_hidden;
++
++extern pthread_t __pthread_prev_running_thread attribute_hidden;
++
++static u_short *prof_buf;		/* the histogram */
++static size_t prof_nsamples;		/* the number of its counters */
++static size_t prof_offset;		/* the address that counter 0 stands for */
++static u_int prof_scale;		/* 65536 = one counter for every 2 bytes of code, as profil () says */
++static volatile int prof_on;		/* the sampler should count */
++static pthread_t prof_thread;		/* the sampler, made at the first call */
++static unsigned long prof_ticks;	/* the times that the sampler looked at the interrupted thread */
++static unsigned long prof_hits;		/* ... and found its program counter in the profiled range */
++static clock_t prof_start;		/* clock () when profiling began */
++
++static void *
++prof_sampler (void *arg)
++{
++  for (;;)
++    {
++      if (prof_on)
++	{
++	  pthread_t t = __pthread_prev_running_thread;
++
++	  if (t != NULL && t != prof_thread && t->magic == PTHREAD_MAGIC && t->saved_context != NULL)
++	    {
++	      u_int pc = (u_int) t->saved_context->r[15];
++
++	      prof_ticks++;
++
++	      if (pc >= prof_offset)
++		{
++		  unsigned long long i = (((unsigned long long) ((pc - prof_offset) >> 1)) * prof_scale) >> 16;
++
++		  if (i < prof_nsamples)
++		    {
++		      prof_hits++;
++		      if (prof_buf[i] != 0xffff)
++			prof_buf[i]++;
++		      else
++			__profil_overflowed = 1;
++		    }
++		}
++	    }
++	}
++      pthread_yield ();
++    }
++  return NULL;
++}
++
++/* Enable statistical profiling, writing samples of the PC into at most
++   SIZE bytes of SAMPLE_BUFFER; every tick of the ticker of the threads while
++   profiling is enabled, the sampler counts the user PC in
++   SAMPLE_BUFFER[((PC - OFFSET) / 2) * SCALE / 65536].  If SCALE is zero,
++   disable profiling.  Returns zero on success, -1 on error.  */
++int
++__profil (u_short *sample_buffer, size_t size, size_t offset, u_int scale)
++{
++  if (sample_buffer == NULL || scale == 0)
++    {
++      /* Disable profiling.  GMON_VERBOSE says what was counted.  */
++      if (prof_on && getenv ("GMON_VERBOSE") != NULL)
++	fprintf (stderr, "gmon: %lu samples, %lu of them in the program, %ld centiseconds since the start of the profile (%d samples a second at most)\n",
++		 prof_ticks, prof_hits, (long) (clock () - prof_start), PROFIL_RATE);
++      prof_on = 0;
++      return 0;
++    }
++
++  prof_buf = sample_buffer;
++  prof_nsamples = size / sizeof *sample_buffer;
++  prof_offset = offset;
++  prof_scale = scale;
++
++  if (prof_thread == NULL)
++    {
++      pthread_attr_t attr;
++
++      pthread_attr_init (&attr);
++      pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
++      if (pthread_create (&prof_thread, &attr, prof_sampler, NULL) != 0)
++	{
++	  prof_thread = NULL;
++	  return -1;
++	}
++    }
++
++  prof_start = clock ();
++  prof_on = 1;
++  return 0;
++}
++weak_alias (__profil, profil)
++
++#else /* !__ARM_EABI__ */
++
+ /* Enable statistical profiling, writing samples of the PC into at most
+    SIZE bytes of SAMPLE_BUFFER; every processor clock tick while profiling
+    is enabled, the system examines the user PC and increments
+@@ -100,3 +209,5 @@
+   return 0;
+ }
+ weak_alias (__profil, profil)
++
++#endif /* !__ARM_EABI__ */
+--- a/gcc4/recipe/files/gcc/libunixlib/incl-local/internal/machine-gmon.h
++++ b/gcc4/recipe/files/gcc/libunixlib/incl-local/internal/machine-gmon.h
+@@ -22,6 +22,7 @@
+ 
+ #include <kernel.h>
+ #include <sys/cdefs.h>
++#ifndef __ARM_EABI__
+ #ifndef NO_UNDERSCORES
+ /* The asm symbols for C functions are `_function'.
+    The canonical name for the counter function is `mcount', no _.  */
+@@ -32,12 +33,14 @@
+ void _mcount (void);
+ weak_alias (_mcount, mcount)
+ #endif
++#endif /* !__ARM_EABI__ */
+ 
+ static void mcount_internal (u_long frompc, u_long selfpc) __attribute_used__;
+ 
+ #define _MCOUNT_DECL(frompc, selfpc) \
+ static void mcount_internal (u_long frompc, u_long selfpc)
+ 
++#ifndef __ARM_EABI__
+ /* This macro/func MUST save r0, r1 because the compiler inserts
+ 	blind calls to _mount(), ignoring the fact that _mcount may
+ 	clobber registers; therefore, _mcount may NOT clobber registers */
+@@ -70,6 +73,36 @@
+ 	  "0:"								\
+ 	  "ldmia	sp!, {r0, r1, r2, r3, r14}");			\
+ }
++#else /* __ARM_EABI__ */
++/* EABI: gcc -pg puts
++
++	push	{lr}
++	bl	__gnu_mcount_nc
++
++   after the prologue of every function.  On entry the return address of the function's caller (frompc) is on the stack and lr is the return
++   address into the function (selfpc).  The function's arguments may be in r0-r3, so they are saved, and with them lr, which makes the stack
++   8-byte aligned again for the C function (the caller's push {lr} made it 4 off).  Returning pops the caller's return address into lr, as the
++   AAPCS profiling convention says, and continues in the function through ip.  (This is what glibc's sysdeps/arm/arm-mcount.S does.)  */
++#define MCOUNT								\
++__asm__ (".text\n"							\
++	 "\t.align\t2\n"						\
++	 "\t.global\t__gnu_mcount_nc\n"				\
++	 "\t.type\t__gnu_mcount_nc, %function\n"			\
++	 "__gnu_mcount_nc:\n"						\
++	 "\tpush\t{r0, r1, r2, r3, lr}\n"				\
++	 "\tldr\tr0, [sp, #20]\n"					\
++	 "\tmov\tr1, lr\n"						\
++	 "\tbl\tmcount_internal\n"					\
++	 "\tpop\t{r0, r1, r2, r3, ip, lr}\n"				\
++	 "\tbx\tip\n"							\
++	 "\t.size\t__gnu_mcount_nc, . - __gnu_mcount_nc\n");
++#endif /* __ARM_EABI__ */
++
++#ifdef __ARM_EABI__
++/* EABI programs are sampled once per tick of the ticker of the pthreads (pthread/_context.s: OS_CallEvery with 1, which is every second centisecond):
++   50 samples a second.  This is the "profiling clock" that gmon.out gives gprof.  */
++#define PROFIL_RATE 50
++#endif
+ 
+ extern struct gmonparam _gmonparam attribute_hidden;
+ 
+--- a/gcc4/recipe/files/gcc/libunixlib/pthread/context.c
++++ b/gcc4/recipe/files/gcc/libunixlib/pthread/context.c
+@@ -21,6 +21,8 @@
+ 
+ pthread_t __pthread_thread_list = NULL; /* Linked list of all threads */
+ pthread_t __pthread_running_thread = NULL; /* Currently running thread */
++/* The thread that the scheduler last took the processor from (the one that the tick interrupted): what the sampler of gprof (gmon/profil.c) looks at.  */
++pthread_t __pthread_prev_running_thread attribute_hidden = NULL;
+ 
+ /* De-allocates an idle node from the list.  */
+ static void
+@@ -89,6 +91,8 @@
+   __pthread_running_thread->thread_errno = errno;
+ #endif
+ 
++  __pthread_prev_running_thread = __pthread_running_thread;
++
+   pthread_t next = __pthread_running_thread->next;
+ 
+   /* Loop around the list looking for a thread that is running.  */
+--- a/gcc4/recipe/files/gcc/libunixlib/sys/_syslib.s
++++ b/gcc4/recipe/files/gcc/libunixlib/sys/_syslib.s
+@@ -594,11 +594,10 @@
+  PICEQ "LDR	v2, [v4, v2]"
+ 	LDR	v2, [v2, #0]
+ 
+-#ifndef __ARM_EABI__
++	@ gcrt0.o (gcc -pg) sets bit 0 of the flags: start the profiler.
+ 	LDR	a1, [v2, #CRT1_FLAGS]
+ 	TST	a1, #1
+ 	BLNE	__gmon_start__
+-#endif
+ 
+ 	@ Normally, the dynamic linker would take care of shared library
+ 	@ initialisation, but UnixLib has to be initialised first so that

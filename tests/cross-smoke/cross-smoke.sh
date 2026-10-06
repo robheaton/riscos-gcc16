@@ -49,6 +49,18 @@ chk "coverage: gcc --coverage compiles and links (libgcov has the exit function)
 chk "coverage: the compiler wrote the notes file" "test -f hello.gcno || test -f cov.gcno"
 chk "profile-guided optimisation: -fprofile-generate links" "$T-gcc -O2 -fprofile-generate -o hello_pgo $HERE/hello.c && $T-nm hello_pgo | grep -q ' __gcov_init'"
 chk "gcov runs" "$T-gcov --version | head -1 | grep -q '16\.2\.0'"
+echo "Profiling (gprof) and throwback"
+chk "gprof: $T-gprof runs"                                      "$T-gprof --version | head -1 | grep -q 'GNU gprof'"
+chk "-pg: the profiling call is push {lr} ; bl __gnu_mcount_nc"  "$T-gcc -O1 -pg -S -o - $HERE/hello.c | grep -q 'bl.*__gnu_mcount_nc'"
+chk "-pg: the driver links gcrt0.o (and crt0.o without -pg)"     "$T-gcc -pg -### $HERE/hello.c 2>&1 | grep -q 'gcrt0.o' && ! $T-gcc -### $HERE/hello.c 2>&1 | grep -q 'gcrt0.o'"
+# a -pg program needs the libunixlib.so of 16.2.0-13 or later, which exports __gnu_mcount_nc (step 5 of docs/BUILDING.md puts it in the sysroot): with the GCCSDK 10.2.0 one the link is skipped, not failed
+if $T-nm -D --defined-only "$($T-gcc -print-file-name=libunixlib.so)" | grep -q ' __gnu_mcount_nc$'; then
+  chk "-pg: a program links, with __gnu_mcount_nc from libunixlib.so" "$T-gcc -O1 -pg -o hello_pg $HERE/hello.c && $T-nm -D hello_pg | grep -q 'U __gnu_mcount_nc'"
+else
+  echo "  skip  -pg: this toolchain's libunixlib.so is still the GCCSDK 10.2.0 one: no link check (install-unixlib-sysroot.sh puts the fixed one there)"
+fi
+chk "-mthrowback: the driver gives --throwback to as and to ld"  "test \$($T-gcc -mthrowback -### $HERE/hello.c 2>&1 | grep -c -e '--throwback') -ge 2"
+chk "without -mthrowback the driver adds no --throwback"         "! $T-gcc -### $HERE/hello.c 2>&1 | grep -q -e '--throwback'"
 echo "Tuning"
 chk "cortex-a72 tuning flags are accepted" "$T-gcc -O2 -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -o /dev/null -x c - <<< 'int main(void){return 0;}'"
 if [ -n "${REF:-}" ]; then

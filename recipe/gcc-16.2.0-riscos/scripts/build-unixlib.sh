@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build UnixLib 5.0 with the new GCC 16.2 cross compiler, out of tree, reusing the generated configure/Makefile.in
 # from the 10.2.0 build tree (it needs ~/gccsdk/build/gcc/gcc-10.2.0/libunixlib; nothing there is modified).
-# Result: $W/build/{.libs/libunixlib.so.5.0.0,libm.*,crt0.o,gcrt0.o}  (~11 s on 22 cores; libunixlib.a is not produced: module/sul.s is FPA-only).
+# Result: $W/build/{.libs/libunixlib.so.5.0.0,libm.*,crt0.o,gcrt0.o}  (~11 s on 22 cores; also libunixlib.a; module/sul.s is FPA-only and fails: expected).
 set -e
 SRC=${SRC:-$HOME/gccsdk/build/gcc/gcc-10.2.0}
 W=${W:-$HOME/gccsdk-next/unixlib}
@@ -100,6 +100,12 @@ apply_patch unixlib-sem-blocking-timedwait.patch
 apply_patch unixlib-semaphore-timedwait-decl.patch
 # sysconf (0x4700) answers 14.
 apply_patch unixlib-sysconf-fixlevel-14.patch
+# gprof (-pg) for EABI programs: __gnu_mcount_nc (the AAPCS profiling call that gcc emits now), __gmon_start__ (__main calls it when gcrt0.o set the flag), plain-memory tables, and a sampler thread behind
+# profil () that reads the saved program counter of the thread that the ticker of the pthreads interrupted: setitimer is refused in a Task window and in the desktop, and UnixLib's own profiler (a
+# HAL timer, an interrupt vector) was compiled out for EABI and never tried.  Proven on the machine with a -pg test program (RunPg28): exact call counts, a profile that gprof reads.
+apply_patch unixlib-gprof-eabi.patch
+# sysconf (0x4700) answers 15.
+apply_patch unixlib-sysconf-fixlevel-15.patch
 # TEST BUILDS ONLY (debugging aids that are not part of the library): EXTRA_PATCHES="unixlib-ul-trace.patch" EXTRA_DEFS="-DULTRACE" builds a libunixlib that appends a line to a log file at the steps of
 # fork/vfork (see the comment in sys/_vfork.s); the same patch built without EXTRA_DEFS must give the very library of the release (checked by tools/check-ul-trace.sh).  Unset: nothing changes.
 for ep in ${EXTRA_PATCHES:-}; do apply_patch "$ep"; done

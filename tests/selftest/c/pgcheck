@@ -1,0 +1,49 @@
+/* pgcheck -- reads pg.report, the flat profile that gprof made from the gmon.out of the program pg, and checks that gprof found the two functions heavy and light, with
+   10 calls each, and some time.  It prints what it found and returns 0 when all of it is right (2 if the file is not there).  */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef __riscos__
+/* The same as covcheck: UnixLib must take "pg.report" for a Unix name (the file pg/report), as gprof's redirection wrote it.  */
+#include <unixlib/local.h>
+int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;
+#endif
+
+int main (void)
+{
+  FILE *f = fopen ("pg.report", "r");
+  char line[512];
+  long heavy = -2, light = -2;               /* -2: not found */
+  double percent = 0;
+  if (!f)
+    {
+      puts ("pgcheck: pg.report cannot be opened (gprof did not write it)");
+      return 2;
+    }
+  while (fgets (line, sizeof line, f))
+    {
+      char *tok[8];
+      int n = 0;
+      char *p = strtok (line, " \t\r\n");
+      while (p && n < 8)
+        {
+          tok[n++] = p;
+          p = strtok (NULL, " \t\r\n");
+        }
+      /* % time, cumulative seconds, self seconds, calls, self ms/call, total ms/call, name */
+      if (n == 7 && strcmp (tok[6], "heavy") == 0)
+        {
+          heavy = strtol (tok[3], NULL, 10);
+          percent += atof (tok[0]);
+        }
+      else if (n == 7 && strcmp (tok[6], "light") == 0)
+        {
+          light = strtol (tok[3], NULL, 10);
+          percent += atof (tok[0]);
+        }
+    }
+  fclose (f);
+  printf ("pgcheck: gprof says heavy () was called %ld times (expected 10) and light () %ld times (expected 10), and they have %.1f percent of the time\n", heavy, light, percent);
+  return (heavy == 10 && light == 10 && percent > 50.0) ? 0 : 1;
+}

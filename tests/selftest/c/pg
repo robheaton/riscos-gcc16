@@ -1,0 +1,39 @@
+/* pg -- the program of check 11 of the self-test: compiled with -pg and run, it writes gmon.out when it ends; gprof reads that, and pgcheck looks at the report.
+   Two functions that take some time, called ten times each and from main () only: gprof must say 10 calls for both.  It runs for about a second.  */
+#include <stdio.h>
+
+static volatile unsigned sink;
+static volatile unsigned calls;      /* a side effect: without it the compiler sees heavy () and light () as pure and calls each of them once, outside the loop */
+
+__attribute__ ((noinline)) static unsigned
+heavy (unsigned n)
+{
+  unsigned s = 0, i;
+  calls++;
+  for (i = 0; i < n; i++)
+    s += i * 2654435761u;
+  return s;
+}
+
+__attribute__ ((noinline)) static unsigned
+light (unsigned n)
+{
+  unsigned s = 0, i;
+  calls++;
+  for (i = 0; i < n; i++)
+    s += i ^ (s >> 3);
+  return s;
+}
+
+int
+main (void)
+{
+  int r;
+  for (r = 0; r < 10; r++)
+    {
+      sink += heavy (50000000);
+      sink += light (20000000);
+    }
+  printf ("pg: done %u\n", sink);
+  return 0;
+}

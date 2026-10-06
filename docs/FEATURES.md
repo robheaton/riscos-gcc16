@@ -8,10 +8,10 @@ See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 | Component | Version | Native (RISC OS) | Cross (Linux) |
 |---|---|---|---|
 | GCC: `gcc`, `g++`, `cpp`, `gfortran` | 16.2.0 | yes | yes |
-| binutils: `as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit` | 2.45.1 | yes | yes (with the `arm-riscos-gnueabihf-` prefix) |
+| binutils: `as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit gprof` | 2.45.1 | yes | yes (with the `arm-riscos-gnueabihf-` prefix) |
 | `gcov` (coverage reports), `gcov-tool`, `gcov-dump` | 16.2.0 | `gcov` | yes (`arm-riscos-gnueabihf-gcov`: reads the `.gcda` files that RISC OS programs write) |
 | GNU make | 4.4.1 | yes | (use the host's) |
-| UnixLib (C library) | 5.0 from GCCSDK r7800, rebuilt with GCC 16, fix level 14 | the runtime package | the runtime package, and its headers inside the tool chain |
+| UnixLib (C library) | 5.0 from GCCSDK r7800, rebuilt with GCC 16, fix level 15 | the runtime package | the runtime package, and its headers inside the tool chain |
 | libstdc++ | 6.0.36 (GCC 16.2.0) | linked statically | dynamic or static |
 | libgfortran | 5.0.0 (GCC 16.2.0) | linked statically | dynamic or static |
 | libgcc, libgcc_s | GCC 16.2.0 (static), 10.2.0 (`libgcc_s.so.1` in the runtime package) | yes | yes |
@@ -57,21 +57,33 @@ See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 | Tested | hardware: programs built on Linux wrote their `.gcda` files on the Pi; the Linux `gcov` read one (real counts, branch percentages, the unexecuted line marked) and `-fprofile-use` on Linux accepted the profile of the other; host: the link of both flows (`cross-smoke.sh`) | hardware: the self-test compiles with `--coverage -c`, links and runs a program (it writes `cov.gcda`), runs `gcov cov.c` (80.00% of 15 lines) and checks every line count of the annotated source; then `-fprofile-generate`, a run, and `-fprofile-use -Werror=missing-profile` (the profile is found) |
 
 The counts are written by an exit function of libgcov, which runs from the program's `.fini_array`: that needs the runtime 16.2.0-12 (earlier runtimes never ran the `.fini_array`). A program that ends with `_exit`, `abort` or a crash writes nothing, as with glibc.
-`gprof` (`-pg`) does not work: see [KNOWN-ISSUES.md](KNOWN-ISSUES.md). How to use it: [USING-NATIVE.md](USING-NATIVE.md#coverage-and-profile-guided-optimisation) and [CROSS-COMPILER.md](CROSS-COMPILER.md#coverage-and-profile-guided-optimisation).
+How to use it: [USING-NATIVE.md](USING-NATIVE.md#coverage-and-profile-guided-optimisation) and [CROSS-COMPILER.md](CROSS-COMPILER.md#coverage-and-profile-guided-optimisation).
+
+## Profiling with gprof (new in 16.2.0-13)
+
+| | Native | Cross |
+|---|---|---|
+| `-pg`: the compiler counts every call (`push {lr}; bl __gnu_mcount_nc` after the prologue), and the program writes `gmon.out` when it ends | yes (the runtime 16.2.0-13) | yes (the program runs on RISC OS; `gmon.out` comes back to Linux) |
+| `gprof`: the flat profile and the call graph | yes (`gprof` in the package) | yes (`arm-riscos-gnueabihf-gprof`) |
+| The time | sampled 50 times a second by a thread that UnixLib starts behind `profil ()`; works in a Task window and in the desktop | the same |
+| Tested | hardware: the self-test builds a `-pg` program with the native compiler, runs it (it writes `gmon.out`), runs the native `gprof` and checks that the report has exactly 10 calls for each of the program's two functions | hardware: a program built on Linux with `-pg` ran three times on the Pi: a valid `gmon.out`, the call counts equal to the program's own, 237 to 240 samples at 50 a second, the same profile from the Linux and the native gprof, about 2 percent overhead; host: `cross-smoke.sh` (the call, `gcrt0.o`, the link) |
+
+The limits: a sample belongs to a function, not to a line (the processor takes the interrupt at a fixed place of a loop); only the program's own code is profiled, not time inside UnixLib or libstdc++; a tick that falls into a part of UnixLib that may not be interrupted (`malloc`, stdio) is lost; a program with threads of its own is sampled only at every other thread's turn (the profile has the right shape and too little time); the program must end by returning from `main` or by `exit`.
+How to use it: [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [CROSS-COMPILER.md](CROSS-COMPILER.md#profiling-with-gprof).
 
 ## Native tools
 
 | Feature | Notes | Tested |
 |---|---|---|
 | GNU make 4.4.1 | no shell: recipes cannot use pipes, redirections or `&&`; RISC OS commands work; `-jN` runs one job at a time | hardware: four make tests (make drives gcc, g++, the linker); the native gcc builds make from source and make rebuilds itself |
-| Throwback, `-mthrowback` | errors, warnings and notes with a file and line go to the editor's throwback window through DDEUtils; C, C++, Fortran and LTO diagnostics; the assembler and the linker do not send throwback | hardware: StrongED (and a test receiver); host: the text handling |
+| Throwback, `-mthrowback` | errors, warnings and notes with a file and line go to the editor's throwback window through DDEUtils; C, C++, Fortran and LTO diagnostics; since 16.2.0-13 also those of the assembler and the linker (`as --throwback`, `ld --throwback`; the driver gives them the option); a file name with a path variable in front (`<Obey$Dir>.c.main`) works | hardware: StrongED (and a test receiver): the compilers, and the native assembler and linker (a double click on an entry opened the source); host: the text handling and the UDP transport of the assembler, the linker and the compilers |
 | Real software built natively | | hardware: zlib 1.3.1 (by hand, by make, with `-flto`) and GNU make 4.4.1 itself; the objects are byte-identical to the cross compiler's |
 | Big programs | `cc1`, `cc1plus` and `f951` run with 64 MB stacks, so deeply recursive templates and `constexpr` compile | hardware: template depth 100 to 1500 and 6000 nested parentheses |
 
 ## The runtime (UnixLib) fixes
 
-14 fix levels, found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
-`vfork` + `exec` memory, the DDEUtils interaction, `scanf` with `long long`, the `.fini_array` of programs (destructors, the exit hook of libgcov), `getrlimit (RLIMIT_STACK)` and POSIX semaphores. The list, with symptoms and the matching upstream bug report, is in [RUNTIME.md](RUNTIME.md).
+15 fix levels, found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
+`vfork` + `exec` memory, the DDEUtils interaction, `scanf` with `long long`, the `.fini_array` of programs (destructors, the exit hook of libgcov), `getrlimit (RLIMIT_STACK)`, POSIX semaphores and the profiler of `-pg` programs (`gprof`). The list, with symptoms and the matching upstream bug report, is in [RUNTIME.md](RUNTIME.md).
 
 ## Experimental: modules
 
@@ -80,5 +92,5 @@ Hardware: a module with SWIs, a service call handler and static data, and a modu
 
 ## Not included
 
-OpenMP, the sanitizers, `gprof` and `-pg` (the program links and runs but writes no `gmon.out`), wide-character iostreams (`std::wcout`), `std::stacktrace`, `REAL(16)` in Fortran, multi-image coarrays, a debugger, OSLib and other RISC OS libraries,
+OpenMP, the sanitizers, wide-character iostreams (`std::wcout`), `std::stacktrace`, `REAL(16)` in Fortran, multi-image coarrays, a debugger, OSLib and other RISC OS libraries,
 and any machine other than the one it was tested on. Details and workarounds: [KNOWN-ISSUES.md](KNOWN-ISSUES.md).

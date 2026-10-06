@@ -6,7 +6,7 @@ set -e
 SRC=$(readlink -f "${1:?source dir}"); B=${2:?build dir}; PREFIX=${3:?install prefix}
 mkdir -p "$B"; cd "$B"
 "$SRC/configure" --target=arm-riscos-gnueabihf --prefix="$PREFIX" \
-  --disable-nls --disable-werror --disable-gdb --disable-gprofng --disable-gprof --disable-sim --disable-gold \
+  --disable-nls --disable-werror --disable-gdb --disable-gprofng --enable-gprof --disable-sim --disable-gold \
   --enable-plugins --without-zstd --without-debuginfod --disable-multilib
 make -j"$(nproc)" MAKEINFO=true all
 make MAKEINFO=true install

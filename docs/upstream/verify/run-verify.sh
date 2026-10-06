@@ -5,7 +5,7 @@
 #   * the patched UnixLib files compile with the GCCSDK 10.2.0 and the GCC 16.2.0 EABI compilers
 #   * the ARMEABISupport host model: unpatched 30 failed checks, patched 0
 #   * the UnixLib heap-growth host model (report 08): the real brk.c / stackalloc.c, unpatched 7 failed checks, patched 0, every breakage of the patch caught; the machine code of the new
-#     start-up lines on the A32 interpreter (needs a built patched libunixlib.so: ~/gccsdk-next/unixlib, skipped when it is not there)
+#     start-up lines on the A32 interpreter (needs a built patched libunixlib.so: ~/gccsdk-next/unixlib (docs/BUILDING.md step 5; or UNIXLIB_TREE=dir), skipped when it is not there)
 #   * every reproducer source compiles with both compilers
 #   * reports 19 and 20 (the register-variable SWI wrappers of os.h, __get_dde_prefix): the real unix/unix.c and common/prefix.c compiled with GCC 16.2.0 / 10.2.0 / 4.7.4, the reproducer
 #     (regvar1.c) run on the A32 interpreter, the old and the rewritten wrappers compared on the interpreter (32 wrappers x 300 seeds, 10 mutants), the machine code of the pristine and the
@@ -14,11 +14,14 @@
 #     patched vfscanf (repro/scanf/build-model.sh): 47315 cases 0 failures, the table of 15066 cases made by glibc: new 0 failed, old 5502, glibc 0
 #   * reports 22 - 24 (the .fini_array, getrlimit (RLIMIT_STACK), POSIX semaphores): the patched files compile and assemble with both compilers, the three programs of the machine runs compile
 #     with both compilers and with the host's gcc, and pass on a Linux host with glibc (the reference for what they expect: finitest 8 checks, rlimtest 6, semtest 18)
+#   * report 25 (gprof for EABI programs): the patched files compile and assemble with both compilers; mcount.c with the patched header defines __gnu_mcount_nc, with the pristine one only _mcount;
+#     the six instructions of __gnu_mcount_nc run on the A32 interpreter as a profiled function calls them (27 cases, 8 mutants); what -pg generates (mov ip, lr / bl mcount, crt0.o)
 # usage: run-verify.sh      (needs: ~/gccsdk = a clean svn working copy of trunk (svn status clean), ~/gccsdk-next = this repository with the cross compiler env-f (docs/BUILDING.md step 4)
 #                            and UnixLib built (step 5: ~/gccsdk-next/unixlib); Python 3, patch, gcc)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd); B=$(cd "$HERE/.." && pwd); LOG=$HERE/VERIFY-LOG.txt
 G=$HOME/gccsdk; N=$HOME/gccsdk-next
+UT=${UNIXLIB_TREE:-$N/unixlib}      # the UnixLib that build-unixlib.sh made (root/ = the patched sources, build/ = the build)
 CC10=$G/env/bin/arm-riscos-gnueabihf-gcc; CC16=$N/env-f/bin/arm-riscos-gnueabihf-gcc; STRIP=$G/env/arm-riscos-gnueabihf/bin/strip
 export NM=$G/env/arm-riscos-gnueabihf/bin/nm
 U=gcc4/recipe/files/gcc/libunixlib; fails=0
@@ -63,7 +66,7 @@ FL="-DHAVE_CONFIG_H -D__GNU_LIBRARY__ -DNO_LONG_DOUBLE -D_GNU_SOURCE=1 -D__UNIXL
 for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
   for spec in "pthread/pthinit.c|unixlib-vfork-child-pthread-fini|" "unix/unix.c|unixlib-free-signal-stack|$B/src/unixlib-free-signal-stack/incl-local" "sys/exec.c|unixlib-free-signal-stack|$B/src/unixlib-free-signal-stack/incl-local" "sys/mman-armeabi.c|unixlib-mmap-refuse-impossible|" "sys/stackalloc.c|unixlib-vfork-exec-heap-limit|$B/src/unixlib-vfork-exec-heap-limit/incl-local"; do
     f=${spec%%|*}; r=${spec#*|}; pn=${r%%|*}; inc=${r#*|}
-    $C $FL -I$N/unixlib/build -isystem $G/$U/include ${inc:+-I$inc} -I $G/$U/incl-local -c $B/src/$pn/$f -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles $f (patched by $pn)"; done; done
+    $C $FL -I$UT/build -isystem $G/$U/include ${inc:+-I$inc} -I $G/$U/incl-local -c $B/src/$pn/$f -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles $f (patched by $pn)"; done; done
 for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
   $C -xassembler-with-cpp -isystem $G/$U/include -I $B/src/unixlib-vfork-exec-heap-limit/incl-local -I $G/$U/incl-local -D__UNIXLIB_CHUNKED_STACK=0 -g -O2 -fPIC -DPIC -c $B/src/unixlib-vfork-exec-heap-limit/sys/_syslib.s -o $W/x.o 2>>"$LOG"; chk $? "$NAME assembles sys/_syslib.s (patched by unixlib-vfork-exec-heap-limit)"; done
 say ""; say "4. ARMEABISupport host model (the module's own memory.c / mmap.c, unpatched and patched, on a model of the OS)"
@@ -79,7 +82,7 @@ r1=$($H/build-and-run.sh $W/hp/gcc4/recipe/files/gcc/libunixlib original 2>&1 | 
 r2=$($H/build-and-run.sh $W/hp/gcc4/recipe/files/gcc/libunixlib patched 2>&1 | tail -1); say "  $r2"; echo "$r2" | grep -q "patched: 0 check" ; chk $? "patched: 0 failed checks expected"
 r3=$($H/build-and-run.sh $W/hp/gcc4/recipe/files/gcc/libunixlib patched mutate 2>&1 | tail -1); say "  $r3"; echo "$r3" | grep -q ", 0 not caught" ; chk $? "every breakage of the patched check is caught"
 t1=$($H/build-and-run.sh $G/$U original 2>&1 | grep TRACE | sort); t2=$($H/build-and-run.sh $W/hp/gcc4/recipe/files/gcc/libunixlib patched 2>&1 | grep TRACE | sort); [ -n "$t1" ] && [ "$t1" = "$t2" ]; chk $? "a program that was not started by exec: the sequence of requests and the slot sizes are identical before and after"
-UL=$N/unixlib/build/.libs/libunixlib.so.5.0.0
+UL=$UT/build/.libs/libunixlib.so.5.0.0
 if [ -f $UL ]; then
   python3 $T/sim-startup-loops.py $UL > $W/sim.out 2>&1; chk $? "start-up lines (himem_max_start .. himem_max_end) on the A32 interpreter: $(grep -c 'himem_max:' $W/sim.out) checks"
   python3 $T/mutate-himem-max.py $UL 2>&1 | tail -1 | tee -a "$LOG" | grep -q ", 0 not caught"; chk $? "every breakage of those instructions is caught"
@@ -90,7 +93,7 @@ for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
   for f in $B/repro/sul/*.c $B/repro/armeabisupport/*.c $B/repro/svc-abort/*.c $B/repro/heap/*.c; do extra=""; case $f in *svc_abort_repro.c) extra="-fno-stack-clash-protection";; esac
     $C -std=gnu11 -O2 $extra -I $B/repro/sul -I $B/repro/armeabisupport -o $W/x.e1f $f -lm 2>>"$LOG"; chk $? "$NAME compiles ${f#$B/}"; done; done
 say ""; say "6. the ten further UnixLib patches (reports 09 - 18): compile with GCC 10.2.0 and GCC 16.2.0, assemble the .s files"
-FL2="$FL -I$N/unixlib/build"
+FL2="$FL -I$UT/build"
 for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
   for spec in "unix/stat.c|unixlib-gcc14-implicit-declarations|" "unix/lstat.c|unixlib-gcc14-implicit-declarations|" "unix/ul_close.c|unixlib-gcc14-implicit-declarations|" "string/strndup.c|unixlib-gcc14-implicit-declarations|" "stdlib/msort.c|unixlib-gcc14-implicit-declarations|" \
               "pthread/once.c|unixlib-pthread-once|-fexceptions" "pthread/cond.c|unixlib-pthread-cond-timedwait|" "signal/sleep.c|unixlib-sleep-threads|" \
@@ -135,15 +138,15 @@ gcc -O2 -pthread -w $B/repro/unixlib-models/once_model.c -o $W/once_model; $W/on
 $W/once_model new 2>&1 | tee -a "$LOG" | grep -q "all checks passed"; chk $? "once: the new state machine passes (exactly once, waiters wait, std::async pattern completes)"
 rm -rf $W/cm && cp -r $B/repro/unixlib-models/cond $W/cm && ( cd $W/cm && ./build-model.sh 2>&1 | tee -a "$LOG" | grep -q "^PASS" ); chk $? "cond: cond_deadline () extracted from the patched cond.c: 3000000 random deadlines, never early, at most 1.1 cs late"
 say ""; say "8. the UnixLib patches against the release build, and the test programs of reports 10 - 18 compile"
-if [ -d $N/unixlib/root/libunixlib ]; then
-  $T/check-fidelity.sh $B $G $N/unixlib/root/libunixlib 2>&1 | tee -a "$LOG" | grep -q "^ok"; chk $? "the 20 UnixLib patches applied in sequence = the sources of the 16.2.0-12 release build"
-else say "  (no copy of the release build's sources at $N/unixlib: the fidelity check is skipped)"; fi
+if [ -d $UT/root/libunixlib ]; then
+  $T/check-fidelity.sh $B $G $UT/root/libunixlib 2>&1 | tee -a "$LOG" | grep -q "^ok"; chk $? "the 21 UnixLib patches applied in sequence = the sources of the 16.2.0-13 release build"
+else say "  (no copy of the release build's sources at $UT: the fidelity check is skipped)"; fi
 for cc in "$CC10|GCC 10.2.0|-std=c++17" "$CC16|GCC 16.2.0|-std=c++20"; do C=${cc%%|*}; r=${cc#*|}; NAME=${r%%|*}; CXXSTD=${r#*|}; CXX=${C%gcc}g++
   $CXX $CXXSTD -O2 -w -c $B/repro/unixlib-models/threadtest.cc -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles repro/unixlib-models/threadtest.cc ($CXXSTD)"
   for f in stkinfo chain daprobe; do $C -std=gnu11 -O2 -DSTACK_MB=64 -I $B/repro/unixlib-models -o $W/x.e1f $B/repro/unixlib-models/$f.c 2>>"$LOG"; chk $? "$NAME compiles repro/unixlib-models/$f.c"; done
   $C -std=gnu11 -O2 -fno-stack-clash-protection -o $W/x.e1f $B/repro/svc-abort/readtest2.c 2>>"$LOG"; chk $? "$NAME compiles repro/svc-abort/readtest2.c"; done
 say ""; say "9. reports 19 and 20: the register-variable SWI wrappers (incl-local/internal/os.h) and __get_dde_prefix (common/prefix.c)"
-CC47=$G/cross/bin/arm-unknown-riscos-gcc; OD=$G/env/arm-riscos-gnueabihf/bin/objdump; OSH=$B/src/unixlib-inline-swi-register-variables/incl-local; FL9="$FL -I$N/unixlib/build"
+CC47=$G/cross/bin/arm-unknown-riscos-gcc; OD=$G/env/arm-riscos-gnueabihf/bin/objdump; OSH=$B/src/unixlib-inline-swi-register-variables/incl-local; FL9="$FL -I$UT/build"
 unixinit_seq() { $OD -d --no-show-raw-insn "$1" | awk '/<__unixinit>:/{p=1;next} /^[0-9a-f]+ <.*>:$/{p=0} p' | awk '/svc[[:space:]]+0x00062583/ {on=1; next} on && /bl[[:space:]]/ {print "BL"; exit} on && /^[[:space:]]*[0-9a-f]+:[[:space:]]+mov[[:space:]]+r[0-9]+, r0$/ {print "CAPTURED"}' | tr '\n' ' '; }
 for cc in "$CC16|GCC 16.2.0|BL |CAPTURED BL |does NOT copy the size out of r0 before the first call (the bug)" "$CC10|GCC 10.2.0|CAPTURED BL |CAPTURED BL |copies the size out of r0 before the first call"; do
   IFS='|' read -r C NAME wp wn what <<< "$cc"
@@ -164,13 +167,13 @@ python3 $T/sim-regvar.py $B/repro/regvar/regvar1.c $CC16 $CC10 > $W/regvar.out 2
 grep -q 'GCC 16.2.0.*wrapper as in os.h  *f ("hello") = 10 ' $W/regvar.out; chk $? "interpreter: GCC 16.2.0, wrapper as in os.h: f (\"hello\") = 10, not 12 (arg_size = the result of strlen)"
 grep -q 'GCC 16.2.0.*FIXED wrapper  *f ("hello") = 12 ' $W/regvar.out; chk $? "interpreter: GCC 16.2.0, rewritten wrapper: f (\"hello\") = 12"
 grep -q 'GCC 10.2.0.*wrapper as in os.h  *f ("hello") = 12 ' $W/regvar.out && grep -q 'GCC 10.2.0.*FIXED wrapper  *f ("hello") = 12 ' $W/regvar.out; chk $? "interpreter: GCC 10.2.0: f (\"hello\") = 12 with both wrappers"
-A32_CC=$CC16 A32_LIBROOT=$G/$U A32_CONFIG_INC=$N/unixlib/build python3 $T/sim-swi-wrappers.py $G/$U/incl-local/internal/os.h $OSH/internal/os.h > $W/swi.out 2>&1; tail -n 12 $W/swi.out | grep "^RESULT\|^MUTANTS" | tee -a "$LOG"
+A32_CC=$CC16 A32_LIBROOT=$G/$U A32_CONFIG_INC=$UT/build python3 $T/sim-swi-wrappers.py $G/$U/incl-local/internal/os.h $OSH/internal/os.h > $W/swi.out 2>&1; tail -n 12 $W/swi.out | grep "^RESULT\|^MUTANTS" | tee -a "$LOG"
 grep -q "RESULT: all 32 wrappers behave identically" $W/swi.out; chk $? "the 32 rewritten wrappers behave like the old ones on the interpreter (300 seeds each)"
 grep -q "MUTANTS: 10 of 10 caught" $W/swi.out; chk $? "every breakage of the rewritten wrappers is caught"
 python3 $B/repro/regvar/fix-unixlib-regvars.py $G/$U/incl-local/internal/os.h $W/os-gen.h 2>>"$LOG"
 sh() { gcc -x c -fpreprocessed -dD -E -P "$1" 2>/dev/null | sed -e 's/[[:space:]]\+/ /g' -e 's/^ //; s/ $//' | grep -v '^$'; }
 diff <(sh $W/os-gen.h) <(sh $OSH/internal/os.h) > /dev/null; chk $? "fix-unixlib-regvars.py applied to the pristine os.h gives the header of the patch (comments aside)"
-python3 $T/sim-get-dde-prefix.py $G/$U $N/unixlib/build $CC16 $G/$U/common/prefix.c $B/src/unixlib-ddeutils-prefix-loop/common/prefix.c $OSH > $W/pfx.out 2>&1; grep "^RESULT\|^MUTANTS" $W/pfx.out | tee -a "$LOG"
+python3 $T/sim-get-dde-prefix.py $G/$U $UT/build $CC16 $G/$U/common/prefix.c $B/src/unixlib-ddeutils-prefix-loop/common/prefix.c $OSH > $W/pfx.out 2>&1; grep "^RESULT\|^MUTANTS" $W/pfx.out | tee -a "$LOG"
 grep -q "^RESULT: 11 of 11 cases as expected" $W/pfx.out; chk $? "the machine code of __get_dde_prefix: the pristine file loops for ever when a prefix is set, the patched file gives the right string in all 11 cases"
 grep -q "^MUTANTS: 5 of 5 caught" $W/pfx.out; chk $? "every breakage of the patched prefix.c is caught"
 for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
@@ -188,7 +191,7 @@ sc "table on the NEW code" | grep -q "15066 cases, 0 failed"; chk $? "scanf mode
 sc "table on the OLD code" | grep -q "15066 cases, 5502 failed"; chk $? "scanf model: the same table on the unpatched function: 5502 failed (the number the machine gave)"
 sc "table on glibc itself" | grep -q "15066 cases, 0 failed"; chk $? "scanf model: the table on glibc itself: 0 failed (the table is right)"
 say ""; say "11. reports 22 - 24: the .fini_array (stdlib/atexit.c, sys/_syslib.s), getrlimit (RLIMIT_STACK) (resource/initialise.c, sys/_syslib.s), POSIX semaphores (pthread/sem.c, include/semaphore.h)"
-FL11="$FL -I$N/unixlib/build"
+FL11="$FL -I$UT/build"
 for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
   for spec in "stdlib/atexit.c|unixlib-fini-array|" "resource/initialise.c|unixlib-getrlimit-stack|" "pthread/sem.c|unixlib-semaphores|-isystem $B/src/unixlib-semaphores/include"; do
     f=${spec%%|*}; r=${spec#*|}; pn=${r%%|*}; extra=${r#*|}
@@ -201,6 +204,26 @@ for f in fini-array/finitest stack-limit/rlimtest semaphores/semtest; do gcc -O2
 $W/h_finitest 2>&1 | tail -1 | tee -a "$LOG" | grep -q "8 checks, 0 failed"; chk $? "finitest on glibc: the events come in the order that the patch gives (8 checks, 0 failed)"
 ( ulimit -s 1024; $W/h_rlimtest 1048576 2>&1 | tail -1 | tee -a "$LOG" | grep -q "6 checks, 0 failed" ); chk $? "rlimtest on glibc with a 1 MB stack: 6 checks, 0 failed"
 $W/h_semtest 2>&1 | tail -1 | tee -a "$LOG" | grep -q "18 checks, 0 failed"; chk $? "semtest on glibc: 18 checks, 0 failed"
+say ""; say "12. report 25: gprof (-pg) for EABI programs: incl-local/internal/machine-gmon.h, gmon/gmon-start.c, gmon/machine-gmon.c, gmon/profil.c, pthread/context.c, sys/_syslib.s"
+PG=$B/src/unixlib-gprof-eabi; FL12="$FL -I$UT/build"
+pgseq() { $1 -pg -O2 -S -o - $B/repro/gprof/pgtest.c 2>/dev/null | awk '/^heavy[.a-z0-9]*:/ {p=1} p && /bl[[:space:]]+(__gnu_)?mcount/ {print prev " ; " $0; exit} {prev=$0}' | tr -s ' \t' ' ' | sed 's/^ //'; }
+pgcrt() { $1 -pg -O2 -### -o $W/x.e1f $B/repro/gprof/pgtest.c 2>&1 | grep -o "[a-z]*crt0\.o" | sort -u | tr '\n' ' ' | sed 's/ $//'; }
+for cc in "$CC10|GCC 10.2.0" "$CC16|GCC 16.2.0"; do C=${cc%%|*}; NAME=${cc##*|}
+  for f in gmon/gmon-start.c gmon/machine-gmon.c gmon/profil.c pthread/context.c; do
+    $C $FL12 -isystem $G/$U/include -I $PG/incl-local -I $G/$U/incl-local -c $PG/$f -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles $f (patched by unixlib-gprof-eabi)"; done
+  $C -xassembler-with-cpp -isystem $G/$U/include -I $PG/incl-local -I $G/$U/incl-local -D__UNIXLIB_CHUNKED_STACK=0 -g -O2 -fPIC -DPIC -c $PG/sys/_syslib.s -o $W/x.o 2>>"$LOG"; chk $? "$NAME assembles sys/_syslib.s (patched by unixlib-gprof-eabi)"
+  $C $FL12 -isystem $G/$U/include -I $G/$U/incl-local -c $G/$U/gmon/mcount.c -o $W/mc0.o 2>>"$LOG"; chk $? "$NAME compiles the pristine gmon/mcount.c"
+  $NM $W/mc0.o | grep -q " T mcount$" && ! $NM $W/mc0.o | grep -q "__gnu_mcount_nc"; chk $? "$NAME, pristine header: mcount.c defines mcount (the APCS routine) and no __gnu_mcount_nc"
+  $C $FL12 -isystem $G/$U/include -I $PG/incl-local -I $G/$U/incl-local -c $G/$U/gmon/mcount.c -o $W/mc1.o 2>>"$LOG"; chk $? "$NAME compiles gmon/mcount.c with the patched header"
+  $NM $W/mc1.o | grep -q " T __gnu_mcount_nc"; chk $? "$NAME, patched header: mcount.c defines __gnu_mcount_nc"
+  $OD -d --no-show-raw-insn $W/mc1.o | awk '/<__gnu_mcount_nc>:/ {p=1; next} /^[0-9a-f]+ <.*>:$/ {p=0} p && NF {print $2, $3, $4, $5, $6, $7, $8}' | head -6 | sed 's/ *$//' | tr '\n' ';' | grep -q "^push {r0, r1, r2, r3, lr};ldr r0, \[sp, #20\];mov r1, lr;bl [0-9a-f]* <mcount_internal>;pop {r0, r1, r2, r3, ip, lr};bx ip;$"; chk $? "$NAME: the machine code of __gnu_mcount_nc is the six instructions of the report"
+  $C -pg -O2 -std=gnu11 -c $B/repro/gprof/pgtest.c -o $W/x.o 2>>"$LOG"; chk $? "$NAME compiles repro/gprof/pgtest.c with -pg"
+  MO=$W/mcount-${NAME// /-}.out; python3 $T/sim-mcount.py $G/$U $PG/incl-local $UT/build $C > $MO 2>&1; tail -n 12 $MO | grep "^RESULT\|^MUTANTS" | sed "s/^/  $NAME: /" | tee -a "$LOG"
+  grep -q "^RESULT: 27 cases, 0 failed" $MO; chk $? "$NAME: the machine code of __gnu_mcount_nc (from the patched header) on the interpreter: 27 cases (r0-r3, ip, fp, return address) right: frompc, selfpc, aligned stack, registers kept, sp"
+  grep -q "^MUTANTS: 8 of 8 caught" $MO; chk $? "$NAME: every breakage of the stub is caught (the APCS and the ip conventions among them)"; done
+s=$(pgseq $CC10); [ "$s" = "mov ip, lr ; bl mcount" ]; chk $? "GCC 10.2.0 -pg: after the prologue  $s  (the legacy call: no push {lr}, no __gnu_mcount_nc)"
+s=$(pgcrt $CC10); [ "$s" = "crt0.o" ]; chk $? "GCC 10.2.0 -pg: the link line has $s (no gcrt0.o)"
+s=$(pgseq $CC16); c=$(pgcrt $CC16); [ "$s|$c" = "mov ip, lr ; bl mcount|crt0.o" ] || [ "$s|$c" = "push {lr} ; bl __gnu_mcount_nc|gcrt0.o" ]; chk $? "GCC 16.2.0 -pg: after the prologue  $s , link line $c  (either the legacy form of the target header of 16.2.0-12 and GCC 10.2.0, or the one of report 25's compiler side)"
 rm -rf $W
 sed -i "s#$HOME#~#g" "$LOG"
 say ""; say "RESULT: $fails check(s) failed"

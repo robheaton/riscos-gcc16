@@ -2,7 +2,7 @@
 
 Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about half a minute. It compiles and runs
 
-1. a probe of the runtime (UnixLib **fix level 14**),
+1. a probe of the runtime (UnixLib **fix level 15**),
 2. a C program,
 3. a C++ program with an exception, a thread and `std::async`,
 4. a Fortran program,
@@ -12,13 +12,14 @@ Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about 
 8. a file with an error, which must be **reported** (a non-zero return code),
 9. a **coverage** run: `--coverage`, the program writes its counts when it ends, `gcov` annotates the source, and a small program checks the counts,
 10. a **profile-guided** build: `-fprofile-generate`, run, then `-fprofile-use` (which must find the profile).
+11. a **gprof** run: `-pg`, the program writes `gmon.out` when it ends, `gprof` reads it, and a small program checks the call counts of its report.
 
 Every program checks itself and returns 0 only when it is right, so a `PASS` means the compiler produced a program that ran correctly.
-On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all ten checks in 26 seconds.
+On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all eleven checks in 29 seconds.
 
 ## Get it
 
-**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-12_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-12 and installs `!GCC16Test`.
+**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-13_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-13 and installs `!GCC16Test`.
 
 Or copy this folder to RISC OS yourself: the files are in the RISC OS layout (directories `c`, `cc`, `f90` and `h`; `RunSelfTest,feb` is the Obey file: on RISC OS it must have the file type Obey, `*SetType RunSelfTest Obey`).
 
@@ -39,7 +40,7 @@ The work is done on the local disc, in `<Wimp$ScrapDir>.GCC16Test`, so the folde
 
 ```
 PASS: compile fixlevel.c
-PASS: the runtime is at fix level 14
+PASS: the runtime is at fix level 15
 PASS: compile hello.c
 PASS: run hello
 ...

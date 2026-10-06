@@ -1,5 +1,28 @@
 # Changelog
 
+## v16.2.0-13: 2026-10-06, gprof, and throwback from the assembler and the linker, UnixLib fix level 15
+
+| Asset | Version |
+|---|---|
+| native compiler `Gcc16` | 16.2.0-13 |
+| runtime `SharedLibs-C-armeabihf` | 16.2.0-13 (UnixLib fix level 15) |
+| runtime `SharedLibs-C++-armeabihf` | 16.2.0-5 (unchanged) |
+| runtime `SharedLibs-Fortran-armeabihf` | 16.2.0-2 (unchanged) |
+| self-test `Gcc16SelfTest` | 16.2.0-13 |
+| Linux cross compiler | 16.2.0-13 |
+
+New since 16.2.0-12:
+
+* **`gprof` works** (`-pg`), natively and with the cross compiler. The compiler counts every call (`push {lr}; bl __gnu_mcount_nc` after the prologue, the AAPCS way; the old `mcount` call assumed an APCS frame), the program links `gcrt0.o` and writes `gmon.out` when it ends, and `gprof` (new in the native package and the Linux tarball: `arm-riscos-gnueabihf-gprof`) prints the flat profile and the call graph. The time is sampled 50 times a second by a thread that UnixLib starts behind `profil ()`; it works in a Task window and in the desktop. A program built on Linux ran three times on the Pi with exact call counts. See [USING-NATIVE.md](docs/USING-NATIVE.md#profiling-with-gprof), [CROSS-COMPILER.md](docs/CROSS-COMPILER.md#profiling-with-gprof) and the limits in [KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md).
+* **Throwback from the assembler and the linker**: `-mthrowback` gives `--throwback` to `as` and `ld` (they also work on their own); the assembler's errors and the linker's undefined references (with a source file and line in the debug information) go to the editor's throwback window. Tested on the Pi with StrongED: both show up and a double click opens the source.
+* **A file name that starts with a path variable** (`<Obey$Dir>.c.main`) is a file for throwback now: the compilers (and the new assembler and linker code) took every name that starts with `<` for a pseudo file such as `<stdin>`, and sent nothing.
+* **UnixLib fix level 15** (the runtime package): `__gnu_mcount_nc`, `__gmon_start__` for EABI programs, and the sampler thread behind `profil ()`. One more report for the GCCSDK maintainers (25, [docs/UPSTREAM.md](docs/UPSTREAM.md)).
+* **The cross compiler links against the UnixLib of its release**: the sysroot of the tool chain had GCCSDK's 10.2.0 `libunixlib.so`, `crt0.o` and `gcrt0.o`; `docs/BUILDING.md` step 5 now installs the fixed ones (`install-unixlib-sysroot.sh`), which `-pg` programs need to link.
+* The self-test (`Gcc16SelfTest`) has eleven checks: a `-pg` program, `gprof`, and a small program that checks the call counts of its report.
+* `Gcc16` 16.2.0-13 needs `SharedLibs-C-armeabihf` 16.2.0-13 or later (install the runtime first, then reboot).
+* Not changed: the C++ and Fortran runtimes.
+* Checked on the Raspberry Pi: the full regression run (all 54 summary lines identical to 16.2.0-12, none failing), the library tests at fix level 15, a program built with `-pg` by the cross compiler and read by the native `gprof`, throwback from the assembler and the linker, and the self-test (eleven of eleven checks). The build instructions ([docs/BUILDING.md](docs/BUILDING.md)) were run again in an empty home directory, and the packages and the Linux tarball of this release are the output of that run.
+
 ## v16.2.0-12: 2026-10-06, coverage and profile-guided optimisation, UnixLib fix level 14
 
 | Asset | Version |

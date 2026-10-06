@@ -1,4 +1,4 @@
-VERIFY-LOG  2026-10-06 09:08   run by verify/run-verify.sh
+VERIFY-LOG  2026-10-06 12:19   run by verify/run-verify.sh
 upstream: svn://svn.riscos.info/gccsdk/trunk/gcc4 revision 7800; working copy changes in the files used: 0
 
 1. every patch applies to pristine upstream
@@ -14,6 +14,7 @@ upstream: svn://svn.riscos.info/gccsdk/trunk/gcc4 revision 7800; working copy ch
   ok    unixlib-free-signal-stack.patch alone
   ok    unixlib-gcc14-implicit-declarations.patch alone
   ok    unixlib-getrlimit-stack.patch alone
+  ok    unixlib-gprof-eabi.patch alone
   ok    unixlib-inline-swi-register-variables.patch alone
   ok    unixlib-memcpy-split-vstm.patch alone
   ok    unixlib-mmap-refuse-impossible.patch alone
@@ -196,8 +197,8 @@ PASS
   ok    cond: cond_deadline () extracted from the patched cond.c: 3000000 random deadlines, never early, at most 1.1 cs late
 
 8. the UnixLib patches against the release build, and the test programs of reports 10 - 18 compile
-ok   31 files of the 20 UnixLib patches, applied in sequence, equal the release build's sources (comments stripped)
-  ok    the 20 UnixLib patches applied in sequence = the sources of the 16.2.0-12 release build
+ok   36 files of the 21 UnixLib patches, applied in sequence, equal the release build's sources (comments stripped)
+  ok    the 21 UnixLib patches applied in sequence = the sources of the 16.2.0-13 release build
   ok    GCC 10.2.0 compiles repro/unixlib-models/threadtest.cc (-std=c++17)
   ok    GCC 10.2.0 compiles repro/unixlib-models/stkinfo.c
   ok    GCC 10.2.0 compiles repro/unixlib-models/chain.c
@@ -305,5 +306,40 @@ SUMMARY [rlimtest]: 6 checks, 0 failed -> PASS
   ok    rlimtest on glibc with a 1 MB stack: 6 checks, 0 failed
 SUMMARY [semtest]: 18 checks, 0 failed -> PASS
   ok    semtest on glibc: 18 checks, 0 failed
+
+12. report 25: gprof (-pg) for EABI programs: incl-local/internal/machine-gmon.h, gmon/gmon-start.c, gmon/machine-gmon.c, gmon/profil.c, pthread/context.c, sys/_syslib.s
+  ok    GCC 10.2.0 compiles gmon/gmon-start.c (patched by unixlib-gprof-eabi)
+  ok    GCC 10.2.0 compiles gmon/machine-gmon.c (patched by unixlib-gprof-eabi)
+  ok    GCC 10.2.0 compiles gmon/profil.c (patched by unixlib-gprof-eabi)
+  ok    GCC 10.2.0 compiles pthread/context.c (patched by unixlib-gprof-eabi)
+  ok    GCC 10.2.0 assembles sys/_syslib.s (patched by unixlib-gprof-eabi)
+  ok    GCC 10.2.0 compiles the pristine gmon/mcount.c
+  ok    GCC 10.2.0, pristine header: mcount.c defines mcount (the APCS routine) and no __gnu_mcount_nc
+  ok    GCC 10.2.0 compiles gmon/mcount.c with the patched header
+  ok    GCC 10.2.0, patched header: mcount.c defines __gnu_mcount_nc
+  ok    GCC 10.2.0: the machine code of __gnu_mcount_nc is the six instructions of the report
+  ok    GCC 10.2.0 compiles repro/gprof/pgtest.c with -pg
+  GCC 10.2.0: RESULT: 27 cases, 0 failed
+  GCC 10.2.0: MUTANTS: 8 of 8 caught
+  ok    GCC 10.2.0: the machine code of __gnu_mcount_nc (from the patched header) on the interpreter: 27 cases (r0-r3, ip, fp, return address) right: frompc, selfpc, aligned stack, registers kept, sp
+  ok    GCC 10.2.0: every breakage of the stub is caught (the APCS and the ip conventions among them)
+  ok    GCC 16.2.0 compiles gmon/gmon-start.c (patched by unixlib-gprof-eabi)
+  ok    GCC 16.2.0 compiles gmon/machine-gmon.c (patched by unixlib-gprof-eabi)
+  ok    GCC 16.2.0 compiles gmon/profil.c (patched by unixlib-gprof-eabi)
+  ok    GCC 16.2.0 compiles pthread/context.c (patched by unixlib-gprof-eabi)
+  ok    GCC 16.2.0 assembles sys/_syslib.s (patched by unixlib-gprof-eabi)
+  ok    GCC 16.2.0 compiles the pristine gmon/mcount.c
+  ok    GCC 16.2.0, pristine header: mcount.c defines mcount (the APCS routine) and no __gnu_mcount_nc
+  ok    GCC 16.2.0 compiles gmon/mcount.c with the patched header
+  ok    GCC 16.2.0, patched header: mcount.c defines __gnu_mcount_nc
+  ok    GCC 16.2.0: the machine code of __gnu_mcount_nc is the six instructions of the report
+  ok    GCC 16.2.0 compiles repro/gprof/pgtest.c with -pg
+  GCC 16.2.0: RESULT: 27 cases, 0 failed
+  GCC 16.2.0: MUTANTS: 8 of 8 caught
+  ok    GCC 16.2.0: the machine code of __gnu_mcount_nc (from the patched header) on the interpreter: 27 cases (r0-r3, ip, fp, return address) right: frompc, selfpc, aligned stack, registers kept, sp
+  ok    GCC 16.2.0: every breakage of the stub is caught (the APCS and the ip conventions among them)
+  ok    GCC 10.2.0 -pg: after the prologue  mov ip, lr ; bl mcount  (the legacy call: no push {lr}, no __gnu_mcount_nc)
+  ok    GCC 10.2.0 -pg: the link line has crt0.o (no gcrt0.o)
+  ok    GCC 16.2.0 -pg: after the prologue  mov ip, lr ; bl mcount , link line crt0.o  (either the legacy form of the target header of 16.2.0-12 and GCC 10.2.0, or the one of report 25's compiler side)
 
 RESULT: 0 check(s) failed

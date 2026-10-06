@@ -10,6 +10,7 @@
  and the one of the fourth batch (report 21): scanf-long-long (stdio/scanf.c);
  and the three of the fifth batch (reports 22 - 24): fini-array (stdlib/atexit.c, sys/_syslib.s, vscript), getrlimit-stack (sys/_syslib.s, vscript, resource/initialise.c),
    semaphores (pthread/sem.c and the declaration of sem_timedwait in include/semaphore.h: two patches of the recipe in one).
+ and the one of the sixth batch (report 25): gprof-eabi (gmon/gmon-start.c, gmon/machine-gmon.c, gmon/profil.c, incl-local/internal/machine-gmon.h, pthread/context.c, sys/_syslib.s).
 They start from the patches of the GCCSDK GCC 16 forward-port (recipe patches-unixlib), applied to the pristine files; the comments are made upstream-neutral.  No ChangeLog hunk (a suggested entry is in each report).
 usage: make-upstream-unixlib-patches.py OUTDIR [PATCHNAME ...]"""
 import os, shutil, subprocess, sys, tempfile
@@ -41,6 +42,8 @@ JOBS = {
   "unixlib-fini-array.patch": ("unixlib-fini-array.patch", ["stdlib/atexit.c", "sys/_syslib.s", "vscript"]),
   "unixlib-getrlimit-stack.patch": ("unixlib-getrlimit-stack.patch", ["sys/_syslib.s", "vscript", "resource/initialise.c"]),
   "unixlib-semaphores.patch": (("unixlib-sem-blocking-timedwait.patch", "unixlib-semaphore-timedwait-decl.patch"), ["pthread/sem.c", "include/semaphore.h"]),
+  # sixth batch (report 25)
+  "unixlib-gprof-eabi.patch": ("unixlib-gprof-eabi.patch", ["gmon/gmon-start.c", "gmon/machine-gmon.c", "gmon/profil.c", "incl-local/internal/machine-gmon.h", "pthread/context.c", "sys/_syslib.s"]),
 }
 # comment clean-up (old -> new), applied to the patched files
 EDITS = {

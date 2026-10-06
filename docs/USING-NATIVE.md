@@ -4,7 +4,7 @@ This page assumes the packages are installed ([INSTALL-RISCOS.md](INSTALL-RISCOS
 
 ## Every session
 
-1. Double-click `!GCC16` once after each boot: its `!Run` puts `GCC16bin:` (the drivers `gcc`, `g++`, `gfortran`, `cpp` and `make`) and `GCC16tbin:` (the binutils) on `Run$Path`, sets the return-code limit
+1. Double-click `!GCC16` once after each boot: its `!Run` puts `GCC16bin:` (the drivers `gcc`, `g++`, `gfortran`, `cpp`, and `make`, `gcov` and `gprof`) and `GCC16tbin:` (the binutils) on `Run$Path`, sets the return-code limit
    (`Sys$RCLimit`) and sets UnixLib's filename suffix swapping for every tool.
 2. Open a Task window and give it room: the C++ compiler is a 30 MB program and the driver that starts it is saved next to it.
 
@@ -113,7 +113,25 @@ gcc -o prog prog.o
 
 * This needs the runtime `SharedLibs-C-armeabihf` 16.2.0-12 or later: the counts are written by an exit function that runs from the program's `.fini_array`, which earlier runtimes never ran. A program that ends with `_exit`, `abort` or a crash writes nothing.
 * The program has the absolute name of its `.gcda` file built in (the directory the object file was built in), so the counts go there wherever you run it from; `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` change that, as [CROSS-COMPILER.md](CROSS-COMPILER.md#coverage-and-profile-guided-optimisation) explains.
-* `gprof` (`-pg`) is not available: the program links and runs but writes no `gmon.out`.
+* Profiling with `-pg` and `gprof` is in the next section.
+
+## Profiling with gprof
+
+```
+gcc -O1 -pg -o prog prog.c         compile and link with profiling (g++ and gfortran too; -pg goes on every compile and on the link)
+prog                               when it ends it writes gmon.out, the RISC OS file gmon/out, in the current directory
+gprof prog gmon.out                the flat profile and the call graph      (-b: without the explanations, -p: only the flat profile, -q: only the call graph)
+```
+
+The compiler counts every call exactly; the time is sampled 50 times a second, so a program has to run for some seconds to give a useful profile. What to know:
+
+* **Function level.** A sample belongs to a function, not to a line: on this processor the interrupt is taken at a fixed place of a loop, so every hot loop shows as one bin of the histogram.
+* **Only your code.** Time inside UnixLib and libstdc++ is not in the profile, and their calls are not recorded; the time of a call of `malloc` or `printf` is not charged to the caller.
+* **Lost ticks.** The samples come from a second thread that UnixLib starts behind `profil ()`, at the ticks of the ticker that its threads use. A tick that falls into a part of UnixLib that must not be interrupted (`malloc`, stdio) is lost, and so is time when the Wimp is running other tasks: expect about 80 percent of the elapsed time of a CPU-bound program (4.7 of 6 seconds in the test).
+* **Threads.** A program that has threads of its own is sampled only at every other thread's turn: the profile has the right shape and too little time. The sampler is a thread too: a program that counts its threads will see it.
+* The program must end by returning from `main` or by `exit`: `_exit`, `abort` and a crash leave no `gmon.out`. Set `GMON_VERBOSE` (to anything) to have the number of samples printed when it ends.
+* Needs the runtime 16.2.0-13 (UnixLib fix level 15). `gmon.out` is `gmon/out`: `gprof prog gmon.out` finds it by the Unix name, as for the other files ([File names](#file-names-unix-names-risc-os-directories)).
+* The Linux cross compiler's gprof reads the same file: copy `gmon.out` to Linux and run `arm-riscos-gnueabihf-gprof prog gmon.out` ([CROSS-COMPILER.md](CROSS-COMPILER.md#profiling-with-gprof)).
 
 ## Throwback
 
@@ -127,7 +145,7 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 * Needs DDEUtils loaded (the DDE, StrongED and others load it) and an editor that has registered with it (StrongED: tick "Throwback requests" in its Choices). It was tested with **StrongED**.
 * An editor can only register with a module that is already there: if DDEUtils was loaded after the editor started, restart the editor.
 * Throwback works only in the desktop. Set `THROWBACK_DEBUG` (to anything) to be told on the screen why no throwback arrives.
-* The assembler and the linker do not send throwback yet.
+* The assembler and the linker send theirs too, since 16.2.0-13: `-mthrowback` makes the driver give them `--throwback`, and `as --throwback` and `ld --throwback` work on their own. The assembler reports its errors at the lines of your source; the linker reports an error that has a source file and line in the object's debug information (an undefined reference in a file compiled with `-g`) and nothing for the rest. A file name that starts with a path variable (`<Obey$Dir>.s.foo`) is a file like any other.
 
 ## Memory, stacks and temporary files
 
@@ -147,6 +165,7 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 | `TMPDIR` | where temporary files go |
 | `<program>$HeapMax` | maximum heap of one program, in MB |
 | `THROWBACK_DEBUG` | any value: explain on the screen why throwback does not work |
+| `GMON_VERBOSE` | any value: a program built with `-pg` prints how many samples it took when it ends |
 
 ## A first multi-file project
 

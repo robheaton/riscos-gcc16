@@ -35,6 +35,7 @@ mkdir -p "$R/bin" "$R/libexec/gcc/$T/$V" "$R/lib/gcc/$T/$V" "$R/$T/bin" "$R/$T/l
 
 exe() { $ST --strip-all -o "$2,e1f" "$1"; }                 # an executable, stripped, file type e1f
 for p in gcc g++ cpp gcov; do exe "$NS/bin/$p" "$R/bin/$p"; done      # gcov (16.2.0-12): reads the .gcda/.gcno files that a --coverage program leaves
+exe "$BI/bin/gprof" "$R/bin/gprof"                                   # gprof (16.2.0-13): reads the gmon.out that a program built with -pg leaves
 for p in cc1 cc1plus collect2; do exe "$NS/libexec/gcc/$T/$V/$p" "$R/libexec/gcc/$T/$V/$p"; done
 # LTO (only when the compilers were built with NATIVE_LTO=yes, build-native-lto.sh): lto1 and lto-wrapper.  The linker plugin is NOT used: the native ld has no plugin support, the driver is
 # configured with HAVE_LTO_PLUGIN 0, so -flto links through collect2, which runs lto-wrapper on the LTO objects and links what comes back.

@@ -1,0 +1,19 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-06 11:49:40.377003477 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-06 11:49:40.389663968 +0100
+@@ -151,12 +151,14 @@
+ 	 13: scanf understands ll, hh, j, z, t and q, and %Lf stores a long
+ 	 double; 14: the .fini_array functions of a program run at exit,
+ 	 getrlimit (RLIMIT_STACK) reports the size of the EABI main stack, and
+-	 POSIX semaphores block instead of polling and have sem_timedwait).
++	 POSIX semaphores block instead of polling and have sem_timedwait; 15:
++	 gprof (-pg) works for EABI programs: __gnu_mcount_nc, __gmon_start__
++	 and a sampler thread behind profil ()).
+ 	 Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 14;
++	return 15;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

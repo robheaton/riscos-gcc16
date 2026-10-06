@@ -15,6 +15,9 @@ Use it
   arm-riscos-gnueabihf-gfortran -O2 -o hello,e1f hello.f90      Fortran
   arm-riscos-gnueabihf-gcc -O2 -flto -o prog,e1f a.c b.c        link time optimisation
   arm-riscos-gnueabihf-gcc -O0 --coverage -c prog.c ; ... ; arm-riscos-gnueabihf-gcov prog.c     coverage (see docs/CROSS-COMPILER.md in the repository: GCOV_PREFIX)
+  arm-riscos-gnueabihf-gcc -O1 -pg -o prog,e1f prog.c          profiling (new in 16.2.0-13): run prog on RISC OS (it writes gmon.out), copy gmon.out back, then
+  arm-riscos-gnueabihf-gprof prog,e1f gmon.out                 (see docs/CROSS-COMPILER.md in the repository: the flat profile and the call graph)
+  arm-riscos-gnueabihf-gcc -mthrowback ...                     errors of the compiler, the assembler and the linker to a text editor on a RISC OS machine (THROWBACK_HOST: docs/CROSS-COMPILER.md)
   The ",e1f" suffix gives the file the RISC OS file type ELF when it is copied to a RISC OS Samba share (or type  *SetType hello &E1F  on RISC OS).
 
 Run the programs on RISC OS

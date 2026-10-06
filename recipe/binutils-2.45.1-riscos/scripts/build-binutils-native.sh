@@ -18,9 +18,9 @@ GD="$(cd "$(dirname "$0")/../.." && pwd)/gcc-16.2.0-riscos/data"
 "$E/bin/$T-gcc" -O2 -c "$GD/riscos-da.c" -o "$B/riscos-da.o"
 "$E/bin/$T-gcc" -O2 -c "$GD/riscos-da-big.c" -o "$B/riscos-da-big.o"
 "$SRC/configure" --build=x86_64-pc-linux-gnu --host=$T --target=$T --prefix="$P" \
-  --disable-nls --disable-werror --disable-gdb --disable-gprofng --disable-gprof --disable-sim --disable-gold --disable-plugins \
+  --disable-nls --disable-werror --disable-gdb --disable-gprofng --enable-gprof --disable-sim --disable-gold --disable-plugins \
   --without-zstd --without-debuginfod --disable-multilib --disable-shared --enable-static \
   CFLAGS="-O2" CXXFLAGS="-O2" LDFLAGS="$B/riscos-da.o $B/riscos-da-big.o -static-libgcc -Wl,--allow-shlib-undefined" > configure.log 2>&1
-make -j"${JOBS:-8}" MAKEINFO=true all-binutils all-gas all-ld > make.log 2>&1
-make MAKEINFO=true install-binutils install-gas install-ld > install.log 2>&1
+make -j"${JOBS:-8}" MAKEINFO=true all-binutils all-gas all-ld all-gprof > make.log 2>&1
+make MAKEINFO=true install-binutils install-gas install-ld install-gprof > install.log 2>&1
 ls -la "$P/bin" "$P/$T/bin" 2>/dev/null | head -40

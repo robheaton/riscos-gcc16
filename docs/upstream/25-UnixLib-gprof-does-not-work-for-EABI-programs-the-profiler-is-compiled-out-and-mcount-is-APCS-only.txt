@@ -1,0 +1,215 @@
+From:    Rob Heaton <rob@robheaton.co.uk>
+To:      GCCSDK mailing list <gcc@gccsdk.riscos.info>  (to be confirmed: see
+         00-INDEX.txt)
+Subject: UnixLib: gprof (-pg) does not work for EABI programs: the profiler
+         is compiled out, mcount is APCS only, and setitimer is refused in
+         a Task window
+Attach:  patches/unixlib-gprof-eabi.patch (312 lines, six files)
+         repro/gprof/pgtest.c
+
+Summary
+-------
+A program built with -pg for the arm-riscos-gnueabihf target links, runs, and
+writes no gmon.out. Four things are behind it; three are in UnixLib, one is in
+the target header of the compiler.
+
+  1. The compiler. GCCSDK's GCC 10.2.0 (and the forward-port to 16.2.0 that I
+     work with, whose target header is the same file) emits the legacy call
+         mov    ip, lr
+         bl     mcount
+     after the prologue, because gcc/config/arm/riscos-gnueabihf.h does not
+     take over the profiling macros of arm/bpabi.h (NO_PROFILE_COUNTERS 1 and
+     an ARM_FUNCTION_PROFILER that prints  push {lr} ; bl __gnu_mcount_nc ),
+     and it links crt0.o for -pg: STARTFILE_SPEC has no gcrt0.o. (I measured
+     both with GCCSDK's own 10.2.0 compiler: the assembler text above and
+     crt0.o in the link line.)
+  2. UnixLib's mcount (gmon/machine-gmon.h, MCOUNT) is the APCS routine: it
+     ignores ip, takes the caller's return address from the APCS frame
+     ([fp, #-4]) and does nothing when fp is 0. GCC's EABI frame (fp points
+     at the saved lr) is another layout, so the word it reads is the saved
+     frame pointer; and a call through a PLT stub, as every call into
+     libunixlib.so is, replaces ip, which the classic ABI uses to pass the
+     caller's return address. The AAPCS convention (__gnu_mcount_nc: the
+     caller's return address on the stack) has neither problem, and there is no
+     __gnu_mcount_nc in libunixlib.so.
+  3. __gmon_start__, which starts the profiler (__monstartup, and an atexit ()
+     function that writes gmon.out), is never called for an EABI program:
+     gmon/gmon-start.c is all inside #ifndef __ARM_EABI__, and so is the
+     call in sys/_syslib.s (__main, "BLNE __gmon_start__" when bit 0 of the
+     flags of crt0.o's data block is set, which gcrt0.o does). _exit () calls
+     gmon_machine_cleanup () only for non-EABI too.
+  4. The sampler (gmon/_profile.s, machine-gmon.c, profil.c, by Lee Noar)
+     takes the last HAL timer (and gives up when there is only one), claims
+     the processor IRQ vector with OS_ClaimProcessorVector, copies its
+     handler into the RMA, keeps the samples in a dynamic area and uses Wimp
+     filters. I did not try it on EABI (it is compiled out, as 3. says), and I
+     did not look at which HAL timers the machine below has. The usual
+     alternative, setitimer (ITIMER_PROF) and a SIGPROF handler (glibc's
+     profil ()), cannot be used where it matters most: setitimer () returns
+     ENOSYS when __get_taskhandle () != 0, that is in a Task window and in
+     every Wimp program.
+
+The patch makes gprof work for EABI programs without the HAL: __gnu_mcount_nc
+(the AAPCS call), __gmon_start__ for EABI (called from __main), plain memory
+for the tables, and a sampler that is a thread of the program itself: the
+threads of UnixLib are scheduled by a ticker (OS_CallEvery, pthread/_context.s),
+and at every tick the interrupted thread's registers, the program counter
+among them, are saved in its context. The sampler thread reads the saved
+program counter of the thread that the tick interrupted, counts it in the
+histogram that profil () was given, and yields. That works in a Task window and
+in the desktop, and needs no hardware timer and no assembler change in the
+thread code (the scheduler remembers one more pointer).
+
+Environment
+-----------
+Raspberry Pi Compute Module 4 (Cortex-A72), RISC OS 5.30, ARMEABISupport 1.08,
+SOManager 3.04, SharedUnixLibrary 1.16, UnixLib 5.0 from trunk r7800 built with
+GCC 16.2.0 (libunixlib 16.2.0-12 of my port, fix level 14, for the unpatched
+runs; its gmon files are the files of trunk, unchanged). The test programs are
+built by the GCC 16.2.0 cross compiler of my port, with the three compiler
+macros below.
+
+What I measured, and what I did not
+-----------------------------------
+With pgtest (repro/gprof): it calls two functions, heavy () (2000000 loop
+turns) and light () (1000000), in turn for a fixed time (the argument, in
+centiseconds; 600 in the runs below), from main () only, and prints how often
+each was called.
+
+1. Unpatched (the compiler of my port before the change: mov ip, lr ; bl
+   mcount, crt0.o): the program links, runs for 6 seconds, prints its output
+   and ends with status 0. No gmon.out appears (a program built with -pg ran in
+   RunCov1, 2026-10-06).
+
+2. Patched library, compiler macros as below, three runs of 600 centiseconds
+   in a Task window on the machine (the runtime in a folder of its own, put
+   in front of SharedLibs$Path for the run):
+
+     run   calls printed by the program   gmon.out   samples   gprof says
+     1     heavy 1212, light 1212         1279 bytes   237      heavy 1212, light 1212
+     2     heavy 1256, light 1256         1279 bytes   240      heavy 1256, light 1256
+     3     heavy 1257, light 1257         1279 bytes   240      heavy 1257, light 1257
+
+   The call counts of the arcs are the program's own numbers, exactly. The
+   histogram has 600 counters over 0x8000 - 0x895c (the code of the program)
+   and a profiling clock of 50 a second; in run 1 the 237 samples are in two
+   bins, 145 in heavy () and 92 in light () (each hot loop falls into one bin:
+   the processor takes the interrupt at a fixed place of a loop, so only the
+   function a sample falls in means anything); gprof (the Linux one of
+   binutils 2.45.1 built for this target, and a gprof built for RISC OS) prints
+   the same flat profile and call graph: heavy () 61.28 % (2.40 ms a call),
+   light () 38.88 % (1.52 ms a call) in run 1, 56 / 44 % in runs 2 and 3
+   (240 samples: the spread of two runs is about what the sampling noise says,
+   3 points).
+   Without -pg the same program does 619 passes in 300 centiseconds (4.85 ms a
+   pass); with -pg 1212 in 600 (4.95 ms): about 2 % more run time.
+
+   The 240 samples are 80 % of the 300 ticks of 6 seconds at 50 a second:
+   a tick that falls into a region where UnixLib does not allow a context
+   switch (the callback is not set while __pthread_disable_ints is in force:
+   malloc, stdio) is lost, and so is the time when the Wimp has other tasks
+   running. I did not separate the two.
+
+   The rate is the one of the ticker: OS_CallEvery with R0 = 1 is every second
+   centisecond (the comment in _context.s says so too), and the numbers agree:
+   the loop of heavy () is four instructions (add, add, cmp, bne); at 100
+   samples a second it would take 0.6 ns a turn, less than the 0.89 ns that a
+   3-wide Cortex-A72 at the 1.5 GHz of the Compute Module 4 needs for four
+   instructions (I did not read the clock rate of the machine).
+
+3. The regression suites of my port, run on the machine with the patched
+   library and the native compilers (the library checks, the thread tests in
+   C, C++ and Fortran, the native compile, make and Fortran tests) passed: 54 summary lines, identical to those of the run before the patch, and no failure.
+
+What I did not test: a program with threads of its own (it is sampled at
+every other thread's turn, so the profile has the right shape and too little
+time; the code does not try to do better: the scheduler remembers the thread it
+took the processor from, and the sampler counts that one at its own turn
+only); a program that runs as a desktop task (the ticker's Wimp filters are
+used as for threads); a program that calls fork or vfork; C++ programs with
+many functions (the table of arcs is sized by gmon.c, as in glibc); -static;
+the time spent in the shared libraries (it is outside the profiled range and
+is not counted, nor are calls into the libraries recorded); the HAL profiler
+(see above) or an APCS build (the patch changes only the EABI parts).
+
+The compiler side (not part of the attached patch)
+--------------------------------------------------
+In gcc/config/arm/riscos-gnueabihf.h:
+
+    #undef  NO_PROFILE_COUNTERS
+    #define NO_PROFILE_COUNTERS 1
+    #undef  ARM_FUNCTION_PROFILER
+    #define ARM_FUNCTION_PROFILER(STREAM, LABELNO)  \
+    {                                               \
+      fprintf (STREAM, "\tpush\t{lr}\n");           \
+      fprintf (STREAM, "\tbl\t__gnu_mcount_nc\n");  \
+    }
+
+(the macros of arm/bpabi.h and linux-eabi.h), and in STARTFILE_SPEC
+    " %{!shared:%{pg:gcrt0.o%s;:crt0.o%s}}"
+instead of  " %{!shared:crt0.o%s}" . The call goes after the prologue
+(push {fp, lr} ... then push {lr} ; bl __gnu_mcount_nc), so the stack at the
+call is 4 bytes off 8-byte alignment, which is why __gnu_mcount_nc saves five
+registers.
+
+The patch
+---------
+ * incl-local/internal/machine-gmon.h: for EABI, MCOUNT defines
+   __gnu_mcount_nc as a top-level asm, as glibc's sysdeps/arm/arm-mcount.S
+   does:
+        push  {r0, r1, r2, r3, lr}     @ the arguments of the profiled function
+        ldr   r0, [sp, #20]            @ frompc: the caller's return address
+        mov   r1, lr                   @ selfpc
+        bl    mcount_internal
+        pop   {r0, r1, r2, r3, ip, lr} @ lr = the caller's return address again
+        bx    ip                       @ on into the profiled function
+   (the legacy _mcount stays for the other targets). PROFIL_RATE is 50.
+ * gmon/gmon-start.c: __gmon_start__ is available for EABI; the range that is
+   profiled is __ul_memory.robase .. rwbase (the program's image up to its
+   data: nothing has to be exported by the program), rounded up to a multiple
+   of 8 so that the histogram has exactly one counter for every 4 bytes of
+   code (kcountsize = textsize / 2 is then a multiple of sizeof (*froms) and
+   the scale is exact: with another size the bins are 3.99 bytes wide and
+   gprof's addresses drift).
+ * sys/_syslib.s: the call of __gmon_start__ is no longer inside
+   #ifndef __ARM_EABI__.
+ * gmon/machine-gmon.c: for EABI gmon_machine_init () is calloc () and the
+   other two hooks are trivial; the HAL code stays for the other targets.
+ * gmon/profil.c: for EABI __profil () starts the sampler thread (once) and
+   stores the buffer, the offset and the scale; the thread, at each of its
+   turns, counts the saved program counter of
+   __pthread_prev_running_thread (written by the scheduler) into
+   buffer[((pc - offset) / 2) * scale / 65536] and calls pthread_yield ().
+   Setting GMON_VERBOSE in the environment makes it print how many samples it
+   took when profiling is switched off.
+ * pthread/context.c: __pthread_context_switch () stores the thread it takes the
+   processor from in __pthread_prev_running_thread (hidden).
+
+Suggested ChangeLog entry (date and name are yours):
+
+	* incl-local/internal/machine-gmon.h (MCOUNT): For EABI define
+	__gnu_mcount_nc.  (PROFIL_RATE): New.
+	* gmon/gmon-start.c (__gmon_start__): Also for EABI; profile from
+	robase to rwbase.
+	* sys/_syslib.s (__main): Call __gmon_start__ for EABI too.
+	* gmon/machine-gmon.c (gmon_machine_init, gmon_machine_cleanup,
+	gmon_machine_sample_overflowed): EABI versions without the HAL.
+	* gmon/profil.c (__profil): EABI version: a sampler thread.
+	* pthread/context.c (__pthread_prev_running_thread): New.
+	(__pthread_context_switch): Set it.
+
+What I did not do
+-----------------
+I did not look at the history of these files in svn, nor search the mailing
+list or the bug tracker, so I do not know whether the problem is known, or
+whether the HAL profiler was ever run for EABI by somebody. I did not run
+the HAL profiler, and cannot say whether it works on a machine with a free
+timer; if it does, the patch could keep it where it is available and fall
+back to the thread sampler (setitimer is refused in the desktop either way).
+The sampler is an unusual way to get a program counter; its cost is a second
+thread in every profiled program (a program that counts its threads will see
+it) and the loss of the ticks that fall into critical regions. 
+The analysis, the patches and the drafting were done with the help of an AI
+assistant (Claude); every run on the machine was mine.
+
+Rob Heaton

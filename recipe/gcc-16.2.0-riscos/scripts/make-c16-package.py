@@ -75,6 +75,12 @@ if REL.isdigit() and int(REL) >= 12:
              "program has a fixed size (1MB unless the program defines __stack_size), and programs size their recursion and their thread stacks by that limit: it now answers the real size; (3) POSIX semaphores: "
              "sem_wait polled with pthread_yield () and leaked a list entry on every call, and sem_timedwait was ENOSYS (and not even declared in <semaphore.h>).  A semaphore is now a counter with a mutex "
              "and a condition variable, sem_wait blocks, and sem_timedwait works.")
+if REL.isdigit() and int(REL) >= 13:
+    NOTE += (" 16.2.0-13 and later answer sysconf (0x4700) with 15 and make gprof work for EABI programs (gcc -pg): (1) __gnu_mcount_nc, the profiling call that gcc emits after the prologue of every "
+             "function with -pg (push {lr} ; bl __gnu_mcount_nc), counts the calls; (2) the start-up code calls __gmon_start__ when gcrt0.o has set the profiling flag (that call was compiled out for EABI), "
+             "and the tables of the profile are plain memory (UnixLib's own profiler, which needs a free hardware timer and an interrupt vector, was never tried and is not used); (3) profil () starts a "
+             "thread that, at every tick of the ticker that UnixLib's threads use (OS_CallEvery, 50 a second), reads the program counter that the interrupted thread had and counts it in the histogram: "
+             "that works in a Task window, where setitimer is refused.  gmon.out is written when the program ends.")
 # the packages from 16.2.0-4 on must contain the code of every fix: look for it in the built library (a silently skipped patch once shipped a package without the fix-level answer)
 if REL.isdigit() and int(REL) >= 4:
     import subprocess

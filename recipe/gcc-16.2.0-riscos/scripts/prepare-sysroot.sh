@@ -25,5 +25,5 @@ patch -p2 -N -d "$P/$T" < "$HERE/patches-unixlib/unixlib-semaphore-timedwait-dec
 # no absolute or escaping symlinks may have been copied (a later `make install` could write through them)
 if find "$P" -type l \( -lname '/*' -o -lname '../../*' \) | grep -q .; then echo "ERROR: escaping symlinks in $P"; exit 1; fi
 for t in ar as ld ld.bfd nm objcopy objdump ranlib readelf strip; do ln -s "$NEW/$T/bin/$t" "$P/$T/bin/$t"; done
-for t in addr2line ar as c++filt elfedit ld ld.bfd nm objcopy objdump ranlib readelf size strings strip; do ln -s "$NEW/bin/$T-$t" "$P/bin/$T-$t"; done
+for t in addr2line ar as c++filt elfedit gprof ld ld.bfd nm objcopy objdump ranlib readelf size strings strip; do ln -s "$NEW/bin/$T-$t" "$P/bin/$T-$t"; done
 echo "prepared $P: $(du -sh "$P" | cut -f1)"; "$P/$T/bin/ld" --version | head -1

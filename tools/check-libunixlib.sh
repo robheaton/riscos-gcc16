@@ -21,7 +21,7 @@ need recv      'bic[[:space:]]+[a-z0-9]+, r[0-9]+, #4080'  "touches the pages of
 need pthread_once 'bl|b' "pthread_once present"
 # 16.2.0-6 (fix level 8): sysconf answers 8; the main stack of an EABI program is allocated in a loop that retries with half the size (stack_try); the heap dynamic area is created
 # in a loop that retries with half the maximum size (da_try: the X form of OS_DynamicArea, a retry on error)
-need sysconf   'mov[[:space:]]+r0, #14([[:space:]]|$)'     "answers fix level 14"
+need sysconf   'mov[[:space:]]+r0, #15([[:space:]]|$)'     "answers fix level 15"
 need stack_try 'svc[[:space:]]+0x00079d02'                  "asks ARMEABISupport for the stack (StackOp)"
 need stack_try 'lsr[[:space:]]+r[0-9]+, r[0-9]+, #1$'       "retries with half the stack size when there is no room"
 need da_try    'svc[[:space:]]+0x00020066'                  "creates the heap dynamic area with the X form of OS_DynamicArea"
@@ -105,4 +105,20 @@ else echo "  FAIL __eabi_main_stack_size is missing"; fail=1; fi
 read -r semsize <<< "$("$NM" -S "$LIB" | awk '$4 == "sem_timedwait" {print $2; exit}')"
 if [ -n "$semsize" ] && [ $(( 0x$semsize )) -gt 64 ]; then echo "  ok   sem_timedwait: $(( 0x$semsize )) bytes (a real wait; the old stub was 24 bytes of ENOSYS)"
 else echo "  FAIL sem_timedwait is missing or still the ENOSYS stub (${semsize:-no symbol})"; fail=1; fi
+# 16.2.0-13 (fix level 15): gprof (-pg) for EABI programs.  __gnu_mcount_nc is the AAPCS profiling call that gcc emits after the prologue of a function (push {lr} ; bl __gnu_mcount_nc): it saves r0-r3 and lr,
+# hands the caller's return address (on the stack) and its own lr to mcount_internal, and comes back with the caller's return address in lr; __main calls __gmon_start__ when gcrt0.o set the profiling flag (the
+# call goes through the PLT, so there is a relocation for it only when something calls it); profil () starts a sampler thread (the HAL version of __profil is 236 bytes); the scheduler remembers the thread
+# that it took the processor from, whose saved program counter the sampler reads.
+need __gnu_mcount_nc 'push[[:space:]]+\{r0, r1, r2, r3, lr\}'      "saves r0-r3 and lr (the arguments of the profiled function)"
+need __gnu_mcount_nc 'ldr[[:space:]]+r0, \[sp, #20\]'              "takes the return address of the caller of the profiled function (frompc)"
+need __gnu_mcount_nc 'pop[[:space:]]+\{r0, r1, r2, r3, ip, lr\}'   "puts that return address back in lr and keeps the way into the function in ip"
+need __gnu_mcount_nc 'bx[[:space:]]+ip'                            "continues in the profiled function"
+RE=${OD%objdump}readelf
+if "$RE" -r "$LIB" | grep -q '__gmon_start__'; then echo "  ok   __main: calls __gmon_start__ (gcrt0.o sets the profiling flag) for EABI programs"
+else echo "  FAIL nothing calls __gmon_start__: a program built with -pg would write no gmon.out"; fail=1; fi
+read -r profsize <<< "$("$NM" -S "$LIB" | awk '$4 == "__profil" {print $2; exit}')"
+if [ -n "$profsize" ] && [ $(( 0x$profsize )) -gt 288 ]; then echo "  ok   __profil: $(( 0x$profsize )) bytes (the sampler thread; the HAL version is 236 bytes)"
+else echo "  FAIL __profil is missing or still the HAL profiler (${profsize:-no symbol})"; fail=1; fi
+if "$NM" "$LIB" | grep -q " __pthread_prev_running_thread$"; then echo "  ok   __pthread_prev_running_thread exists (the scheduler remembers the thread it took the processor from)"
+else echo "  FAIL __pthread_prev_running_thread is missing"; fail=1; fi
 [ $fail = 0 ] && echo "libunixlib check: OK" || { echo "libunixlib check: FAILED"; exit 1; }

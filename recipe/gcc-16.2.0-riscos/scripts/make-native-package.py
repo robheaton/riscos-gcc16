@@ -163,6 +163,8 @@ REQ_NEW = """Needs the SharedLibs-C-armeabihf package, version 16.2.0-10 or late
 while the DDEUtils module is loaded, and every text editor that does throwback loads it), and ARMEABISupport / SOManager."""
 REQ_12 = """Needs the SharedLibs-C-armeabihf package, version 16.2.0-12 or later (UnixLib fix level 14: the stack fixes, the repair for the DDEUtils module and, new in 16.2.0-12, the exit functions
 of programs: the counts of a --coverage program are written by one), and ARMEABISupport / SOManager."""
+REQ_13 = """Needs the SharedLibs-C-armeabihf package, version 16.2.0-13 or later (UnixLib fix level 15: the stack fixes, the repair for the DDEUtils module, the exit functions of programs and, new in
+16.2.0-13, the profiler behind gprof), and ARMEABISupport / SOManager."""
 THROWBACK = """Throwback (-mthrowback), new in 16.2.0-8
   gcc -Wall -mthrowback -c main.c         g++ -mthrowback ...         gfortran -mthrowback ...         (add it to the compiler options of your makefile)
   Every diagnostic that has a file and a line (errors, warnings, notes, fatal errors; C, C++ and Fortran) is also sent to your text editor through the DDEUtils module, as the Norcroft DDE does:
@@ -170,8 +172,7 @@ THROWBACK = """Throwback (-mthrowback), new in 16.2.0-8
   Needs the DDEUtils module loaded (the DDE, !StrongED and others load it from System:Modules) and an editor that has registered with it (StrongED: "Throwback requests" in its Choices).
   An editor can only register with a module that is already there: if DDEUtils was loaded after the editor started, restart the editor (in the tests StrongED also took the registration over when
   another throwback receiver left).  Set THROWBACK_DEBUG to any value to be told on the screen why no throwback arrives (no DDEUtils, no editor registered, not run in the desktop ...).
-  Throwback needs the desktop: it does nothing outside it.  Not done yet: the assembler and the linker (their messages do not go to the editor).
-
+%%TBLAST%%
 """
 LTO = """Link time optimisation (-flto), new in 16.2.0-10
   gcc -O2 -flto -o prog a.c b.c        g++ -O2 -flto ...        gfortran -O2 -flto ...        (or  gcc -O2 -flto -c a.c  for each file, then  gcc -O2 -flto a.o b.o -o prog)
@@ -196,29 +197,52 @@ COVERAGE = """Coverage and profile-guided optimisation, new in 16.2.0-12
   gcov is in !GCC16.bin.  The counts are written by a destructor of the program, which UnixLib runs from 16.2.0-12 on (a program that ends with _exit, abort or a crash writes nothing).
   The file names follow the usual UnixLib rule: prog.gcno, prog.gcda and prog.c.gcov are the RISC OS files prog/gcno, prog/gcda and prog/c/gcov.  (UnixLib would take prog.c.gcov for a RISC OS path,
   the file gcov in the directories prog and c: gcov asks for Unix names only, and a program of your own that opens such a file needs  int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;
-  with  #include <unixlib/local.h> .)  Not available: gprof and -pg (the program links and runs but writes no gmon.out).
+  with  #include <unixlib/local.h> .)%%NOGPROF%%
 
 """
+GPROF = """Profiling with gprof (-pg), new in 16.2.0-13
+  gcc -O1 -pg -o prog prog.c           compile and link with profiling (also g++ and gfortran); -pg goes on every compile and on the link
+  prog                                 when the program ends it writes gmon.out (the RISC OS file gmon/out) in the current directory
+  gprof prog gmon.out                  the flat profile (the time spent in each function) and the call graph   (-b: without the explanations, -p: only the flat profile, -q: only the call graph)
+  gprof is in !GCC16.bin.  The calls are counted exactly.  The time is sampled 50 times a second by a second thread that UnixLib starts for the purpose, so the program has to run for some seconds to give a
+  useful profile, and a sample belongs to a function, not to a line.  Only the program's own code is profiled: time inside the libraries (UnixLib, libstdc++) is not counted and their calls are not recorded.
+  A tick that falls into a part of UnixLib that may not be interrupted (malloc, stdio) is lost, and a program with threads of its own is sampled only at every other thread's turn: its profile has the
+  right shape but too little time.  The program must end by returning from main or by exit (not _exit, abort or a crash).  Set GMON_VERBOSE to any value to have the number of samples printed.
+  Needs the runtime 16.2.0-13 (UnixLib fix level 15).  gcrt0.o (the start file for -pg) is in !GCC16.arm-riscos-gnueabihf.lib.
+
+"""
+TB_LAST_OLD = "  Throwback needs the desktop: it does nothing outside it.  Not done yet: the assembler and the linker (their messages do not go to the editor).\n"
+TB_LAST_13 = ("  Throwback needs the desktop: it does nothing outside it.  The assembler and the linker send theirs too (new in 16.2.0-13): -mthrowback makes the driver add --throwback to as and ld, and\n"
+              "  as --throwback  and  ld --throwback  work on their own (an error of the linker with a source file and a line, an error of the assembler in its source).  A file name that starts with a\n"
+              "  path variable (<Obey$Dir>.s.foo) is a file too.\n")
+NOGPROF_OLD = "  Not available: gprof and -pg (the program links and runs but writes no gmon.out)."
+THROWBACK = THROWBACK.replace("%%TBLAST%%", TB_LAST_13 if int(REL) >= 13 else TB_LAST_OLD)
+COVERAGE = COVERAGE.replace("%%NOGPROF%%", "" if int(REL) >= 13 else NOGPROF_OLD)
 if int(REL) >= 9:
     THROWBACK = THROWBACK + LTO
 if int(REL) >= 12:
     THROWBACK = THROWBACK + COVERAGE
+if int(REL) >= 13:
+    THROWBACK = THROWBACK + GPROF
 if int(REL) >= 12:
-    readme = readme.replace("@@REQ@@", REQ_12).replace("@@THROWBACK@@", THROWBACK)
+    if int(REL) >= 13:
+        readme = readme.replace("@@REQ@@", REQ_13).replace("@@THROWBACK@@", THROWBACK.replace("Throwback (-mthrowback), new in 16.2.0-8\n", "Throwback (-mthrowback), new in 16.2.0-8 (the assembler and the linker: 16.2.0-13)\n"))
+    else:
+        readme = readme.replace("@@REQ@@", REQ_12).replace("@@THROWBACK@@", THROWBACK)
     # the binutils programs have the 8 MB stack request again (data/riscos-da-big.c: the 16.2.0-11 build was made before it was added)
     ra = "make for 8 MB, as, ld, the other binutils programs and the drivers for nothing (1 MB, UnixLib's default)."
     assert ra in readme
     readme = readme.replace(ra, "make and the binutils programs (as, ld ...) for 8 MB, the drivers for nothing (1 MB, UnixLib's default).")
     rb = "make: 8 MB; the binutils and the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-8 needs 16.2.0-10)."
     assert rb in run
-    run = run.replace(rb, "make and the binutils: 8 MB; the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-12 needs 16.2.0-12).")
+    run = run.replace(rb, "make and the binutils: 8 MB; the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-%s needs 16.2.0-%s)." % (REL, REL))
 elif int(REL) >= 8:
     readme = readme.replace("@@REQ@@", REQ_NEW).replace("@@THROWBACK@@", THROWBACK)
 else:
     readme = readme.replace("@@REQ@@", REQ_OLD).replace("@@THROWBACK@@", "")
 control = pkgmeta.control("Gcc16", "%s-%s" % (V, REL), "GPL",
                           "Experimental native GCC 16.2.0 (C, C++, Fortran), binutils 2.45.1 and GNU make 4.4.1 for RISC OS (forward-port of the GCCSDK EABI tool chain)",
-                          depends="SharedLibs-C-armeabihf (>= %s)" % ("16.2.0-12" if int(REL) >= 12 else "16.2.0-10" if int(REL) >= 8 else "16.2.0-5"),
+                          depends="SharedLibs-C-armeabihf (>= %s)" % ("16.2.0-13" if int(REL) >= 13 else "16.2.0-12" if int(REL) >= 12 else "16.2.0-10" if int(REL) >= 8 else "16.2.0-5"),
                           components="Apps.Utilities.!GCC16 (Movable LookAt)")
 copyright = pkgmeta.copyright_gcc16("%s-%s" % (V, REL))
 add_file(APP + "!Boot", boot.encode(), 0xFEB)
