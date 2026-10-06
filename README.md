@@ -92,6 +92,7 @@ On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISuppor
 * the native compiler building real software: zlib 1.3.1 (also with `-flto`) and GNU make 4.4.1 itself;
 * the runtime's own checks: 48 library checks, 23 memory-guard checks, 12 process-exit checks, six heap-growth scenarios of `vfork` + `exec` children and a table of 15,066 `sscanf` cases.
 
+The packages of this release were installed with PackMan on that machine and checked with the self-test (`tests/selftest`: eight checks, 22 seconds).
 The build instructions were checked too: every command of [docs/BUILDING.md](docs/BUILDING.md) was run again, in order, from a fresh copy of this repository, and the results were compared with the released files.
 The test programs are in [tests/](tests/) and are described in [docs/TESTING.md](docs/TESTING.md). Only one machine was used: other ARMv7 machines should work, but have not been tried.
 

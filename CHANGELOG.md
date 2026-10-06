@@ -16,6 +16,7 @@ New since the last internal release (16.2.0-10):
 * **`-flto=N`, `-flto=auto` and a make job server work in the native compiler** (the optimisation jobs run one after the other).
 * The package metadata names the real maintainer and points at this repository.
 * Checked by the full regression run: 50 summary lines identical to the previous release, none failing.
+* All five packages were installed with PackMan on the test machine and pass the self-test (8 of 8 checks, 22 seconds).
 * The build instructions ([docs/BUILDING.md](docs/BUILDING.md)) were checked by running every command again in a fresh copy of the repository; the Linux tarball of this release is that rebuild.
 
 ## The internal releases before it (not published)
