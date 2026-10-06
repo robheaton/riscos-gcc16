@@ -67,7 +67,7 @@ What the native build needed, each learned on the hardware:
 
 Running it: the tree is Unix-named, so switch UnixLib's filename suffix swapping off per program (`Set UnixEnv$gcc$sfix xyzzy`, same for g++ cpp cc1 cc1plus collect2 as ld ar ...), `Set Sys$RCLimit 65536`,
 and give the task an application space of at least 48 MB (`WimpSlot -min 48M -max 48M`: cc1plus is 30 MB and the vfork saves the driver next to it).  Stack: the main stack of an EABI
-program is a fixed 1 MB, enough for ordinary sources; deep template recursion (roughly 300-450 levels) would overflow it.  The tests are in `tests/` (see `tests/README.md`).
+program is 1 MB unless the program defines `__stack_size` (runtime 16.2.0-6 or later): `cc1`, `cc1plus` and `f951` ask for 64 MB and `make` for 8 MB, so deep template recursion works. `data/riscos-da-big.c` gives the binutils programs 8 MB too when they are built with it (`build-binutils-native.sh` does); the binutils in the released package were built before that was added and have the default 1 MB.  The tests are in `tests/` (see `tests/README.md`).
 
 ## Throwback (`-mthrowback`)
 The option of the GCCSDK compilers, accepted and ignored by the port until 2026-10-04, now works: every diagnostic that has a file and a line (errors, warnings, notes, fatal errors; C, C++, Fortran, LTO) is ALSO sent to a RISC OS

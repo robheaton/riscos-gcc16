@@ -24,7 +24,7 @@ New since the last internal release (16.2.0-10):
 |---|---|
 | 16.2.0-1 to -5 | the first native compilers, `make` 4.4.1, the heap in dynamic areas, sizes of heaps built in |
 | 16.2.0-6 | `gfortran` |
-| 16.2.0-7 | 64 MB stacks for `cc1`, `cc1plus` and `f951`, 8 MB for the binutils and `make` |
+| 16.2.0-7 | 64 MB stacks for `cc1`, `cc1plus` and `f951`, 8 MB for `make` |
 | 16.2.0-8 | throwback (`-mthrowback`) |
 | 16.2.0-9, -10 | native `-flto` (test packages; `-10` carried a workaround for the `scanf` bug) |
 

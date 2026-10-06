@@ -115,7 +115,7 @@ run += '''
 | Every program of the tool chain keeps its heap in a dynamic area (built in).  The MAXIMUM size of a heap is only reserved address space, but the reservations of the programs
 | that are alive at once (make, gcc, collect2, ld ...) add up and must fit: the drivers (gcc, g++, cpp, collect2) and make have 32 MB, the compilers proper (cc1, cc1plus) and
 | the binutils programs 512 MB.  <program>$HeapMax (an integer, in MB) changes the maximum of one program, e.g.   SetEval cc1plus$HeapMax 1024   or   SetEval make$HeapMax 128
-| The main stacks are built in too (cc1, cc1plus, f951: 64 MB; the binutils and make: 8 MB; the drivers 1 MB): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-8 needs 16.2.0-10).
+| The main stacks are built in too (cc1, cc1plus, f951: 64 MB; make: 8 MB; the binutils and the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-8 needs 16.2.0-10).
 
 | Ensure the latest version of SUL:
 RMEnsure SharedUnixLibrary 1.12 RMLoad System:Modules.SharedULib
@@ -148,7 +148,7 @@ Using it
     do not need the runtime packages for those).  Fortran: gfortran is the driver, the compiler proper f951 is in libexec; the module files it writes (chk.mod) are in the current directory.
   * The memory of every tool is a dynamic area (maximum 32 MB for the drivers and make, 512 MB for cc1, cc1plus, f951 and the binutils; <program>$HeapMax in MB changes it).
   * The main stack: cc1, cc1plus and f951 ask for 64 MB (deeply recursive templates and constexpr evaluation need about 4 KB per level: the 1 MB every EABI program had ends at
-    a depth of about 250, the compiler's own limits are 900 and 512), as, ld, the other binutils programs and make for 8 MB, the drivers for nothing (1 MB).  ARMEABISupport maps a
+    a depth of about 250, the compiler's own limits are 900 and 512), make for 8 MB, as, ld, the other binutils programs and the drivers for nothing (1 MB, UnixLib's default).  ARMEABISupport maps a
     stack page when it is first touched, so a big stack costs address space only; the stacks of ALL EABI programs share one 256 MB range, and when it is short UnixLib tries half the
     size, and so on.  This needs SharedLibs-C-armeabihf 16.2.0-6 or later: an older libunixlib ignores the request and every stack stays 1 MB.
   * If a program stops with "Unable to allocate logical address space", the free address space was too small for the maximum heap size it asked for (it is only reserved, not

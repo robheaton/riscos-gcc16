@@ -102,7 +102,7 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 ## Memory, stacks and temporary files
 
 * Every tool keeps its heap in a dynamic area. The maximum is only **reserved address space**: 32 MB for the drivers and `make`, 512 MB for `cc1`, `cc1plus`, `f951` and the binutils. `<program>$HeapMax` (an integer, in MB) changes it, e.g. `SetEval cc1plus$HeapMax 1024`.
-* The main stacks are built in: `cc1`, `cc1plus` and `f951` get 64 MB (deeply recursive templates and constexpr evaluation need about 4 KB per level), the binutils and `make` 8 MB, the drivers 1 MB. They need the runtime package 16.2.0-6 or later.
+* The main stacks are built in: `cc1`, `cc1plus` and `f951` get 64 MB (deeply recursive templates and constexpr evaluation need about 4 KB per level), `make` 8 MB, the binutils and the drivers 1 MB (UnixLib's default). They need the runtime package 16.2.0-6 or later.
 * Temporary files go to `TMPDIR`, or `UnixFS$/tmp` (`<Wimp$ScrapDir>` by default). **Keep them on a local disc**: with `TMPDIR` on a network share the compiler was about 20% slower.
 * RISC OS can limit the maximum size of a dynamic area (128 MB on the test machine), so the compilers get less than the 512 MB they ask for. That is enough for ordinary sources; a compile that ends with `out of memory` or `virtual memory exhausted` has run into it. Split the source file or lower the optimisation level.
 
