@@ -52,7 +52,7 @@ The test programs of the runtime work, each with the symptom it was written for 
 Each hardware test prints lines like `SUMMARY [name]: 48 checks, 0 failed -> PASS` and sets its exit status; the Obey runners `Spool` everything to a results file. The Obey files all begin with `Set X$Dir <Obey$Dir>` because the first EABI program
 that runs changes `<Obey$Dir>`.
 
-The expected results, from the final regression run of 16.2.0-14 on the author's machine (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests): **54 `SUMMARY` lines, the same as in the run of 16.2.0-13, none failing** (the 50 of 16.2.0-11 and the four that 16.2.0-12 added: `finitest`, `rlimtest` twice, `semtest`). The compiler, UnixLib and the runtime packages are not changed in 16.2.0-15 (the release adds the module kit), so these are the lines to expect.
+The expected results, from the final regression run of 16.2.0-15 on the author's machine (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests): **54 `SUMMARY` lines, the same as in the runs of 16.2.0-14 and 16.2.0-13, none failing** (the 50 of 16.2.0-11 and the four that 16.2.0-12 added: `finitest`, `rlimtest` twice, `semtest`). The compiler, UnixLib and the runtime packages are not changed in 16.2.0-15 (the release adds the module kit), so these are the lines to expect.
 
 ## 5. Host tests (no RISC OS needed)
 
