@@ -52,6 +52,8 @@ The reports
      pages it claimed) until the next reboot.
      Patch: armeabisupport-mmap-failure-cleanup (against 1.05) and, optional,
      unixlib-mmap-refuse-impossible.
+     Update 2026-10-07: 1.08 is a rewrite of the memory code with the same
+     sequence (read from its binary): the patch has to be written again.
  05  ARMEABISupport + SharedUnixLibrary: the mmap memory of a vfork + exec
      child stays allocated until the ROOT process ends.  No patch (a design
      suggestion).
@@ -273,10 +275,12 @@ Things to decide or fill in before sending
    svc_abort_repro.c needs -fno-stack-clash-protection with GCC 16).
  * ARMEABISupport version.  The module on the machine is 1.08 (03 Jun 2025);
    trunk r7800 has 1.05 (last changed by r7734, 2023-01-07).  I do NOT have
-   the sources of 1.06 - 1.08.  Report 04's patch is written against 1.05 and
-   has to be rebased by someone who has the current sources (the report says
-   so); reports 05 and 06 describe code that I read in 1.05 and measured on
-   1.08.
+   the sources of 1.06 - 1.08, only a binary of 1.08 (I have asked its author
+   for the source).  Report 04's patch is written against 1.05 and has to be
+   rebased by someone who has the current sources (the report says so; its
+   update of 2026-10-07 says what the 1.08 binary shows: the same leak in
+   rewritten code, so the patch has to be written again); reports 05 and 06
+   describe code that I read in 1.05 and measured on 1.08.
  * AI assistance.  Every mail carries, above the signature, the line "The
    analysis, the patches and the drafting were done with the help of an AI
    assistant (Claude); every run on the machine was mine." (you asked for it).

@@ -35,6 +35,10 @@ and by a host model of the module's own code (the unmodified code fails 30
 checks, the patched code none).  An optional UnixLib-side mitigation, which
 stops the worst requests before ARMEABISupport is asked, is attached too.
 
+Update of 2026-10-07 (at the end of this report): the disassembly of the 1.08
+binary shows the same sequence in its code, as far as I can read it, and the
+patch (written against the 1.05 sources) does not apply to it.
+
 Environment
 -----------
   Raspberry Pi Compute Module 4 (Cortex-A72, AArch32), RISC OS 5.30
@@ -47,7 +51,8 @@ Environment
   unlike the 1.05 sources, which use a fixed MMAP_MAX_DA_SIZE of 100 MB. The
   sources I have are 1.05 (svn trunk r7800: gcc4/riscos/armeabisupport, last
   changed by r7734, 2023-01-07, "Bump version to v1.05"); 1.06 - 1.08 are not
-  in trunk, so I do NOT have them.  I read the 1.05 code for the causes and
+  in trunk, so I do NOT have their sources (a 1.08 binary only: see the
+  update at the end).  I read the 1.05 code for the causes and
   wrote the patch against it; it has to be rebased on the current sources
   before it can be applied there.  The leak itself is the same in the versions
   I could look at: measured on the machine with 1.08 (the table below) and on
@@ -238,6 +243,84 @@ slow as the unpatched one, so it is not an effect of the leak.  Cause not
 known: most likely a change between 1.05 and 1.08, or my build of the sources;
 I do not have 1.06 - 1.08 and the ChangeLog of 1.05 does not mention the stack
 code.
+
+Update 2026-10-07: what the 1.08 binary shows
+---------------------------------------------
+I have since been given the 1.08 module as a binary only (the file
+ARMEABISupport,ffa: 53,880 bytes, help string "ARMEABISupport 1.08 (03 Jun
+2025) (c) GCCSDK Developers", sha256
+46e40778bb0ebdfe819846e4170980be883b2dc8872275f495142f8236434af4) and have
+asked its author for the source.  Everything below is my reading of the
+disassembly (the function names are in the image) and may be wrong in
+detail: I have not seen the code.
+
+1.08 is not a small step from 1.05.  It has new SWIs (FdOp, FileOp, PreExec,
+IPC), new commands (*ARMEABISupport_lslocks, *ARMEABISupport_mmap_report),
+file descriptor tables, file locks, a per-application table of mappings
+(appmmap_*) and a rewritten memory layer: the functions that the patch of
+this report changes (allocator_mmap, allocator_munmap, allocator_claim_pages
+and so on) are gone, and mmap_allocator_{mmap,munmap_block,mremap,move_block,
+change_protection}, mmap_list_*, dynamicarea_{claim,release,map,unmap,
+unmap_release_all}_pages, dynamic_area_create and armeabi_mmap_internal took
+their place.  So the patch does not apply to 1.08: it has to be written
+again.
+
+The leak is in 1.08 (measured: the table above) and the code has the same
+sequence as 1.05:
+
+  a. mmap_allocator_mmap takes an array entry for the new block, finds its
+     place (in front of the first block, in a gap, or at the end), links it
+     in (mmap_list_add_to_front / _to_end, or by hand for a gap), raises the
+     recorded size of the allocator and only then calls
+     dynamicarea_claim_pages.  If the claim fails, the error is returned
+     with the block still linked and nothing given back.  If it works and
+     the flags ask for the pages to be mapped, the function ends with a tail
+     call of dynamicarea_map_pages, so a failed map leaves the claimed pages
+     claimed and the block linked as well.
+  b. Only the "end of the list" case compares the new block with the maximum
+     size of the allocator (and frees its array entry when the request does
+     not fit: that part is clean).  The case "no block yet" does not.
+  c. armeabi_mmap_internal tries the existing allocators for a request of up
+     to 25600 pages (100 MB).  A bigger request, or one that no allocator
+     can serve, gets a new pool entry: its area is named "mmap#%d" and made
+     by dynamic_area_create (maximum size 100 MB, or the size of the request
+     above 25600 pages), and mmap_allocator_mmap is called on it.  When that
+     returns an error (or -1 for the block) the function takes its plain
+     error exit.  The code that removes the area (OS_DynamicArea 1) and
+     frees the pool entry is there, but it runs only when dynamic_area_create
+     itself fails: after a successful create nothing removes the area,
+     empties its block list or frees the entry.  (In the loop over the
+     existing allocators an error just moves on to the next one, with the
+     block of the failed try still linked in the first.)
+  d. appmmap_add_mapping, which enters a mapping in the application's table,
+     is called only on the success paths of armeabi_mmap_internal, so that
+     table does not know the block of a failed request.  I did not read
+     mmap_allocator_munmap_block, mmap_cleanup_app or the dump code, so I
+     cannot say what they do with such a block (in 1.05 an ownerless block
+     kept its allocator, and with it the area, for ever).
+
+So the fix, in 1.08's names, is the one of the patch: refuse a block that
+does not fit before linking it in (also the first block); when the claim or
+the map fails, give the claimed pages back (dynamicarea_unmap_pages /
+dynamicarea_release_pages), unlink the block and put the recorded size of
+the allocator back; and in armeabi_mmap_internal, when the allocator was
+made for this request and the request fails, remove its area and give the
+pool entry back, as the error path of dynamic_area_create already does.
+(mmap_allocator_munmap_block calls the same area-removal helper, so I assume
+that the normal munmap path removes the area of an emptied allocator.)
+mmap_allocator_mremap, which I did not read, may need the same rollback when
+it grows a block in place.
+
+How I looked at the leak: the list of dynamic areas named mmap#N (daprobe -m
+and repro/armeabisupport/mmap_leak_repro.c, "a 129", as in the table above).
+*ARMEABISupport_mmap_report is new in 1.08 and should show the leftover
+allocator from inside the module (it prints "[mmap#NN] n mappings" for one
+allocator or for all of them); I have not tried it, I only found it in the
+binary.
+
+I would be glad to rebase the patch on the 1.08 source and test it on a
+Raspberry Pi (RISC OS 5.30) with the reproducer of this report, and to send
+it back.  Without the source I can only describe the problem.
 
 Related: report 05 (mmap memory of children), 06 (unloading under SOManager).
 
