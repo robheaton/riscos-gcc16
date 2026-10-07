@@ -11,7 +11,7 @@ with a patch where there is one, a reproducer, and an honest statement of what w
 | 01 | SharedUnixLibrary 1.16 | a `vfork` child that ends without `exec` kills its parent, resizes its parent's Wimp slot and, when the parent was started by `exec`, frees the parent's SOManager client: **a hard freeze** | yes |
 | 02 | UnixLib | the `_exit` of such a child frees the RMA block of the program image it shares with its parent | yes |
 | 03 | UnixLib | the signal stack (one page per program) is never freed | yes |
-| 04 | ARMEABISupport | a failed `mmap` leaves its `mmap#N` dynamic area (and the memory it claimed) until the next reboot | yes (against 1.05) |
+| 04 | ARMEABISupport | a failed `mmap` leaves its `mmap#N` dynamic area (and the memory it claimed) until the next reboot | yes, against 1.05 (1.08 is a rewrite of the memory code: the patch has to be written again for it) |
 | 05 | ARMEABISupport + SharedUnixLibrary | the `mmap` memory of a `vfork` + `exec` child stays allocated until the root process ends | idea only |
 | 06 | ARMEABISupport | `*RMKill` succeeds while SOManager holds a handle of a global allocator; every EABI program then fails to start | no |
 | 07 | RISC OS 5.30 | a store made by the OS in SVC mode to a not-yet-mapped page of an EABI stack is lost; a 64-byte `vstm` into such a page is not recovered | no (questions) |

@@ -2,14 +2,14 @@
 """Build SharedLibs-C-armeabihf_16.2.0-<REL>_arm.zip: the 10.2.0-1 package with libunixlib.so.5.0.0 and libm.so.1.0.0 REPLACED by the ones built
 with the GCC 16.2.0 forward-port compiler and binutils 2.45.1 from the patched UnixLib 5.0 sources (recipe scripts/build-unixlib.sh: exception-safe
 pthread_once, pthread_cond_timedwait, sysconf, sleep with threads; fix level 5; from REL 2 also fread/fwrite short-transfer fix; REL 3: stack-buffer touch; REL 4: fix level 6; REL 5: no 64-byte vstm in memcpy/memmove, built with -fstack-clash-protection, fix level 7; REL 6: __stack_size for the EABI main stack, heap dynamic area falls back to a smaller maximum, fix level 8; REL 7: mmap/mremap refuse a request that can never be served, the one page signal stack is freed at process exit, fix level 9; REL 8: the _exit of a vfork child that ends without exec leaves the RMA block of the shared program image alone, fix level 10).  libgcc_s, libdl and the loader stay those of 10.2.0-1.
-usage: make-c16-package.py [REL] [BUILD_DIR]   (defaults: 1, ~/gccsdk-next/unixlib-v5/build)"""
+usage: make-c16-package.py [REL] [BUILD_DIR]   (defaults: 1, ~/gccsdk-next/unixlib/build)"""
 import os, struct, sys, time, zipfile
 HOME = os.path.expanduser("~")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pkgmeta
 SRC = HOME + "/gccsdk/autobuilder/autobuilder_packages/arm/Development/SharedLibs-C-armeabihf_10.2.0-1_arm.zip"
 REL = sys.argv[1] if len(sys.argv) > 1 else "1"
-NB = (sys.argv[2] if len(sys.argv) > 2 else HOME + "/gccsdk-next/unixlib-v5/build") + "/.libs/"
+NB = (sys.argv[2] if len(sys.argv) > 2 else HOME + "/gccsdk-next/unixlib/build") + "/.libs/"
 OUT = os.environ.get("PKG_OUT", HOME + "/gccsdk-next/release") + "/SharedLibs-C-armeabihf_16.2.0-%s_arm.zip" % REL
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 NOTE = ("libunixlib.so.5.0.0 and libm.so.1.0.0: UnixLib 5.0 rebuilt with the experimental GCC 16.2.0 forward-port (binutils 2.45.1), including the fixes of the "

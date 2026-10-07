@@ -15,10 +15,10 @@
 #   SharedULib-116fix3t,ffa fix3 plus patches-unixlib/unixlib-sul-trace.patch assembled with -DSULTRACE, help string "1.16-vforkfix3t (4 Oct 2026)": a DEBUGGING AID, not a fix.  Every step of sul_fork,
 #                          sul_exec and sul_exit appends a line to the log file named in the source, with raw SWIs, so that the last line survives a freeze.  The same patched source assembled WITHOUT
 #                          -DSULTRACE must be byte-identical to SharedULib-116fix3,ffa: checked here.
-# usage: build-sul.sh [ROOT] [W]      ROOT = the patched UnixLib tree (default ~/gccsdk-next/unixlib-v12/root), W = output (default ~/gccsdk-next/sul-build)
+# usage: build-sul.sh [ROOT] [W]      ROOT = the patched UnixLib tree (default ~/gccsdk-next/unixlib/root, the one build-unixlib.sh makes: its module/sul.s is still the original), W = output (default ~/gccsdk-next/sul-build)
 set -eu
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-ROOT=${1:-$HOME/gccsdk-next/unixlib-v12/root}
+ROOT=${1:-$HOME/gccsdk-next/unixlib/root}
 W=${2:-$HOME/gccsdk-next/sul-build}
 G=${GCCSDK:-$HOME/gccsdk}
 CC=$G/env/bin/arm-riscos-gnueabihf-gcc

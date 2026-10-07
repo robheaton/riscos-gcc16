@@ -63,7 +63,7 @@ fixlevel 14
 It should print `fixlevel: libunixlib fix level 14` and `asked for 14: yes`. (`*Info` on the library file cannot tell the versions apart: it shows only the size in megabytes.)
 Fix levels and what they mean are listed in [RUNTIME.md](RUNTIME.md).
 
-To check the whole installation, install the optional `Gcc16SelfTest` package the same way (after `Gcc16`), open the folder that contains `!GCC16Test` once, and type in a Task window `Obey <GCC16Test$Dir>.RunSelfTest`. It compiles and runs ten small tests (C, C++, Fortran, `make`, `-flto`, a compile error, coverage with `gcov`, profile-guided optimisation) in about a minute and ends with `SELFTEST: ALL CHECKS PASSED` ([tests/selftest](../tests/selftest/README.md)).
+To check the whole installation, install the optional `Gcc16SelfTest` package the same way (after `Gcc16`), open the folder that contains `!GCC16Test` once, and type in a Task window `Obey <GCC16Test$Dir>.RunSelfTest`. It compiles and runs twelve small tests (C, C++, Fortran, `make`, `-flto`, a compile error, coverage with `gcov`, profile-guided optimisation, `gprof`, and a module that is built, loaded and run) in about half a minute and ends with `SELFTEST: ALL CHECKS PASSED` ([tests/selftest](../tests/selftest/README.md)).
 
 Then try the [first program](../README.md#quick-start-compile-on-risc-os), or read [USING-NATIVE.md](USING-NATIVE.md).
 

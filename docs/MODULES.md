@@ -10,7 +10,7 @@
 | `cmunge -tgcc -32bit -p -d header.h -o header.o file.cmhg` | the same command: `cmunge` is in the tool chain's `bin/` (it is modkit's module header generator behind CMunge's command line; the options that make no sense here are refused, not ignored) |
 | `gcc -mmodule -O2 -c file.c` | the same: `-mmodule` means ARMv6, soft float, ARM state, freestanding, no PIC, no stack protector, no unwind tables, and the headers of modkit instead of UnixLib's; `__TARGET_MODULE__` and `__TARGET_SCL__` are defined, `__TARGET_UNIXLIB__` is not |
 | `gcc -mmodule -o Module,ffa file.o header.o` (the linker writes the module) | **the same command**: the driver links with the module linker script and `libmodkit.a` (the tool chain has both) and then runs `modreloc`, so the output is the flat module image. An output named `*.elf` stays an ELF file (for a debugger or a simulation) |
-| the Shared C Library through its stubs | **no C library**: `libmodkit.a` has the few functions below |
+| the Shared C Library through its stubs | **no C library**: `libmodkit.a` has about 30 functions (the list, and what is missing, is under [what can be built today](#what-can-be-built-today-and-what-cannot)) |
 | `-lOSLib32` / `-lOSLibH32` (OSLib's SWI veneers) | **`arm-riscos-gnueabihf-mkoslib -I <OSLib>/oslib -o oslibv.c --from-objects main.o`** writes the veneers of exactly the OSLib functions that your objects use (from OSLib's own headers: the comment above each function says which SWI and which registers); compile `oslibv.c` and link it. GCCSDK's prebuilt OSLib archives are for the old ABI and cannot be linked |
 
 ```bash

@@ -53,6 +53,7 @@ The runtime packages fix UnixLib. They do not replace system modules. These bugs
   author's machine runs it; the patches are in [`docs/upstream/patches/`](upstream/patches). It is an **optional package**, `SharedULibFix`, and not part of the runtime package, because it replaces a system module: [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md) says what it does, how to install it and how to go back.
 * **ARMEABISupport 1.08**: a failed `mmap` leaves its `mmap#N` dynamic area (and the memory it had claimed) until the next reboot; UnixLib now refuses the requests that can never succeed (2 GB or more, or over the OS clamp) before the module is asked, but other failures can still leak. The memory of a `vfork` + `exec` child
   stays allocated until the process at the root of its family ends. `*RMKill ARMEABISupport` while the Shared Object Manager holds one of its handles leaves every EABI program unable to start until a reboot.
+  There is no fixed module for it yet: the patch in [`docs/upstream/patches/`](upstream/patches) is against the 1.05 sources, the only ones that are published, and 1.08 is a rewrite of the memory handling (it also has file descriptors, file locks and IPC), so the patch does not apply to it. The source of 1.08 has been requested from its author.
 * **!Iris** (the browser) carries its own SharedLibs and redirects `SharedLibs:` to them when it runs; two sets cannot both be in use, so reboot after running it before using this tool chain.
 
 ## Packaging
