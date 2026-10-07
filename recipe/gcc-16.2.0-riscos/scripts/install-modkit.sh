@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs modkit (RISC OS relocatable modules without a C library) into a cross tool chain, so that  arm-riscos-gnueabihf-gcc -mmodule  works as it did in GCCSDK 4.7.4:
+# Installs modkit (RISC OS relocatable modules without UnixLib or the Shared C Library, with a small C library of its own) into a cross tool chain, so that  arm-riscos-gnueabihf-gcc -mmodule  works as it did in GCCSDK 4.7.4:
 #   <tc>/lib/gcc/arm-riscos-gnueabihf/<ver>/include-modkit/   the few headers a module needs (kernel.h, string.h ...): the driver puts them before the compiler's own
 #   <tc>/arm-riscos-gnueabihf/lib/libmodkit-core.a, libmodkit.a, module.ld   the mini C library, integer division, the SWI veneer (one object per source); libmodkit.a is a linker script that names the library and
 #                                                               libgcc (the driver links it last); the linker script of the module (found by the driver, -mmodule links them)

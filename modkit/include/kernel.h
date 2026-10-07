@@ -1,4 +1,4 @@
-/* kernel.h - the part of SharedCLibrary's <kernel.h> that a module needs: the error block, the register block, _kernel_swi.  (modkit: modules are built without any C library.) */
+/* kernel.h - the part of SharedCLibrary's <kernel.h> that a module needs: the error block, the register block, _kernel_swi.  (modkit: modules are built without UnixLib or the Shared C Library.) */
 #ifndef __KERNEL_H
 #define __KERNEL_H
 typedef struct { int errnum; char errmess[252]; } _kernel_oserror;

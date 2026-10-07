@@ -1,4 +1,4 @@
-# module.mk - rules to build a RISC OS module with the GCC 16 EABI tool chain without any C library (modkit), with  gcc -mmodule  (a tool chain of 16.2.0-14 or later) and  cmunge.
+# module.mk - rules to build a RISC OS module with the GCC 16 EABI tool chain without UnixLib or the Shared C Library (modkit has a small C library of its own), with  gcc -mmodule  (a tool chain of 16.2.0-14 or later; the CMHG options and the C library of 16.2.0-15 need that release) and  cmunge.
 #   include this file from the Makefile of a module that defines:  MODULE (the output name), CMHG (the CMHG file), SRCS (C sources, RISC OS style 'c/name' or plain .c); optional: OSLIB_FUNCS (OSLib functions to make veneers for)
 #   result: $(MODULE),ffa   (the flat module image; load it with RMLoad)
 MODKIT   ?= $(dir $(abspath $(lastword $(MAKEFILE_LIST))))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the PackMan package Gcc16SelfTest_16.2.0-<REL>_arm.zip: the self-test of tests/selftest as the application !GCC16Test, with RISC OS file types.
 
-usage: make-selftest-package.py [REL]        (default 13)      output directory: $PKG_OUT, default ../../../release
+usage: make-selftest-package.py [REL]        (default 15)      output directory: $PKG_OUT, default ../../../release
 Files get RISC OS types through the Info-ZIP "ARC0" extra field (Obey &FEB for !Boot, !Run and RunSelfTest, Text &FFF for the rest); see make-native-package.py.
 """
 import os, struct, sys, time, zipfile
@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.normpath(os.path.join(HERE, "..", "tests", "selftest"))           # the author's work area
 if not os.path.isdir(SRC):
     SRC = os.path.normpath(os.path.join(HERE, "..", "..", "..", "tests", "selftest"))      # this repository: the tests of the recipe are published in tests/
-REL = sys.argv[1] if len(sys.argv) > 1 else "13"
+REL = sys.argv[1] if len(sys.argv) > 1 else "15"
 VER = "16.2.0-" + REL
 OUT = os.environ.get("PKG_OUT") or os.path.normpath(os.path.join(HERE, "..", "..", "..", "release"))
 os.makedirs(OUT, exist_ok=True)
@@ -47,7 +47,7 @@ Filer_Run <GCC16Test$Help>
 README = """Self-test for the native GCC 16 tool chain (Gcc16 %(v)s)
 =====================================================
 It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, two -flto builds, a coverage run (--coverage and gcov), a profile-guided build, a gprof run (-pg) and, from 16.2.0-14, a relocatable module (cmunge, -mmodule, load, run, remove), and checks that a compile error is reported.
-Every program checks itself: a PASS means the compiler made a program that ran correctly.  About a minute or two.
+Every program checks itself: a PASS means the compiler made a program that ran correctly.  About half a minute.
 
   1. Install the packages with PackMan (SharedLibs-C-armeabihf, then Gcc16), REBOOT, and double-click !GCC16 once.
   2. Open the folder that contains !GCC16Test once (the Filer sets GCC16Test$Dir).

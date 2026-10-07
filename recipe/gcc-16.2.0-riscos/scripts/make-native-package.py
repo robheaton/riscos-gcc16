@@ -217,11 +217,26 @@ MODULES = """Relocatable modules (-mmodule, cmunge), new in 16.2.0-14: as with G
   mkoslib -I <OSLib>.oslib -o oslibv.c --from-objects main.o       the OSLib SWI veneers of exactly the OSLib functions that main.o uses (it needs OSLib's C headers); gcc -mmodule -c oslibv.c
   gcc -mmodule -o MyModule,ffa main.o header.o oslibv.o            the link makes the module (file type &FFA): the driver runs modreloc after the linker.  An output named x.elf stays an ELF file.
   RMLoad MyModule                                                  (save your work first: a mistake in a module can crash the machine)
-  There is no C library in a module: printf (through OS_WriteC), malloc (from the RMA), snprintf, the string functions and the OS calls through the veneers.  The kit is in !GCC16.arm-riscos-gnueabihf.lib
+  %%MODLIB%%  The kit is in !GCC16.arm-riscos-gnueabihf.lib
   (libmodkit.a, module.ld) and !GCC16.lib.gcc....include-modkit; cmunge, mkoslib and modreloc are in !GCC16.bin.  What is supported of CMHG, and the limits: docs/MODULES.md of the project.
   A makefile written for GCCSDK 4.7.4 needs the compiler names, the OSLib veneers instead of -lOSLibH32, and nothing for the link (see the porting section of MODULES.md).
 
 """
+MODLIB_14 = "There is no C library in a module: printf (through OS_WriteC), malloc (from the RMA), snprintf, the string functions and the OS calls through the veneers."
+MODLIB_15 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a is a small C library of its own, about 165 functions (16.2.0-14 had 30): the string, ctype, stdlib (malloc from the RMA, qsort, rand,\n"
+             "  getenv, atexit ...), time, setjmp and locale functions, stdio (printf and sscanf, and files: fopen, fgets, fprintf ... with stdin, stdout and stderr), _swi, _swix and the _kernel_* calls, and the OS calls\n"
+             "  through the veneers.  Not there: floating point in printf and scanf, math.h, signal and system.  Floating point has not been run on hardware, and C++ does not work yet.  New in 16.2.0-15 too: cmunge takes\n"
+             "  international-help-file: and the international:, add-syntax:, configure:, status: and fs-command: options, and module-is-runnable: is a real start entry (*RMRun Module a b c calls main in user mode).")
+MODULES = MODULES.replace("%%MODLIB%%", MODLIB_15 if int(REL) >= 15 else MODLIB_14)
+if int(REL) >= 15:                                                    # the words that were true of the small kit of 16.2.0-14 only (REL 14 stays byte for byte as it was released)
+    for old, new_ in (
+        ("as with GCCSDK 4.7.4, without a C library\n", "as with GCCSDK 4.7.4, without UnixLib or the Shared C Library\n"),
+        ("  gcc -mmodule -o MyModule,ffa main.o header.o oslibv.o            the link makes the module (file type &FFA): the driver runs modreloc after the linker.  An output named x.elf stays an ELF file.\n",
+         "  gcc -mmodule -o MyModule main.o header.o oslibv.o                the link makes the module (the driver runs modreloc after the linker and sets the file type &FFA: do not add ,ffa on RISC OS).  An output named x.elf stays an ELF file.\n"),
+        ("  (libmodkit.a, module.ld) and !GCC16.lib.gcc....include-modkit;", "  (libmodkit.a is the linker script that names libmodkit-core.a, the library, and libgcc; module.ld) and !GCC16.lib.gcc....include-modkit;"),
+    ):
+        assert MODULES.count(old) == 1, old[:60]
+        MODULES = MODULES.replace(old, new_, 1)
 TB_LAST_OLD = "  Throwback needs the desktop: it does nothing outside it.  Not done yet: the assembler and the linker (their messages do not go to the editor).\n"
 TB_LAST_13 = ("  Throwback needs the desktop: it does nothing outside it.  The assembler and the linker send theirs too (new in 16.2.0-13): -mthrowback makes the driver add --throwback to as and ld, and\n"
               "  as --throwback  and  ld --throwback  work on their own (an error of the linker with a source file and a line, an error of the assembler in its source).  A file name that starts with a\n"
@@ -248,7 +263,7 @@ if int(REL) >= 12:
     readme = readme.replace(ra, "make and the binutils programs (as, ld ...) for 8 MB, the drivers for nothing (1 MB, UnixLib's default).")
     rb = "make: 8 MB; the binutils and the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-8 needs 16.2.0-10)."
     assert rb in run
-    run = run.replace(rb, "make and the binutils: 8 MB; the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-%s needs 16.2.0-%s)." % (REL, REL))
+    run = run.replace(rb, "make and the binutils: 8 MB; the drivers: 1 MB, UnixLib's default): with SharedLibs-C-armeabihf 16.2.0-6 or later (Gcc16 16.2.0-%s needs 16.2.0-%s or later)." % (REL, "13" if int(REL) >= 13 else REL))     # the runtime package is still 16.2.0-13 in 16.2.0-14 and 16.2.0-15
 elif int(REL) >= 8:
     readme = readme.replace("@@REQ@@", REQ_NEW).replace("@@THROWBACK@@", THROWBACK)
 else:

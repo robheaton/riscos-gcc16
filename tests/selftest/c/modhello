@@ -1,4 +1,4 @@
-/* modhello.c -- a module for the smoke test of  gcc -mmodule : no C library, the header of modkit, the veneers that cmunge wrote.  *ModHello_Sum 2 3 prints 5.  */
+/* modhello.c -- a module for the smoke test of  gcc -mmodule : no UnixLib or Shared C Library, the C library and the header of modkit, the veneers that cmunge wrote.  *ModHello_Sum 2 3 prints 5.  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

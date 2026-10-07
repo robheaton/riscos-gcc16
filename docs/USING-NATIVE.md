@@ -149,11 +149,11 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 
 ## Modules (`-mmodule`, `cmunge`), new in 16.2.0-14
 
-Relocatable modules without a C library, built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
+Relocatable modules with the small C library of the module kit (about 165 functions, `stdio` files among them; 16.2.0-14 had 30; no UnixLib), built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
 
 ```
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg     the CMHG file (cmhg/header or cmhg.module: any name): the module header and its veneers (o.header) and the C header (h.header)
-gcc -c -O2 -mmodule -x c -o main.o c/main                      compile (the source must not need a C library beyond the few functions of modkit's headers: see the Limits of MODULES.md)
+gcc -c -O2 -mmodule -x c -o main.o c/main                      compile (the source must not need a C library beyond the functions of modkit's headers, listed under "The C library of modkit" in MODULES.md: see also its Limits)
 mkoslib -I <OSLib>/oslib -o oslibv.c --from-objects main.o     the SWI veneers of the OSLib functions that main.o uses (replaces -lOSLib32); then   gcc -c -mmodule oslibv.c
 gcc -mmodule -o MyModule main.o header.o oslibv.o              the link: the driver runs modreloc after the linker, and the file MyModule is the module (file type &FFA)
 RMLoad MyModule
@@ -163,7 +163,7 @@ RMLoad MyModule
 * **OSLib**: `mkoslib` reads OSLib's C headers (the register layout of every function is in the comment above it): `-I` is the `oslib` folder, with the headers as the compiler finds them (`h.os`, `h.wimp` ... : the OSLib that GCCSDK installs on Linux has `os.h`: copy it as `oslib/h/os`). A module needs the headers that its source includes and what they include (`osf32.h` with `os.h`, for instance). The compile of the generated `oslibv.c` needs the same folder: `-I<the folder that has oslib>`.
 * The tools run in a Task window with the same slot as the compiler (`WimpSlot -min 48M -max 48M`). `cmunge -p` starts `gcc` for the preprocessor; `cmunge -o` starts it for the assembler.
 * **Save your work before `RMLoad`ing a module that is new**: a mistake in a module can crash the machine (the self-test's checker looks at the header and the relocation table of the module it built before it loads it).
-* Tested on the Raspberry Pi: the self-test builds a small module, loads it, runs its command and removes it (check 12); a network module of 800 lines (sockets, files and OS calls through 23 OSLib functions) was built by these commands in 3 seconds and is **byte for byte the module that the Linux cross compiler makes from the same source**; loaded, it passed the network tests (39 checks: banner, commands, files up to 500 KB, a vanishing client, a soak of 300 commands).
+* Tested on the Raspberry Pi: the C library of the kit, modules made with `cmunge` (a module that is run as a program, international help, generic veneers called from SVC code, from user code and in interrupt time) and the `stdio` files, keyboard and screen streams were run there on 2026-10-07 ([what was proven on hardware](MODULES.md#what-was-proven-on-hardware)). Floating point in modules has not been run on hardware, and C++ in modules does not work yet. With 16.2.0-14, a network module of 800 lines (sockets, files and OS calls through 23 OSLib functions) was built by these commands in 3 seconds and is **byte for byte the module that the Linux cross compiler makes from the same source**; loaded, it passed the network tests (39 checks: banner, commands, files up to 500 KB, a vanishing client, a soak of 300 commands). Check 12 of the self-test builds a small module, loads it, runs its command and removes it.
 * A makefile written for GCCSDK 4.7.4 needs the compiler names changed, OSLib veneers instead of `-lOSLibH32`, and nothing for the link: see the porting section of [MODULES.md](MODULES.md).
 
 ## Memory, stacks and temporary files

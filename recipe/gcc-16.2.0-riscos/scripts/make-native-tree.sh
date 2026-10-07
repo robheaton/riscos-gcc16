@@ -12,7 +12,7 @@
 # What goes where (T = arm-riscos-gnueabihf, V = 16.2.0):
 #   bin/{gcc,g++,cpp,gfortran,make}         the drivers (gfortran and libexec/.../f951 when built) and GNU make
 #   libexec/gcc/T/V/{cc1,cc1plus,collect2}  the compiler proper (and lto1, lto-wrapper when built with LTO)
-#   bin/{cmunge,mkoslib,modreloc}           modkit (16.2.0-14): the module tools; modreloc is also in T/bin, where the driver runs it after the link of a module (gcc -mmodule)
+#   bin/{cmunge,mkoslib,modreloc}           modkit (new in 16.2.0-14): the module tools; modreloc is also in T/bin, where the driver runs it after the link of a module (gcc -mmodule)
 #   T/bin/{as,ld,ar,nm,...}                 binutils 2.45.1 (the driver finds as and ld here; put this directory on Run$Path for the rest)
 #   lib/gcc/T/V/                            GCC's own headers (include, include-fixed, with unwind.h and gcov.h, which libgcc installs), crt*.o, libgcc.a, libgcc_eh.a, libgcov.a
 #   T/lib/                                  crt0.o, libunixlib.so, libgcc_s*, libdl, libstdc++.a, libsupc++.a, libstdc++exp.a, libstdc++fs.a; an EMPTY libm.so (math is in libunixlib)
@@ -55,7 +55,7 @@ if [ -f "$NS/libexec/gcc/$T/$V/f951" ]; then
   exe "$NS/libexec/gcc/$T/$V/f951" "$R/libexec/gcc/$T/$V/f951"
 fi
 
-# modkit (relocatable modules, 16.2.0-14): the three tools, made here for RISC OS (C, no Python) by the cross compiler, and what  gcc -mmodule  links and includes: libmodkit.a, the linker script,
+# modkit (relocatable modules, new in 16.2.0-14; the C library of about 165 functions with stdio files: 16.2.0-15): the three tools, made here for RISC OS (C, no Python) by the cross compiler, and what  gcc -mmodule  links and includes: libmodkit.a, the linker script,
 # the headers (the cross compiler's install-modkit.sh made them in $E).  modreloc is also next to as and ld: the driver runs it after the link of a module.
 KIT=$HERE/../../modkit
 MW=$(mktemp -d)

@@ -9,8 +9,8 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-14-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-14-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-15-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-15-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 
@@ -109,7 +109,7 @@ Set `THROWBACK_DEBUG` to any value to be told why nothing arrives. This path was
 
 ## RISC OS modules (`-mmodule`, `cmunge`)
 
-Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without a C library** (modkit), and for small, self-contained C modules only for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
+Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 165 functions, `stdio` files among them; 30 in 16.2.0-14), for small and medium C modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
 
 ```bash
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg          # the CMHG file: header, veneers, C header

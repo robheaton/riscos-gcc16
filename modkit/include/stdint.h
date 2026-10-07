@@ -1,4 +1,4 @@
-/* stdint.h - the exact, least and fast width types and their limits, from the compiler's predefined macros (the C library's stdint.h is not there: a module has no C library). */
+/* stdint.h - the exact, least and fast width types and their limits, from the compiler's predefined macros (a module has no UnixLib or Shared C Library: this header is the kit's own). */
 #ifndef _STDINT_H
 #define _STDINT_H
 typedef __INT8_TYPE__ int8_t;
