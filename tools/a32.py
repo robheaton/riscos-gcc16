@@ -115,6 +115,13 @@ class Cpu:
         self.r[15] = pc + 4
         self.steps += 1
         if self.steps > self.max_steps: raise Fault("too many steps")
+        if (w & 0xFFF1FE20) == 0xF1000000:                                   # CPSIE / CPSID (imod 2 / 3) of the I and F bits; in USER mode they do nothing; "CPS #mode" is not modelled
+            imod = (w >> 18) & 3
+            if (w >> 17) & 1 or imod in (0, 1): raise Fault("CPS form not modelled: %08x at %08x" % (w, pc))
+            if self.mode != 0x10:
+                bits = (0x40 if (w >> 6) & 1 else 0) | (0x80 if (w >> 7) & 1 else 0)
+                self.cpsr_ctl = self.cpsr_ctl & ~bits if imod == 2 else self.cpsr_ctl | bits
+            return
         cc = w >> 28
         if not self.cond(cc): return
         top = (w >> 25) & 7

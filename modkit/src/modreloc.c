@@ -95,6 +95,25 @@ static void convert (const char *elfpath, const char *outpath, int quiet)
   n = s->size;
   if (n % 4) die ("%s: the size of .image is not a multiple of 4", elfpath);
 
+  /* a section that is loaded (SHF_ALLOC) and is not .image would be left out of the module: its code or data is not in the file.  The linker script of modkit places .text*, .rodata*, .data* and .bss* (and
+     COMMON) in .image; any other name (an AREA of an assembler source, a section attribute) is an "orphan" that the linker puts after it.  Say so instead of making a module that jumps into
+     the table of addresses. */
+  {
+    char names[300];
+    size_t nl = 0;
+    int nbadsec = 0;
+    names[0] = 0;
+    for (i = 1; i < e.nsec; i++)
+      if ((e.sec[i].flags & 2) && i != im && e.sec[i].size)
+        {
+          nbadsec++;
+          if (nl + strlen (e.sec[i].namestr) + 3 < sizeof names) nl += (size_t) sprintf (names + nl, "%s%s", nl ? ", " : "", e.sec[i].namestr);
+        }
+    if (nbadsec)
+      die ("%s: %d section(s) would be left out of the module because the linker script puts only .text*, .rodata*, .data* and .bss* in .image: %s.  Rename them (objcopy --rename-section NAME=.text.NAME for "
+           "an assembler AREA, or  __attribute__ ((section (\".data.NAME\")))  in C)", elfpath, nbadsec, names);
+  }
+
   /* the relocations that refer to .image */
   for (i = 0; i < e.nsec; i++)
     if (e.sec[i].type == SHT_REL && e.sec[i].info == (unsigned) im) nrel += e.sec[i].size / 8;

@@ -83,7 +83,12 @@ VERS = ["1.00", "0.02", "3.06-gcc16", "1.5", "1.234", "12.34", "", "v2", "2.0 be
 HELPNAMES = ["{t}", "{t}", "{t}", "My_Module", "Two Words", "Q", "A_Long_Module_Name", "  Spaced   Out  "]
 IDENT = ["handler", "Fn_1", "my_init", "svc", "swi_h", "x"]
 def num(rng, v):
-    return rng.choice([str(v), "&%X" % v, "0x%x" % v, "&%x" % v]) if v > 0 or rng.random() < .5 else rng.choice(["0", "&0", "0x0"])
+    plain = rng.choice([str(v), "&%X" % v, "0x%x" % v, "&%x" % v]) if v > 0 or rng.random() < .5 else rng.choice(["0", "&0", "0x0"])
+    if rng.random() < .25:                       # what the C preprocessor leaves of a name that Hdr2H made a number (the OS headers write "(0x60)"), or a small expression (no spaces: a list is split at them)
+        a = rng.randint(0, v) if v else 0
+        return rng.choice(["(%s)" % plain, "((%s))" % plain, "(%d+%d)" % (a, v - a), "(%d-%d)" % (v + a, a), "(0x%x|0x%x)" % (v & ~a, v & a) if (v & ~a) | (v & a) == v else "(%d)" % v,
+                           "(%d*1)" % v, "(%s)" % plain + "u", "(%d<<0)" % v, "(~(~%d))" % v if v < 0x7FFFFFFF else "(%d)" % v])
+    return plain
 def q(rng):
     pieces = [rng.choice(["Syntax: *Cmd <x>", "hello", "a \\\"quoted\\\" word", "tab\\there", "x\\x41y", "slash \\\\ end", "nl\\n", "cr\\r", "bell\\a", "it's", "", "{ braces }", "100% sure", "$dollar"]) for _ in range(rng.randint(1, 3))]
     return rng.choice([" ", "\n        "]).join('"%s"' % p for p in pieces)
@@ -123,6 +128,9 @@ def gen_cmhg(rng):
         L("swi-chunk-base-number", num(rng, rng.choice([0x43380, 0x58C80, 0x400C0, 0x40, 0x100])))
         if rng.random() < .8: L("swi-decoding-table", quote(rng.choice([title, title.upper(), title.lower(), "Other"])) + " " + rng.choice([" ", ", "]).join(quote(x) for x in rng.sample(["A", "B", "Start", "Stop", "Get_Status"], rng.randint(0, 4))))
         L("swi-handler-code", rng.choice(IDENT))
+    if rng.random() < .3:                        # event-handler: ENTRY[/HANDLER] [event numbers]; more than one line is allowed
+        for i in range(rng.randint(1, 2)):
+            L("event-handler", rng.choice(["ev_e%d/ev_h%d" % (i, i), "ev_e%d" % i]) + "".join(" " + num(rng, rng.randint(0, 31)) for _ in range(rng.choice([0, 1, 1, 2, 3]))))
     for kind in ("irq-handlers", "vector-handlers", "generic-veneers"):
         if rng.random() < .3:
             ents = [("%s_e%d/%s_h%d" % (kind[:3], i, kind[:3], i)) if rng.random() < .6 else ("%s_e%d" % (kind[:3], i)) for i in range(rng.randint(1, 3))]
@@ -216,6 +224,17 @@ BAD = {
     "indented first line": "  title-string: T\nhelp-string: T 1.00\n",
     "not a key line": "title-string: T\nhelp-string: T 1.00\nthis is not a keyword line\n",
     "number expected": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(min-args: x)\n",
+    "swi-handler-code with options": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100\nswi-handler-code: h (flags-capable:)\n",
+    "initialisation-code with a second word": "title-string: T\nhelp-string: T 1.00\ninitialisation-code: a b\n",
+    "library-enter-code": "title-string: T\nhelp-string: T 1.00\nmodule-is-runnable:\nlibrary-enter-code: start\n",
+    "library-initialisation-code": "title-string: T\nhelp-string: T 1.00\nlibrary-initialisation-code: init\n",
+    "event-handler with options": "title-string: T\nhelp-string: T 1.00\nevent-handler: e/h (private-word: r0)\n",
+    "event-handler without a name": "title-string: T\nhelp-string: T 1.00\nevent-handler:\n",
+    "event number that is not a number": "title-string: T\nhelp-string: T 1.00\nevent-handler: e/h Event_Mouse\n",
+    "division by zero": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: (0x100/0)\nswi-handler-code: h\n",
+    "unbalanced parenthesis": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: (0x100\nswi-handler-code: h\n",
+    "number out of range": "title-string: T\nhelp-string: T 1.00\nservice-call-handler: h 0x100000000\n",
+    "negative number": "title-string: T\nhelp-string: T 1.00\nservice-call-handler: h (0-1)\n",
 }
 # what each refusal must say (so that a file is not refused for another reason than the one under test)
 WHY = {"unknown keyword": "frobnicate", "no title": "title-string", "no help": "help-string", "bad escape": "escape", "unterminated string": "string", "empty command table": "no commands",
@@ -223,7 +242,10 @@ WHY = {"unknown keyword": "frobnicate", "no title": "title-string", "no help": "
        "help: is refused (as CMunge does)": "help", "add-syntax and international": "mutually exclusive", "international-help-file needs a string": "a string was expected",
        "swi chunk without a handler": "needs a swi-handler-code", "swi handler without a chunk": "needs a swi-chunk-base-number",
        "swi decoding table without a chunk": "needs a swi-chunk-base-number", "swi chunk 0": "not a SWI chunk", "swi chunk not a multiple of 64": "not a SWI chunk", "swi chunk with the X bit": "X bit",
-       "indented first line": "", "not a key line": "", "number expected": "a number was expected"}
+       "indented first line": "", "not a key line": "", "number expected": "a number was expected",
+       "swi-handler-code with options": "needs one function name", "initialisation-code with a second word": "needs one function name", "library-enter-code": "Shared C Library",
+       "library-initialisation-code": "Shared C Library", "event-handler with options": "handler options", "event-handler without a name": "needs the name", "event number that is not a number": "is not a number",
+       "division by zero": "division by zero", "unbalanced parenthesis": "is not a number", "number out of range": "out of range", "negative number": "out of range"}
 for name, text in BAD.items():
     p = os.path.join(W, "bad.cmhg"); open(p, "w").write(text)
     pf = compare_cmhg(p, "refused: " + name, expect_fail=True)
@@ -269,6 +291,18 @@ for opt in (["-apcs", "3"], ["-apcs", "3/nofpregargs"], ["-apcs", "3/32bit/fpe3/
     base = tempfile.mkdtemp(dir=W)
     run([os.path.join(BIN, "cmunge"), "-tgcc", "-32bit", "-s", base + "/o.s", "-d", base + "/o.h", real[0]])
     check(outs[0][0] == 0 and outs[1][0] == 0 and outs[0][1] == outs[1][1] == open(base + "/o.s", "rb").read(), "cmunge %s is accepted by both and changes nothing" % " ".join(opt))
+
+# ================================================================ the headers: strict ISO C declares only ISO C names
+print("headers")
+hd = os.path.join(W, "hdr"); os.makedirs(hd)
+open(hd + "/own.c", "w").write('#include <string.h>\n#include <ctype.h>\nstatic char *strdup (const char *s) { (void) s; return 0; }\nstatic short stricmp (const char *a, const char *b) { return a != b; }\nstatic int isascii (int c) { return c < 128; }\nint f (void) { return !strdup ("x") + stricmp ("a", "b") + isascii (3) + isdigit (50); }\n')
+open(hd + "/ext.c", "w").write('#include <string.h>\n#include <ctype.h>\nint f (void) { char *p = strdup ("x"); return p == 0 || stricmp ("a", "A") || strcasecmp ("a", "A") || !isascii (3); }\n')
+for std, define, src, ok, what in (("c99", None, "own.c", True, "-std=c99: a module may define its own strdup, stricmp and isascii"),
+                                   ("gnu99", None, "ext.c", True, "-std=gnu99: strdup, stricmp, strcasecmp and isascii are declared"),
+                                   ("c99", "-D_GNU_SOURCE", "ext.c", True, "-std=c99 -D_GNU_SOURCE asks for them"),
+                                   ("c99", None, "ext.c", False, "-std=c99: strdup is not declared (it is not ISO C)")):
+    r = run([GCC, "-mmodule", "-std=" + std] + ([define] if define else []) + ["-Werror=implicit-function-declaration", "-fsyntax-only", "-x", "c", os.path.join(hd, src)])
+    check((r.returncode == 0) == ok, "headers: " + what + ("" if (r.returncode == 0) == ok else ": " + r.stderr.strip()[-120:]))
 
 # ================================================================ modreloc
 print("modreloc")
@@ -317,6 +351,17 @@ r = run([GCC, "-mmodule", "-o", d + "/m.elf", d + "/h.o", d + "/s.o"]); assert r
 rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d + "/m.elf", d + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d + "/m.elf", d + "/c,ffa"])
 check(rp.returncode != 0 and rc.returncode != 0 and "movw" in rc.stderr.lower(), "movw / movt addresses are refused by both (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-120:]))
 check(not os.path.exists(d + "/c,ffa"), "a refused conversion writes nothing")
+# a section that the linker script does not know (an assembler AREA, a section attribute) is left out of the image: refused by both, with its name
+d2 = os.path.join(D, "orphan"); os.makedirs(d2)
+shutil.copy(os.path.join(D, "hello", "h.o"), d2 + "/h.o")
+open(d2 + "/orph.c", "w").write('__attribute__ ((section ("WeirdSection"))) int weird[4] = { 1, 2, 3, 4 };\nint use_weird (int i) { return weird[i & 3]; }\n')
+r = run([GCC, "-mmodule", "-O2", "-c", d2 + "/orph.c", "-o", d2 + "/o.o"]); assert r.returncode == 0, r.stderr
+r = run([GCC, "-mmodule", "-o", d2 + "/m.elf", d2 + "/h.o", d2 + "/o.o", os.path.join(D, "hello", "s0.o")]); assert r.returncode == 0 or True
+if os.path.exists(d2 + "/m.elf"):
+    rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d2 + "/m.elf", d2 + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d2 + "/m.elf", d2 + "/c,ffa"])
+    check(rp.returncode != 0 and rc.returncode != 0 and "WeirdSection" in rc.stderr and "WeirdSection" in rp.stderr, "a section outside .image is refused by both, and named (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-100:]))
+else:
+    check(False, "the orphan section test: the link did not make an ELF file: %s" % r.stderr[-200:])
 # in place and refused: the ELF file stays what it was
 shutil.copy(d + "/m.elf", d + "/inplace.elf2")
 r = run([os.path.join(BIN, "modreloc"), "-q", "--driver", d + "/inplace.elf2"])

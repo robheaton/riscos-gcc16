@@ -8,9 +8,19 @@
 
 const char *progname = "modkit";
 
+jmp_buf *die_recover;
+char die_message[512];
+
 void die (const char *fmt, ...)
 {
   va_list ap;
+  if (die_recover)
+    {
+      va_start (ap, fmt);
+      vsnprintf (die_message, sizeof die_message, fmt, ap);
+      va_end (ap);
+      longjmp (*die_recover, 1);
+    }
   fprintf (stderr, "%s: ", progname);
   va_start (ap, fmt);
   vfprintf (stderr, fmt, ap);
@@ -138,9 +148,17 @@ void wr32 (unsigned char *p, unsigned v) { p[0] = v & 255; p[1] = (v >> 8) & 255
 
 void elf_load (Elf *e, const char *path)
 {
+  size_t len;
+  unsigned char *data = read_file (path, &len);
+  elf_load_mem (e, data, len, path);
+}
+
+void elf_load_mem (Elf *e, unsigned char *data, size_t len, const char *path)
+{
   unsigned shoff, shentsize, shnum, shstrndx, strofs;
   int i;
-  e->data = read_file (path, &e->len);
+  e->data = data;
+  e->len = len;
   if (e->len < 52 || memcmp (e->data, "\177ELF", 4) != 0) die ("%s is not an ELF file", path);
   if (e->data[4] != 1 || e->data[5] != 1) die ("%s is not a 32 bit little endian ELF file", path);
   shoff = rd32 (e->data + 0x20);

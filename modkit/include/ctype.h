@@ -14,8 +14,10 @@ static inline int isprint (int c) { return c >= 32 && c < 127; }
 static inline int isgraph (int c) { return c > 32 && c < 127; }
 static inline int ispunct (int c) { return isgraph (c) && !isalnum (c); }
 static inline int isxdigit (int c) { return isdigit (c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+#if !defined (__STRICT_ANSI__) || defined (_GNU_SOURCE) || defined (_DEFAULT_SOURCE) || defined (_POSIX_C_SOURCE) || defined (_BSD_SOURCE)
 static inline int isascii (int c) { return c >= 0 && c < 128; }
 static inline int toascii (int c) { return c & 0x7F; }
+#endif
 static inline int toupper (int c) { return islower (c) ? c - 32 : c; }
 static inline int tolower (int c) { return isupper (c) ? c + 32 : c; }
 #endif

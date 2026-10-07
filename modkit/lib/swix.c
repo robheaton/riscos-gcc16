@@ -52,3 +52,14 @@ int _swi (int swi_no, unsigned mask, ...)
   va_end (ap);
   return e ? (int) e : res;
 }
+_kernel_oserror *_vswix (int swi_no, unsigned mask, va_list ap)
+{
+  int res;
+  return swi_common ((unsigned) swi_no | X, mask, ap, &res);
+}
+int _vswi (int swi_no, unsigned mask, va_list ap)
+{
+  int res = 0;
+  _kernel_oserror *e = swi_common ((unsigned) swi_no, mask, ap, &res);
+  return e ? (int) e : res;
+}

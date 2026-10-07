@@ -25,6 +25,12 @@ def convert(elf, out, RE, quiet):
     tmpdir = tempfile.mkdtemp(prefix="modreloc-")
     try:
         img = os.path.join(tmpdir, "image.bin")
+        secs = subprocess.run([RE, "-S", "-W", elf], capture_output=True, text=True, check=True).stdout
+        orphans = []
+        for m in re.finditer(r"^\s*\[\s*(\d+)\]\s+(\S+)\s+\w+\s+[0-9a-f]+\s+[0-9a-f]+\s+([0-9a-f]+)\s+[0-9a-f]+\s+(\w*)\s", secs, re.M):
+            if m.group(2) != ".image" and "A" in m.group(4) and int(m.group(3), 16): orphans.append(m.group(2))
+        if orphans:
+            sys.exit("modreloc: %s: %d section(s) would be left out of the module because the linker script puts only .text*, .rodata*, .data* and .bss* in .image: %s.  Rename them (objcopy --rename-section NAME=.text.NAME for an assembler AREA, or  __attribute__ ((section (\".data.NAME\")))  in C)" % (elf, len(orphans), ", ".join(orphans)))
         subprocess.check_call([OC, "-O", "binary", "--only-section=.image", elf, img])
         data = bytearray(open(img, "rb").read())
         rel = subprocess.run([RE, "-r", "-W", elf], capture_output=True, text=True, check=True).stdout

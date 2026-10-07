@@ -7,7 +7,8 @@ There is no OSLib for the EABI (the libOSLib32.a of GCCSDK is built for the old 
 makes the X function (xsocket_creat, xos_cli, ...): the inputs are put in their registers, the SWI is called through __modlib_xswi (modkit/lib/modswi.S: OS_CallASWI with the X bit), the outputs are stored
 through the output pointers when there was no error, the result is the error block or NULL.  A pattern of the comment that it does not know is an error.  The non-X functions (socket_creat) are not made.
 
-  --from-objects  makes the veneers of every OSLib X function that the object files use (their undefined symbols that the OSLib headers declare): the replacement for -lOSLib32 of GCCSDK 4.7.4
+  --from-objects  makes the veneers of every OSLib X function that the object files use (their undefined symbols that the OSLib headers declare): the replacement for -lOSLib32 of GCCSDK 4.7.4.
+                  A static library (.a) can be named too; what its members use is made as far as it can be (a function that cannot be made is a warning: the link shows whether it was needed)
   -I              the oslib folder of OSLib's headers; default: $OSLIB/oslib when the environment variable OSLIB is set
 The header of a function is found by its name (xosfile_delete is in osfile.h, xwimp_start_task in wimp.h); the other headers of the folder are searched when it is not there. */
 #include <ctype.h>
@@ -209,6 +210,23 @@ static int match_reg_line (const char *line, const char *prefix, const char *tai
   return 1;
 }
 
+/* LINE matches  [Output:\s*](\w+) - processor status register on exit( \(X version only\))?\s*$ : the flags of the SWI */
+static int match_psr_line (const char *line, char **name)
+{
+  const char *p = line, *q;
+  static const char pre[] = "Output:", mid[] = " - processor status register on exit";
+  if (strncmp (p, pre, sizeof pre - 1) == 0) { p += sizeof pre - 1; while (is_space ((unsigned char) *p)) p++; }
+  q = p;
+  while (is_word ((unsigned char) *q)) q++;
+  if (q == p || strncmp (q, mid, sizeof mid - 1) != 0) return 0;
+  *name = xstrndup (p, (size_t) (q - p));
+  q += sizeof mid - 1;
+  if (strncmp (q, " (X version only)", 17) == 0) q += 17;
+  while (is_space ((unsigned char) *q)) q++;
+  if (*q) { free (*name); return 0; }
+  return 1;
+}
+
 static int has_value_of_r (const char *line)               /* re.search (r"value of R\d+ on (entry|exit)", line) */
 {
   const char *p = line;
@@ -342,6 +360,7 @@ static Func parse_func (const char *dir, const char *name)
       while (*l == ' ' || *l == '*') l++;
       if (match_reg_line (l, "Input:", "entry", 0, &nm, &reg)) set_reg (&f.in, &f.nin, nm, reg);
       else if (match_reg_line (l, "Output:", "exit", 1, &nm, &reg)) set_reg (&f.out, &f.nout, nm, reg);
+      else if (match_psr_line (l, &nm)) set_reg (&f.out, &f.nout, nm, 16);                   /* the flags of the SWI: register 16 */
       else if (has_value_of_r (l) || has_r_equals (l)) die ("%s: the comment line '%s' is not a pattern that mkoslib knows", name, l);
       free (nm); free (line);
       if (!nl) break;
@@ -399,20 +418,24 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
 {
   Buf out, body;
   char **heads = NULL;
-  int nheads = 0, fi, i, j;
+  int nheads = 0, fi, i, j, flags, uses_flags = 0;
   buf_init (&out); buf_init (&body);
   for (fi = 0; fi < nfuncs; fi++)
     {
       Func f = parse_func (dir, funcs[fi]);
       Buf L, outs;
       int seen = 0;
+      flags = 0;
       for (i = 0; i < nheads; i++) if (strcmp (heads[i], f.header) == 0) seen = 1;
       if (!seen) { heads = xrealloc (heads, sizeof (char *) * (size_t) (nheads + 1)); heads[nheads++] = f.header; }
       buf_init (&L); buf_init (&outs);
       buf_printf (&L, "os_error *%s (", f.name);
       if (!f.nparams) buf_adds (&L, "void");
       for (i = 0; i < f.nparams; i++) { if (i) buf_adds (&L, ", "); buf_adds (&L, f.params[i].text); }
+      for (i = 0; i < f.nout; i++) if (f.out[i].reg == 16) flags = 1;
+      uses_flags |= flags;
       buf_adds (&L, ")\n{\n  unsigned r[10] = { 0 };\n");
+      if (flags) buf_adds (&L, "  unsigned flags = 0;\n");
       sort_regs (f.in, f.nin);
       for (i = 0; i < f.nin; i++)
         {
@@ -420,7 +443,7 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
           buf_printf (&L, "  r[%d] = (unsigned) %s;\n", f.in[i].reg, f.in[i].name);
         }
       if (f.has_r0op) buf_printf (&L, "  r[0] %s %s;\n", f.r0op_is_or ? "|=" : "=", hx (f.r0val));
-      buf_printf (&L, "  os_error *e = (os_error *) __modlib_xswi (%s, r);\n", hx (0x20000u | f.swi));
+      buf_printf (&L, "  os_error *e = (os_error *) %s (%s, r%s);\n", flags ? "__modlib_xswif" : "__modlib_xswi", hx (0x20000u | f.swi), flags ? ", &flags" : "");
       sort_regs (f.out, f.nout);
       for (i = 0; i < f.nout; i++)
         {
@@ -434,7 +457,8 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
           pointee = strip_ws (ty, tl - 1);
           if (outs.len == 0 && i == 0) {}
           if (i) buf_addc (&outs, '\n');
-          buf_printf (&outs, "    if (%s) *%s = (%s) r[%d];", f.out[i].name, f.out[i].name, pointee, f.out[i].reg);
+          if (f.out[i].reg == 16) buf_printf (&outs, "    if (%s) *%s = (%s) flags;", f.out[i].name, f.out[i].name, pointee);
+          else buf_printf (&outs, "    if (%s) *%s = (%s) r[%d];", f.out[i].name, f.out[i].name, pointee, f.out[i].reg);
           free (ty); free (pointee);
         }
       if (f.nout) { buf_adds (&L, "  if (!e)\n    {\n"); buf_adds (&L, outs.s); buf_adds (&L, "\n    }\n"); }
@@ -449,31 +473,32 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
   buf_adds (&out, "/* Generated by mkoslib.py from the OSLib headers.  DO NOT EDIT. */\n");
   buf_adds (&out, "#include \"kernel.h\"\n");
   for (i = 0; i < nheads; i++) buf_printf (&out, "#include \"oslib/%s\"\n", heads[i]);
-  buf_adds (&out, "\nextern _kernel_oserror *__modlib_xswi (unsigned swi_x, unsigned *regs);\n\n");
+  buf_adds (&out, "\nextern _kernel_oserror *__modlib_xswi (unsigned swi_x, unsigned *regs);\n");
+  if (uses_flags) buf_adds (&out, "extern _kernel_oserror *__modlib_xswif (unsigned swi_x, unsigned *regs, unsigned *flags);\n");
+  buf_adds (&out, "\n");
   buf_adds (&out, body.s);
   buf_adds (&out, "\n");
   return out.s;
 }
 
 /* ---------------------------------------------------------------- the undefined symbols of object files */
-static void undefined_in (const char *path, char ***names, int *n)
+/* the global symbols that are undefined in an ELF file, added to NAMES (sorted by name, each once) */
+static void undefined_in_elf (Elf *e, char ***names, int *n)
 {
-  Elf e;
   char **mine = NULL;
   int nm = 0, i, k;
-  elf_load (&e, path);
-  for (i = 0; i < e.nsec; i++)
+  for (i = 0; i < e->nsec; i++)
     {
-      const ElfSec *y = &e.sec[i];
+      const ElfSec *y = &e->sec[i];
       size_t j;
       if (y->type != SHT_SYMTAB) continue;
       for (j = 16; j + 16 <= y->size; j += 16)                    /* entry 0 is the null symbol */
         {
-          const unsigned char *p = e.data + y->offset + j;
+          const unsigned char *p = e->data + y->offset + j;
           unsigned info = p[12];
           if (rd16 (p + 14) != 0 || (info >> 4) != 1 || rd32 (p) == 0) continue;     /* defined, or not a global symbol, or no name */
           mine = xrealloc (mine, sizeof (char *) * (size_t) (nm + 1));
-          mine[nm++] = xstrdup (elf_symname (&e, y, rd32 (p)));
+          mine[nm++] = xstrdup (elf_symname (e, y, rd32 (p)));
         }
     }
   qsort (mine, (size_t) nm, sizeof (char *), cmp_str);
@@ -487,7 +512,83 @@ static void undefined_in (const char *path, char ***names, int *n)
           (*names)[(*n)++] = mine[k];
         }
     }
-  free (e.data); free (e.sec);
+}
+
+/* the global symbols that an ELF file defines (a function that an object of the module has itself needs no veneer) */
+static void defined_in_elf (Elf *e, char ***names, int *n)
+{
+  int i;
+  for (i = 0; i < e->nsec; i++)
+    {
+      const ElfSec *y = &e->sec[i];
+      size_t j;
+      if (y->type != SHT_SYMTAB) continue;
+      for (j = 16; j + 16 <= y->size; j += 16)
+        {
+          const unsigned char *p = e->data + y->offset + j;
+          unsigned info = p[12];
+          if (rd16 (p + 14) == 0 || (info >> 4) == 0 || rd32 (p) == 0) continue;     /* undefined, or local, or no name */
+          *names = xrealloc (*names, sizeof (char *) * (size_t) (*n + 1));
+          (*names)[(*n)++] = xstrdup (elf_symname (e, y, rd32 (p)));
+        }
+    }
+}
+
+/* An object file, or a static library (ar archive; its members that are ELF files).  Returns 1 for an archive.  A library may name functions that no member of it that gets linked needs, so what it
+   uses is "soft": if the veneer of a function from a library cannot be made, that is a warning, not an error (the link says whether the function was needed). */
+static int undefined_in (const char *path, char ***names, int *n, char ***defs, int *ndefs)
+{
+  size_t len;
+  unsigned char *data = read_file (path, &len);
+  if (len >= 8 && memcmp (data, "!<arch>\n", 8) == 0)
+    {
+      size_t pos = 8;
+      while (pos + 60 <= len)
+        {
+          const unsigned char *h = data + pos;
+          char sz[11];
+          size_t size;
+          memcpy (sz, h + 48, 10);
+          sz[10] = 0;
+          size = (size_t) strtoul (sz, NULL, 10);
+          pos += 60;
+          if (pos + size > len) break;
+          if (size >= 52 && memcmp (data + pos, "\177ELF", 4) == 0)
+            {
+              Elf e;
+              elf_load_mem (&e, data + pos, size, path);
+              undefined_in_elf (&e, names, n);
+              free (e.sec);
+            }
+          pos += size + (size & 1);
+        }
+      return 1;
+    }
+  {
+    Elf e;
+    elf_load_mem (&e, data, len, path);
+    undefined_in_elf (&e, names, n);
+    if (defs) defined_in_elf (&e, defs, ndefs);
+    free (e.sec);
+  }
+  return 0;
+}
+
+/* 1 if the veneer of the function can be made, else 0 and die_message says why */
+static int can_make (const char *dir, char *name)
+{
+  jmp_buf jb;
+  volatile int ok = 0;
+  die_recover = &jb;
+  if (setjmp (jb) == 0)
+    {
+      char *one[1];
+      one[0] = name;
+      (void) generate (dir, one, 1);
+      ok = 1;
+    }
+  die_recover = NULL;
+  return ok;
 }
 
 static int declared_somewhere (const char *dir, const char *name)
@@ -544,16 +645,40 @@ int main (int argc, char **argv)
   if (have_objs && !nobjs) die ("--from-objects needs object files");
   if (nobjs)
     {
-      char **used = NULL;
-      int nused = 0, k;
-      for (i = 0; i < nobjs; i++) undefined_in (objs[i], &used, &nused);
-      funcs = xrealloc (funcs, sizeof (char *) * (size_t) (nfuncs + nused + 1));
+      char **used = NULL, **soft = NULL, **defs = NULL;
+      int nused = 0, nsoft = 0, ndefs = 0, k;
+      for (i = 0; i < nobjs; i++)
+        {
+          if (undefined_in (objs[i], &soft, &nsoft, NULL, NULL))      /* a library: its names are soft */
+            continue;
+          undefined_in (objs[i], &used, &nused, &defs, &ndefs);
+        }
+      for (k = 0; k < nused; k++)                                     /* what one of the objects defines is not undefined for the link */
+        {
+          int j;
+          for (j = 0; j < ndefs; j++) if (strcmp (used[k], defs[j]) == 0) { used[k] = (char *) ""; break; }
+        }
+      for (k = 0; k < nsoft; k++)
+        {
+          int j;
+          for (j = 0; j < ndefs; j++) if (strcmp (soft[k], defs[j]) == 0) { soft[k] = (char *) ""; break; }
+        }
+      funcs = xrealloc (funcs, sizeof (char *) * (size_t) (nfuncs + nused + nsoft + 1));
       for (k = 0; k < nused; k++)
         {
           int dup = 0, j;
           if (!declared_somewhere (inc, used[k])) continue;
           for (j = 0; j < nfuncs; j++) if (strcmp (funcs[j], used[k]) == 0) dup = 1;
           if (!dup) funcs[nfuncs++] = used[k];
+        }
+      for (k = 0; k < nsoft; k++)
+        {
+          int dup = 0, j;
+          if (!declared_somewhere (inc, soft[k])) continue;
+          for (j = 0; j < nfuncs; j++) if (strcmp (funcs[j], soft[k]) == 0) dup = 1;
+          if (dup) continue;
+          if (can_make (inc, soft[k])) funcs[nfuncs++] = soft[k];
+          else fprintf (stderr, "mkoslib: warning: %s (used by a library) is not made: %s\n", soft[k], die_message);
         }
     }
   if (!nfuncs && !have_objs) die ("no function to make (name them, or give --from-objects)");

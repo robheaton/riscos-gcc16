@@ -50,3 +50,18 @@ _kernel_oserror *vt_swi (int number, _kernel_swi_regs *r, void *pw)
     default: return 0;
     }
 }
+
+/* event handlers (the vector veneer with a list of events): r0 = the event; ev_a_handler adds 100 to r1, keeps the private word in r5 and returns r2 (0 claims the event, anything else passes it on);
+   ev_b_handler keeps the private word + 2 in r9 and passes the event on */
+int ev_a_handler (_kernel_swi_regs *r, void *pw)
+{
+  r->r[1] += 100;
+  r->r[5] = (int) pw;
+  return r->r[2];
+}
+
+int ev_b_handler (_kernel_swi_regs *r, void *pw)
+{
+  r->r[9] = (int) pw + 2;
+  return 1;
+}

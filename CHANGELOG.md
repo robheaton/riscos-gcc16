@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased (after 16.2.0-15): modkit built against the C modules of the RISC OS Open sources
+
+In the `modkit/` sources and the tools of this repository; not in a release (the packages of 16.2.0-15 do not have it). The C modules of the RISC OS Open sources were built with the kit as the OS build builds them ([docs/OS-MODULES.md](docs/OS-MODULES.md)): **28 of the 66 build and link into a module image without a change to their sources, and 41 compile completely**. What that found, and what changed:
+
+* **`cmunge`**: numbers after the C preprocessor are constant expressions (the OS's headers write `Service_X` as `(0x60)`); the generated header has what CMunge's has and OS sources use (`<prefix>_00`, the `X` SWI names, `error_BAD_SWI`, `arg_CONFIGURE_SYNTAX`, `arg_STATUS`, `configure_*`); **`event-handler:`** (ENTRY[/HANDLER] [numbers]); a handler name followed by something (`(flags-capable:)`) is an error, not a bad symbol; `library-enter-code` and `library-initialisation-code` are refused with the reason. 62 of the 66 CMHG files of the OS are accepted (58 with 16.2.0-15).
+* **The C library**: `<kernel.h>` has `size_t`, `_kernel_irqs_on`, `_kernel_irqs_off`, `_kernel_irqs_disabled`, `_kernel_processor_mode`, `_kernel_RMAalloc`, `_kernel_RMAextend`, `_kernel_RMAfree`; `<swis.h>` has the **SWI numbers** (951 SWIs and their `X` names: `include/swisnums.h`, made by `bin/mkswis.py` from the OS's own assembler headers), `XOS_Bit`, `_vswi` and `_vswix`; new `<inttypes.h>` and `<signal.h>` (`signal`, `raise`); `__errno` is the BSD name of `errno` (the TCP/IP libraries' veneers write to it); the functions of `<string.h>` and `<ctype.h>` that are not ISO C are declared only when the program is not strict ISO C (`-std=c99`), so that a module that defines its own `stricmp` compiles. The library is 85,000 bytes (81,000 in 16.2.0-15).
+* **`module.ld`** defines `Image$$RO$$Base` and the other symbols of the Norcroft linker that assembler sources import.
+* **`modreloc` refuses a module that has a loaded section outside `.image`.** A section of another name (an assembler `AREA`, a section attribute) was left out of the module without a word, and the module jumped into its relocation table: found when DHCP, which called `socket`, did that. The message says how to rename the section.
+* **`mkoslib`**: "the processor status register" outputs (34 more OSLib functions), static libraries in `--from-objects`, and no veneer for a function that one of the module's own objects defines.
+* **Tests**: `libtest` has sections for `<inttypes.h>` (against glibc), `signal`, the new `_kernel_*` functions (RMA blocks, the interrupt functions and the processor mode, on the interpreter, which learned `CPSIE` / `CPSID`) and `_vswi`; `sim-veneers.py` runs event handlers (events in the list, events not in it, claim and pass on); `test-ctools.py` compares the C and Python tools on expressions, `event-handler` and the new refusals (2978 comparisons instead of 2956, no difference; they now also compile small programs against `<string.h>` and `<ctype.h>` with `-std=c99`, `-std=gnu99` and `-D_GNU_SOURCE`); new `tools/build-os-modules.py`, `modkit/tests/sim-osmodules.py` and `tools/modinfo.py`.
+
 ## v16.2.0-15: 2026-10-07, modkit: a C library for modules, `stdio` files and most of CMHG
 
 | Asset | Version |

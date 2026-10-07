@@ -1,4 +1,4 @@
-; VeneerTest: generic veneers, a SWI prefix that is not the title, service numbers that are no ARM immediate, a messages file name, nothing else
+; VeneerTest: generic veneers, event handlers, a SWI prefix that is not the title, service numbers that are no ARM immediate, a messages file name, nothing else
 title-string:           VeneerTest
 help-string:            VeneerTest 1.00
 date-string:            07 Oct 2026
@@ -12,3 +12,7 @@ swi-decoding-table:     VT Alpha Beta Gamma
 swi-handler-code:       vt_swi
 
 generic-veneers:        gv_a/gv_a_handler gv_b
+
+; event handlers: ev_a (with its handler named) takes the events 19 and (0x6) only, ev_b (the default handler name) takes every event; the numbers may be written as the OS headers write them
+event-handler:          ev_a/ev_a_handler 19 (0x6)
+event-handler:          ev_b

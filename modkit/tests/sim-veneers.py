@@ -159,6 +159,54 @@ for mode in (0x13, 0x12, 0x10):
     judge("the second veneer gv_b calls gv_b_handler (the default name): r9 = pw + 1, flags kept", [] if f is None and a["r"][9] == mod.pw + 1 and a["flags"] == (0, 1, 0, 0) and a["r"][15] == RET else ["r9 %#x flags %s" % (a["r"][9], a["flags"])])
     print()
 
+# ---- event handlers: the veneer takes the events of its list, passes every other one on at once, and otherwise works as a vector veneer: handler returns 0 -> claimed (the address the kernel stacked is used),
+#      else passed on through lr
+CLAIM = 0xFFFF0A00
+EA = BASE + syms["ev_a"]; EB = BASE + syms["ev_b"]
+def call_event(addr, event, claim_flag, mode=0x13):
+    s = k._snapshot()
+    cpu.steps = 0
+    cpu.set_mode(0x13); cpu.cpsr_ctl = 0x13
+    sp = k.sp0 - 0x300
+    cpu.wr32(sp - 4, CLAIM)                                                                   # (what the kernel stacks on EventV: the address that a claim returns to)
+    cpu.r[13] = sp - 4; cpu.r[14] = RET
+    for i in range(12): cpu.r[i] = 0x30000000 + 0x101 * i
+    cpu.r[0] = event; cpu.r[1] = 1000; cpu.r[2] = claim_flag; cpu.r[12] = mod.pw
+    cpu.n, cpu.z, cpu.c, cpu.v = (1, 0, 1, 0)
+    before = list(cpu.r)
+    fault = None
+    try: cpu.run(addr, {RET, CLAIM})
+    except Fault as f: fault = str(f)
+    after = list(cpu.r); flags = (cpu.n, cpu.z, cpu.c, cpu.v)
+    k._restore(s)
+    return before, after, flags, fault
+
+print("event handlers: ev_a takes the events 19 and 6, ev_b every event")
+for ev, flag, what in ((19, 1, "pass on"), (6, 1, "pass on"), (19, 0, "claim"), (6, 0, "claim")):
+    b, a, fl, f = call_event(EA, ev, flag)
+    claimed = a[15] == CLAIM
+    problems = []
+    if f: problems.append("fault %s" % f)
+    else:
+        if a[15] not in (RET, CLAIM): problems.append("ended at %#x" % a[15])
+        if claimed != (flag == 0): problems.append("%s, not %s" % ("claimed" if claimed else "passed on", what))
+        if a[1] != 1100 or a[5] != mod.pw: problems.append("the handler did not run (r1 %d, r5 %#x)" % (a[1], a[5]))
+        if a[0] != ev: problems.append("r0 changed")
+        for i in (3, 4, 7, 8, 9, 10, 11):
+            if a[i] != b[i]: problems.append("r%d changed" % i)
+        if a[13] != b[13] + (4 if claimed else 0): problems.append("sp %#x, entered with %#x" % (a[13], b[13]))
+    judge("ev_a, event %d, handler says %s: the handler ran, %s" % (ev, what, "returned to the claim address and took it off the stack" if claimed else "returned through lr, the stack as it was"), problems)
+for ev in (0, 5, 7, 18, 20, 100, 0x13, 0xFFFFFFFF):
+    if ev == 0x13: continue
+    b, a, fl, f = call_event(EA, ev, 1)
+    ok = f is None and a[15] == RET and all(a[i] == b[i] for i in range(15))
+    judge("ev_a, event %d (not in the list): passed on at once, every register as it was, the handler did not run" % (ev & 0xFFFFFFFF), [] if ok else ["ended at %#x, r1 %d" % (a[15], a[1])])
+for ev in (0, 7, 19, 31, 0x12345):
+    b, a, fl, f = call_event(EB, ev, 0)
+    ok = f is None and a[15] == RET and a[9] == mod.pw + 2 and all(a[i] == b[i] for i in (0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11)) and a[13] == b[13]
+    judge("ev_b, event %d (no list: every event goes to the handler, ev_b_handler by the default name): r9 = pw + 2, passed on" % ev, [] if ok else ["ended at %#x, r9 %#x" % (a[15], a[9])])
+print()
+
 if fails:
     print("%d FAILED" % fails); sys.exit(1)
 print("ALL OK")

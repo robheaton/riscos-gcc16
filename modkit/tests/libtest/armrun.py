@@ -4,7 +4,7 @@ it calls, and prints what it wrote.  The real ARM code of the library runs: noth
 
 The SWIs (the numbers include the X bit when the program set it; OS_CallASWI dispatches on r10 and the flags come back as the called SWI left them):
   OS_WriteC, OS_NewLine, OS_Write0      the output
-  OS_Module 6 / 7                      claim / free (a bump allocator at 0x00600000)
+  OS_Module 6 / 7 / 13                 claim / free / extend (a bump allocator at 0x00600000; the size of a block is in the word in front of it, as in the RMA)
   OS_Word 14, 3                        the clock (5 bytes, centiseconds since 1900)
   OS_ReadMonotonicTime                 a counter
   OS_ReadVarVal / OS_SetVarVal         system variables
@@ -83,7 +83,17 @@ class Machine:
         elif n == 0x1E:                                                                            # OS_Module
             if cpu.r[0] == 6:
                 size = cpu.r[3]; p = (self.heap + 7) & ~7; self.heap = p + size + 8; cpu.r[2] = p
+                self.put_bytes(p - 4, ((size + 4) & M).to_bytes(4, "little"))                      # (the RMA heap keeps the size of a block, with the word itself, in front of it: _kernel_RMAextend reads it)
             elif cpu.r[0] == 7: pass
+            elif cpu.r[0] == 13:                                                                   # extend: r2 = the block, r3 = the change of its size; a new block, the contents copied
+                old_p = cpu.r[2]; old_size = int.from_bytes(self.get_bytes(old_p - 4, 4), "little") - 4
+                delta = cpu.r[3] - (1 << 32) if cpu.r[3] >> 31 else cpu.r[3]
+                size = old_size + delta
+                if size < 0: raise Fault("OS_Module 13: the block would be %d bytes" % size)
+                p = (self.heap + 7) & ~7; self.heap = p + size + 8
+                self.put_bytes(p - 4, ((size + 4) & M).to_bytes(4, "little"))
+                self.put_bytes(p, self.get_bytes(old_p, min(old_size, size)))
+                cpu.r[2] = p; cpu.r[3] = delta & M
             else: raise Fault("OS_Module %d not modelled" % cpu.r[0])
         elif n == 0x6F:                                                                            # OS_CallASWI
             keep = cpu.r[10]; self.swi(cpu, cpu.r[10]); cpu.r[10] = keep

@@ -20,6 +20,8 @@
 #include <time.h>
 #include <errno.h>
 #include <locale.h>
+#include <inttypes.h>
+#include <signal.h>
 #if defined (T_HOSTLIB)
 # include "mk_rename.h"
 # include "mk_decl.h"
@@ -1143,6 +1145,59 @@ static void test_stdio_probe (void)
 }
 #endif
 
+/* ======================================================================== inttypes.h: the format macros of printf and scanf for the types of <stdint.h> (the answers of glibc are the reference) */
+static void test_inttypes (void)
+{
+  char b[200];
+  sect_begin ("inttypes", 29);
+  for (unsigned i = 0; i < N (300); i++)
+    {
+      int8_t a8 = (int8_t) rnd (); uint8_t u8 = (uint8_t) rnd (); int16_t a16 = (int16_t) rnd (); uint16_t u16 = (uint16_t) rnd ();
+      int32_t a32 = (int32_t) rnd (); uint32_t u32 = rnd (); int64_t a64 = (int64_t) (((uint64_t) rnd () << 32) | rnd ()); uint64_t u64 = ((uint64_t) rnd () << 32) | rnd ();
+      intmax_t am = a64 >> rr (40); uintmax_t um = u64 >> rr (40); intptr_t ap = (intptr_t) (int32_t) rnd (); uintptr_t up = (uintptr_t) (uint32_t) rnd ();                    /* (the values of a 32 bit pointer: the host's are wider) */
+      int_least8_t l8 = a8; int_least16_t l16 = a16; int_least32_t l32 = a32; int_least64_t l64 = a64; int_fast8_t f8 = a8; int_fast16_t f16 = a16; int_fast32_t f32 = a32; int_fast64_t f64 = a64;
+      case_begin (i);
+      snprintf (b, sizeof b, "%" PRId8 " %" PRIi8 " %" PRIu8 " %" PRIx8 " %" PRIX8 " %" PRIo8, a8, a8, u8, u8, u8, u8); rec_s (b);
+      snprintf (b, sizeof b, "%" PRId16 " %" PRIi16 " %" PRIu16 " %" PRIx16 " %" PRIX16 " %" PRIo16, a16, a16, u16, u16, u16, u16); rec_s (b);
+      snprintf (b, sizeof b, "%" PRId32 " %" PRIi32 " %" PRIu32 " %" PRIx32 " %" PRIX32 " %" PRIo32, a32, a32, u32, u32, u32, u32); rec_s (b);
+      snprintf (b, sizeof b, "%" PRId64 " %" PRIi64 " %" PRIu64 " %" PRIx64 " %" PRIX64 " %" PRIo64, a64, a64, u64, u64, u64, u64); rec_s (b);
+      snprintf (b, sizeof b, "%" PRIdMAX " %" PRIuMAX " %" PRIxMAX " %" PRIdPTR " %" PRIuPTR " %" PRIxPTR, am, um, um, ap, up, up); rec_s (b);
+      snprintf (b, sizeof b, "%" PRIdLEAST8 " %" PRIdLEAST16 " %" PRIdLEAST32 " %" PRIdLEAST64 " %" PRIdFAST8 " %" PRIdFAST16 " %" PRIdFAST32 " %" PRIdFAST64, l8, l16, l32, l64, f8, f16, f32, f64); rec_s (b);
+      { int8_t r8 = 0; uint8_t v8 = 0; int16_t r16 = 0; uint16_t v16 = 0; int32_t r32 = 0; uint32_t v32 = 0; int64_t r64 = 0; uint64_t v64 = 0; intmax_t rm = 0; uintmax_t vm = 0; intptr_t rp = 0; uintptr_t vp = 0;
+        int n = 0;
+        n += sscanf ("-5 200 -30000 60000 -2000000000 4000000000", "%" SCNd8 " %" SCNu8 " %" SCNd16 " %" SCNu16 " %" SCNd32 " %" SCNu32, &r8, &v8, &r16, &v16, &r32, &v32);
+        rec_i (n); rec_i (r8); rec_u (v8); rec_i (r16); rec_u (v16); rec_i (r32); rec_u (v32);
+        snprintf (b, sizeof b, "%" PRId64 " %" PRIu64 " %" PRIdMAX " %" PRIuMAX " %" PRIdPTR " %" PRIxPTR, a64, u64, am, um, ap, up);
+        n = sscanf (b, "%" SCNd64 " %" SCNu64 " %" SCNdMAX " %" SCNuMAX " %" SCNdPTR " %" SCNxPTR, &r64, &v64, &rm, &vm, &rp, &vp);
+        rec_i (n); check (r64 == a64 && v64 == u64 && rm == am && vm == um && rp == ap && vp == up, "sscanf with the SCN macros reads back what the PRI macros wrote"); }
+      case_end ();
+    }
+  check (INT64_C (1) << 40 == 1099511627776LL && UINT64_C (18446744073709551615) == ~(uint64_t) 0, "INT64_C and UINT64_C");
+  sect_end ();
+}
+
+/* ======================================================================== signal.h: signal and raise (what glibc does as well; the handler is reset to SIG_DFL before it is called by ISO C, but not by glibc: not looked at) */
+static volatile int sig_hits, sig_last;
+static void sig_h (int s) { sig_hits++; sig_last = s; }
+static void test_signal (void)
+{
+  __sighandler_t old;
+  sect_begin ("signal", 31);
+  case_begin (0);
+  sig_hits = 0; sig_last = 0;
+  old = signal (SIGINT, sig_h); rec_i (old == SIG_DFL);
+  rec_i (raise (SIGINT)); rec_i (sig_hits); rec_i (sig_last == SIGINT);
+  old = signal (SIGUSR1, sig_h); rec_i (old == SIG_DFL);
+  old = signal (SIGUSR1, SIG_IGN); rec_i (old == sig_h);                              /* signal gives the handler that was there */
+  sig_hits = 0; rec_i (raise (SIGUSR1)); rec_i (sig_hits);                            /* ignored: not called */
+  old = signal (SIGUSR1, sig_h); rec_i (old == SIG_IGN);
+  sig_hits = 0; rec_i (raise (SIGUSR1)); rec_i (sig_hits); rec_i (sig_last == SIGUSR1);
+  rec_i (signal (0, sig_h) == SIG_ERR); rec_i (signal (999, sig_h) == SIG_ERR); rec_i (signal (-3, sig_h) == SIG_ERR);
+  rec_i (raise (999) != 0);                                                           /* (raise (0) is a question for glibc: kill (getpid (), 0) says 0) */
+  case_end ();
+  sect_end ();
+}
+
 /* ======================================================================== time (the calendar functions against the host's, in UTC) */
 static void copy_tm (struct tm *d, const struct tm *s)
 {
@@ -1251,6 +1306,8 @@ static void test_rand (void)
 #define TST_SETCLOCK	0x5AB01
 #define TST_SETMONO	0x5AB02
 #define TST_BLOCK	0x5AB03
+static _kernel_oserror *vswix_h (int swi, unsigned mask, ...) { va_list ap; _kernel_oserror *e; va_start (ap, mask); e = _vswix (swi, mask, ap); va_end (ap); return e; }
+static int vswi_h (int swi, unsigned mask, ...) { va_list ap; int r; va_start (ap, mask); r = _vswi (swi, mask, ap); va_end (ap); return r; }
 static void test_swix (void)
 {
   unsigned o[10], fl = 0;
@@ -1287,8 +1344,22 @@ static void test_swix (void)
   rec_i (_swi (TST_SWI | 0x20000, _INR (0, 3) | _OUT (2) | _RETURN (3), 1u, 2u, 5u, 9u, &o[2]));
   rec_u (o[2]);
   case_end ();
+  case_begin (6);                                                                                 /* the same calls through a va_list */
+  {
+    unsigned a[10], b[10], fa = 0, fb = 0;
+    _kernel_oserror *ea, *eb;
+    for (int k = 0; k < 10; k++) a[k] = b[k] = 0x55;
+    ea = _swix (TST_SWI, _INR (0, 3) | _OUTR (0, 3) | _OUT (_FLAGS), 5u, 7u, 0x100u, 3u, &a[0], &a[1], &a[2], &a[3], &fa);
+    eb = vswix_h (TST_SWI, _INR (0, 3) | _OUTR (0, 3) | _OUT (_FLAGS), 5u, 7u, 0x100u, 3u, &b[0], &b[1], &b[2], &b[3], &fb);
+    check (ea == 0 && eb == 0 && !t_memcmp (a, b, sizeof a) && fa == fb, "_vswix does what _swix does");
+    rec_i (eb != 0); rec_m (b, sizeof b); rec_u (fb);
+    check (vswi_h (TST_SWI | 0x20000, _INR (0, 1) | _RETURN (1), 3u, 4u) == _swi (TST_SWI | 0x20000, _INR (0, 1) | _RETURN (1), 3u, 4u), "_vswi does what _swi does");
+    check (XOS_Bit == 0x20000u && Wimp_Initialise == 0x400C0 && XWimp_Initialise == 0x600C0 && OS_WriteC == 0 && XOS_Hardware == (0x7A | 0x20000), "swis.h has the SWI numbers");
+  }
+  case_end ();
   sect_end ();
 }
+
 /* the screen and the keyboard streams (the host model and armrun.py keep what is written to the screen, and give the lines that the test pushes to OS_ReadLine) */
 extern struct __FILE __modlib_stdin, __modlib_stdout, __modlib_stderr;
 #if defined (T_HOSTLIB)
@@ -1510,6 +1581,45 @@ static void test_heap (void)
   sect_end ();
 }
 
+/* the kernel interface: blocks of the RMA, the processor mode and the interrupt functions (the machine runs a module's program in USER mode: there the mode and the I bit cannot be tested) */
+static void test_kernel (void)
+{
+  sect_begin ("kernel", 37);
+  { unsigned char *p = (unsigned char *) _kernel_RMAalloc (100), *q;
+    check (p != 0, "_kernel_RMAalloc (100)");
+    if (p)
+      {
+        for (int i = 0; i < 100; i++) p[i] = (unsigned char) (i * 7 + 1);
+        q = (unsigned char *) _kernel_RMAextend (p, 300);
+        check (q != 0, "_kernel_RMAextend to 300");
+        if (q)
+          {
+            int ok = 1;
+            for (int i = 0; i < 100; i++) if (q[i] != (unsigned char) (i * 7 + 1)) ok = 0;
+            check (ok, "_kernel_RMAextend keeps the contents");
+            for (int i = 100; i < 300; i++) q[i] = 0xA5;                          /* (all 300 bytes are there) */
+            p = (unsigned char *) _kernel_RMAextend (q, 50);
+            check (p != 0, "_kernel_RMAextend to 50");
+            ok = p != 0;
+            for (int i = 0; ok && i < 50; i++) if (p[i] != (unsigned char) (i * 7 + 1)) ok = 0;
+            check (ok, "_kernel_RMAextend to less keeps the beginning");
+            _kernel_RMAfree (p);
+          }
+        else _kernel_RMAfree (p);
+      }
+    q = (unsigned char *) _kernel_RMAextend (0, 64); check (q != 0, "_kernel_RMAextend of NULL is an allocation");
+    if (q) check (_kernel_RMAextend (q, 0) == 0, "_kernel_RMAextend to 0 frees");
+    check (_kernel_RMAalloc (0) == 0, "_kernel_RMAalloc (0) is NULL");
+    _kernel_RMAfree (0); }
+#if !defined (T_HW)
+  check (_kernel_processor_mode () == 0x13, "the interpreter runs the library in SVC mode");
+  check (_kernel_irqs_disabled () == 0, "interrupts are enabled");
+  _kernel_irqs_off (); check (_kernel_irqs_disabled () != 0, "_kernel_irqs_off disables them");
+  _kernel_irqs_on (); check (_kernel_irqs_disabled () == 0, "_kernel_irqs_on enables them");
+#endif
+  sect_end ();
+}
+
 static void test_arm_only (void)
 {
   volatile int cnt = 0;
@@ -1562,6 +1672,8 @@ int main (int argc, char **argv)
   test_stdio ();
   test_time ();
   test_limits ();
+  test_inttypes ();
+  test_signal ();
 #if !defined (T_ORACLE)
   test_rand ();
   test_stdio_misc ();
@@ -1577,6 +1689,7 @@ int main (int argc, char **argv)
 #endif
 #if defined (T_ARM)
   test_heap ();
+  test_kernel ();
   test_arm_only ();
 #endif
 #if defined (T_HW)

@@ -44,7 +44,7 @@ typedef struct
   unsigned char *syntax; size_t synlen; int has_syntax;
 } Cmd;
 
-typedef struct { char *kind, *entry, *handler; } Veneer;
+typedef struct { char *kind, *entry, *handler; unsigned *ev; int nev; } Veneer;      /* ev: the event numbers that an event-handler accepts */
 
 typedef struct
 {
@@ -105,14 +105,117 @@ static char **split_words (const char *s, int commas, int *n)
   return w;
 }
 
+/* A number of a CMHG file after the C preprocessor (-p): a constant expression.  The OS's own headers turn the names of services and SWIs into "(0x60)" (Hdr2H), so a number may be in
+   parentheses and may be a small expression: decimal, 0xHEX or &HEX numbers (a & that starts a term is the hex prefix, one after a term is "and"), unary - + ~, * / %, + -, << >>, & ^ |
+   (C's order of precedence; a number may end in u or l). */
+typedef struct { const char *p; const char *all; } Ex;
+static long long ex_or (Ex *x);
+static void ex_skip (Ex *x) { while (*x->p == ' ' || *x->p == '\t') x->p++; }
+static void ex_fail (Ex *x) { cmhg_error ("%s is not a number", x->all); }
+static long long ex_atom (Ex *x)
+{
+  long long v;
+  char *end;
+  ex_skip (x);
+  if (*x->p == '(')
+    {
+      x->p++;
+      v = ex_or (x);
+      ex_skip (x);
+      if (*x->p != ')') ex_fail (x);
+      x->p++;
+      return v;
+    }
+  if (*x->p == '-') { x->p++; return -ex_atom (x); }
+  if (*x->p == '+') { x->p++; return ex_atom (x); }
+  if (*x->p == '~') { x->p++; return ~ex_atom (x); }
+  if (*x->p == '&') v = (long long) strtoull (x->p + 1, &end, 16), x->p += 1;
+  else if (x->p[0] == '0' && (x->p[1] == 'x' || x->p[1] == 'X')) v = (long long) strtoull (x->p + 2, &end, 16), x->p += 2;
+  else v = (long long) strtoull (x->p, &end, 10);
+  if (end == x->p) ex_fail (x);
+  x->p = end;
+  while (*x->p == 'u' || *x->p == 'U' || *x->p == 'l' || *x->p == 'L') x->p++;
+  return v;
+}
+static long long ex_mul (Ex *x)
+{
+  long long v = ex_atom (x);
+  for (;;)
+    {
+      ex_skip (x);
+      if (*x->p == '*') { x->p++; v *= ex_atom (x); }
+      else if (*x->p == '/' || *x->p == '%')
+        {
+          char op = *x->p++;
+          long long d = ex_atom (x);
+          if (d == 0) cmhg_error ("%s: division by zero", x->all);
+          v = op == '/' ? v / d : v % d;
+        }
+      else return v;
+    }
+}
+static long long ex_add (Ex *x)
+{
+  long long v = ex_mul (x);
+  for (;;)
+    {
+      ex_skip (x);
+      if (*x->p == '+') { x->p++; v += ex_mul (x); }
+      else if (*x->p == '-') { x->p++; v -= ex_mul (x); }
+      else return v;
+    }
+}
+static long long ex_shift (Ex *x)
+{
+  long long v = ex_add (x);
+  for (;;)
+    {
+      ex_skip (x);
+      if (x->p[0] == '<' && x->p[1] == '<') { long long n; x->p += 2; n = ex_add (x); v = n >= 0 && n < 64 ? (long long) ((unsigned long long) v << n) : 0; }
+      else if (x->p[0] == '>' && x->p[1] == '>') { long long n; x->p += 2; n = ex_add (x); v = n >= 0 && n < 64 ? (long long) ((unsigned long long) v >> n) : 0; }
+      else return v;
+    }
+}
+static long long ex_and (Ex *x)
+{
+  long long v = ex_shift (x);
+  for (;;)
+    {
+      ex_skip (x);
+      if (*x->p == '&') { x->p++; v &= ex_shift (x); }
+      else return v;
+    }
+}
+static long long ex_xor (Ex *x)
+{
+  long long v = ex_and (x);
+  for (;;)
+    {
+      ex_skip (x);
+      if (*x->p == '^') { x->p++; v ^= ex_and (x); }
+      else return v;
+    }
+}
+static long long ex_or (Ex *x)
+{
+  long long v = ex_xor (x);
+  for (;;)
+    {
+      ex_skip (x);
+      if (*x->p == '|') { x->p++; v |= ex_xor (x); }
+      else return v;
+    }
+}
+
 static unsigned parse_int (const char *s)
 {
-  char *end;
-  unsigned long v;
-  if (s[0] == '&') v = strtoul (s + 1, &end, 16);
-  else if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) v = strtoul (s + 2, &end, 16);
-  else v = strtoul (s, &end, 10);
-  if (end == s || *end) cmhg_error ("%s is not a number", s);
+  Ex x;
+  long long v;
+  x.p = x.all = s;
+  v = ex_or (&x);
+  ex_skip (&x);
+  if (*x.p) ex_fail (&x);
+  if (v < 0 || v > 0xFFFFFFFFLL) cmhg_error ("%s is out of range", s);
   return (unsigned) v;
 }
 
@@ -395,7 +498,18 @@ static void parse_command_table (const char *rest, Module *m)
                 {
                   size_t e = pos;
                   char *num;
-                  if (rest[e] == '&' || (rest[e] == '0' && (rest[e + 1] == 'x' || rest[e + 1] == 'X')))
+                  if (rest[e] == '(')                                  /* a number that the preprocessor made, in parentheses: (2) */
+                    {
+                      int depth = 0;
+                      while (e < len && (depth > 0 || e == pos))
+                        {
+                          if (rest[e] == '(') depth++;
+                          else if (rest[e] == ')') depth--;
+                          e++;
+                        }
+                      if (depth != 0) cmhg_error ("a number was expected near '%.30s'", rest + pos);
+                    }
+                  else if (rest[e] == '&' || (rest[e] == '0' && (rest[e + 1] == 'x' || rest[e + 1] == 'X')))
                     {
                       e += rest[e] == '&' ? 1 : 2;
                       if (!isxdigit ((unsigned char) rest[e])) cmhg_error ("a number was expected near '%.30s'", rest + pos);
@@ -440,13 +554,26 @@ static void parse_command_table (const char *rest, Module *m)
   m->ncmds = n;
 }
 
-static void add_veneer (Module *m, const char *kind, const char *entry, const char *handler)
+/* the value of a directive that names one function: a C identifier (CMHG's own options in brackets, such as swi-handler-code: name (flags-capable:), are not supported) */
+static char *one_name (const char *key, char *r)
 {
+  const char *p = r;
+  if (!is_alpha ((unsigned char) *p) && *p != '_') cmhg_error ("%s: needs the name of a function", key);
+  while (is_word ((unsigned char) *p)) p++;
+  if (*p) cmhg_error ("%s: needs one function name; '%s' is not supported", key, p);
+  return r;
+}
+
+static Veneer *add_veneer (Module *m, const char *kind, const char *entry, const char *handler)
+{
+  Veneer *v;
   m->ven = xrealloc (m->ven, sizeof (Veneer) * (size_t) (m->nven + 1));
-  m->ven[m->nven].kind = xstrdup (kind);
-  m->ven[m->nven].entry = xstrdup (entry);
-  m->ven[m->nven].handler = xstrdup (handler);
-  m->nven++;
+  v = &m->ven[m->nven++];
+  memset (v, 0, sizeof *v);
+  v->kind = xstrdup (kind);
+  v->entry = xstrdup (entry);
+  v->handler = xstrdup (handler);
+  return v;
 }
 
 static void parse_cmhg (const char *text, Module *m)
@@ -461,8 +588,8 @@ static void parse_cmhg (const char *text, Module *m)
       if (strcmp (key, "title-string") == 0) m->title = unquote_first (r);
       else if (strcmp (key, "help-string") == 0) m->help = unquote_first (r);
       else if (strcmp (key, "date-string") == 0) m->date = unquote_first (r);
-      else if (strcmp (key, "initialisation-code") == 0) m->init = r;
-      else if (strcmp (key, "finalisation-code") == 0) m->final = r;
+      else if (strcmp (key, "initialisation-code") == 0) m->init = one_name (key, r);
+      else if (strcmp (key, "finalisation-code") == 0) m->final = one_name (key, r);
       else if (strcmp (key, "service-call-handler") == 0)
         {
           int np, k;
@@ -492,7 +619,7 @@ static void parse_cmhg (const char *text, Module *m)
           for (k = 1; k < np; k++) m->swi_names[k - 1] = strip_quotes (w[k]);
           m->nswi = np - 1;
         }
-      else if (strcmp (key, "swi-handler-code") == 0) m->swi_handler = r;
+      else if (strcmp (key, "swi-handler-code") == 0) m->swi_handler = one_name (key, r);
       else if (strcmp (key, "irq-handlers") == 0 || strcmp (key, "vector-handlers") == 0 || strcmp (key, "generic-veneers") == 0)
         {
           int np, k;
@@ -513,12 +640,44 @@ static void parse_cmhg (const char *text, Module *m)
                 }
             }
         }
+      else if (strcmp (key, "event-handler") == 0)
+        {
+          /* ENTRY[/HANDLER] [number ...]: a veneer for the event vector; it passes on every event that is not in the list (CMunge: "fast accept/reject code") and otherwise works as a vector-handlers veneer */
+          int np, k;
+          char **w = split_words (r, 1, &np);
+          char *slash;
+          Veneer *v;
+          if (np < 1) cmhg_error ("event-handler: needs the name of the handler function");
+          if (strchr (r, ':')) cmhg_error ("%s: handler options are not supported", key);                /* (the event numbers may be in parentheses: the preprocessor made them) */
+          slash = strchr (w[0], '/');
+          if (slash)
+            {
+              *slash = 0;
+              v = add_veneer (m, key, w[0], slash + 1);
+            }
+          else
+            {
+              Buf hb;
+              buf_init (&hb);
+              buf_adds (&hb, w[0]);
+              buf_adds (&hb, "_handler");
+              v = add_veneer (m, key, w[0], hb.s);
+              free (hb.s);
+            }
+          for (k = 1; k < np; k++)
+            {
+              v->ev = xrealloc (v->ev, sizeof (unsigned) * (size_t) (v->nev + 1));
+              v->ev[v->nev++] = parse_int (w[k]);
+            }
+        }
       else if (strcmp (key, "module-is-runnable") == 0) m->runnable = 1;
       else if (strcmp (key, "international-help-file") == 0)
         {
           size_t pos = 0;
           m->mfile = parse_string_literals (lines[i].rest, &pos, &m->mfilelen);
         }
+      else if (strcmp (key, "library-enter-code") == 0 || strcmp (key, "library-initialisation-code") == 0)
+        cmhg_error ("%s: is not supported (it redirects the start-up of the Shared C Library, which a modkit module does not have)", key);
       else cmhg_error ("%s: is not supported", key);
     }
   if (!m->title || !*m->title) cmhg_error ("title-string: is missing");
@@ -837,6 +996,12 @@ static char *generate_asm (const Module *m, const char *src)
       const Veneer *v = &m->ven[i];
       A (&o, "%s", "");
       A (&o, "\t.global\t%s\n%s:\t\t\t\t\t\t@ %s: r12 = private word; for a vector lr = the pass-on address and the kernel stacked the claim address", v->entry, v->entry, v->kind);
+      if (v->nev)                                       /* an event-handler: events that are not in the list go on at once */
+        {
+          int e;
+          for (e = 0; e < v->nev; e++) A (&o, "\t%s\tr0, #%u", e == 0 ? "teq" : "teqne", v->ev[e]);
+          A (&o, "\tmovne\tpc, lr");
+        }
       A (&o, "\tstmfd\tsp!, {r0-r11, lr}\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7");
       if (strcmp (v->kind, "generic-veneers") == 0)
         /* as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value */
@@ -884,7 +1049,7 @@ static char *generate_h (const Module *m, const char *src)
   if (m->ncmds)
     {
       A (&o, "_kernel_oserror *%s (const char *arg_string, int argc, int number, void *pw);", m->cmd_handler);
-      A (&o, "#define help_PRINT_BUFFER\t\t((_kernel_oserror *) arg_string)\n");
+      A (&o, "#define help_PRINT_BUFFER\t\t((_kernel_oserror *) arg_string)\n#define arg_CONFIGURE_SYNTAX\t\t((char *) 0)\n#define arg_STATUS\t\t\t((char *) 1)\n#define configure_BAD_OPTION\t\t((_kernel_oserror *) -1)\n#define configure_NUMBER_NEEDED\t\t((_kernel_oserror *) 1)\n#define configure_TOO_LARGE\t\t((_kernel_oserror *) 2)\n#define configure_TOO_MANY_PARAMS\t((_kernel_oserror *) 3)\n");
       A (&o, "/* Command numbers, as passed to the command handler function */");
       for (i = 0; i < m->ncmds; i++) A (&o, "#undef CMD_%s\n#define CMD_%s (%d)", m->cmds[i].name, m->cmds[i].name, i);
       A (&o, "%s", "");
@@ -894,7 +1059,15 @@ static char *generate_h (const Module *m, const char *src)
     {
       A (&o, "_kernel_oserror *%s (int swi_offset, _kernel_swi_regs *r, void *pw);", m->swi_handler);
       A (&o, "#define Module_SWIChunk\t\t%s", hx (m->swi_chunk));
-      for (i = 0; i < m->nswi; i++) A (&o, "#define %s_%s\t\t(%s)", m->swi_prefix, m->swi_names[i], hx (m->swi_chunk + (unsigned) i));
+      A (&o, "\n/* SWI number definitions (as CMunge writes them) */\n#define %s_00 (%s)", m->swi_prefix, hx (m->swi_chunk));
+      for (i = 0; i < m->nswi; i++)
+        {
+          char x[16];
+          snprintf (x, sizeof x, "%s", hx (m->swi_chunk + (unsigned) i));
+          A (&o, "#undef %s_%s\n#undef X%s_%s\n#define %s_%s\t\t(%s)\n#define X%s_%s\t\t(%s)", m->swi_prefix, m->swi_names[i], m->swi_prefix, m->swi_names[i], m->swi_prefix, m->swi_names[i], x,
+             m->swi_prefix, m->swi_names[i], hx (m->swi_chunk + (unsigned) i + 0x20000u));
+        }
+      A (&o, "\n/* Special error for 'SWI values out of range for this module' */\n#define error_BAD_SWI ((_kernel_oserror *) -1)");
     }
   for (i = 0; i < m->nven; i++)
     A (&o, "extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);", m->ven[i].entry, strcmp (m->ven[i].kind, "generic-veneers") == 0 ? "_kernel_oserror *" : "int", m->ven[i].handler);        /* (CMunge: a generic handler returns an error) */

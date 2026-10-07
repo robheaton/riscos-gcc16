@@ -13,6 +13,7 @@ Patches and new files that become part of another project's source keep **that p
 | `recipe/make-4.4.1-riscos/patches` | GNU make: GPL-3.0-or-later |
 | `recipe/gcc-16.2.0-riscos/patches-unixlib` | UnixLib: the revised BSD licence for most files, some files under the GNU Library General Public Licence (LGPL 2) or other BSD-style notices: the licence of the file each patch changes. UnixLib's own statement is in [licenses/UnixLib-COPYING.txt](licenses/UnixLib-COPYING.txt); the LGPL text is in [licenses/LGPL-2.0.txt](licenses/LGPL-2.0.txt) |
 | `docs/upstream/patches`, `docs/upstream/src` | the same rule: UnixLib (BSD/LGPL), SharedUnixLibrary and ARMEABISupport (GCCSDK's licences) |
+| `modkit/include/swisnums.h` (after 16.2.0-15) | the names and numbers of the SWIs, made by `modkit/bin/mkswis.py` from the assembler headers of the RISC OS Open sources, which are under the **Apache License 2.0** (Castle Technology Ltd, RISC OS Open Ltd and others; the notice is in the file's first lines; Apache-2.0 material may be included in a GPL-3.0-or-later work). It holds macros only |
 | everything else (scripts, `tools/`, `tests/`, `modkit/`, `modpoc/`, `docs/`) | GPL-3.0-or-later |
 
 ## The binaries on the releases page

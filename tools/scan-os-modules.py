@@ -38,8 +38,8 @@ KNOWN = {
 CATEGORY = {f: cat for cat, names in KNOWN.items() for f in names.split()}
 # directives of CMHG that modkit's cmunge (modkit/src/cmunge.c) implements today
 CMHG_OK = set("title-string help-string date-string initialisation-code finalisation-code service-call-handler command-keyword-table swi-chunk-base-number swi-decoding-table swi-handler-code "
-              "irq-handlers vector-handlers generic-veneers".split())
-CMHG_OPT_OK = set("min-args max-args gstrans-map help-text invalid-syntax".split())
+              "irq-handlers vector-handlers generic-veneers event-handler module-is-runnable international-help-file".split())
+CMHG_OPT_OK = set("min-args max-args gstrans-map help-text invalid-syntax international add-syntax configure status fs-command".split())
 CMHG_DIRECTIVES = set("""title-string help-string date-string initialisation-code finalisation-code service-call-handler command-keyword-table swi-chunk-base-number swi-decoding-table swi-handler-code
 irq-handlers vector-handlers generic-veneers event-handler international-help-file module-is-runnable library-enter-code library-initialisation-code module-is-not-reentrant module-is-c-plus-plus
 vector-traps pdriver-handler no-handler-for-help-and-syntax""".split())
@@ -188,7 +188,7 @@ def main():
     present = {f for f in CATEGORY if f in have}
     extra_ok = set(x for x in a.cmhg_ok.split(",") if x)
     d_ok = CMHG_OK | {x for x in extra_ok if x in CMHG_DIRECTIVES}
-    o_ok = {x for x in extra_ok if x in CMD_OPTS}
+    o_ok = (CMHG_OPT_OK & set(CMD_OPTS)) | {x for x in extra_ok if x in CMD_OPTS}
 
     def libc_missing(m, add):
         return sorted(f for f in m["funcs"] if f not in present and f not in add)

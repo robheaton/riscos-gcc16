@@ -117,6 +117,81 @@ def parse_string_literals(s, pos):
     if first: raise CmhgError("a string was expected near %r" % s[pos:pos + 20])
     return bytes(out), pos
 
+_NUM = re.compile(r"&([0-9A-Fa-f]+)|0[xX]([0-9A-Fa-f]+)|([0-9]+)")
+def cexpr(text):
+    """A number of a CMHG file after the C preprocessor (-p): a constant expression, the grammar of cmunge.c's parse_int: numbers (decimal, 0xHEX, &HEX: a & that starts a term is the hex prefix, one
+    after a term is "and"), parentheses, unary - + ~, * / %, + -, << >>, & ^ |, in C's order of precedence; a number may end in u or l.  The result must fit 32 bits."""
+    s = text; n = len(s); pos = [0]
+    def fail(): raise CmhgError("%s is not a number" % text)
+    def skip():
+        while pos[0] < n and s[pos[0]] in " \t": pos[0] += 1
+    def atom():
+        skip()
+        if pos[0] >= n: fail()
+        c = s[pos[0]]
+        if c == "(":
+            pos[0] += 1; v = bor(); skip()
+            if pos[0] >= n or s[pos[0]] != ")": fail()
+            pos[0] += 1; return v
+        if c == "-": pos[0] += 1; return -atom()
+        if c == "+": pos[0] += 1; return atom()
+        if c == "~": pos[0] += 1; return ~atom()
+        m = _NUM.match(s, pos[0])
+        if not m: fail()
+        v = int(m.group(1), 16) if m.group(1) else int(m.group(2), 16) if m.group(2) else int(m.group(3), 10)
+        pos[0] = m.end()
+        while pos[0] < n and s[pos[0]] in "uUlL": pos[0] += 1
+        return v
+    def mul():
+        v = atom()
+        while True:
+            skip()
+            if pos[0] < n and s[pos[0]] == "*": pos[0] += 1; v *= atom()
+            elif pos[0] < n and s[pos[0]] in "/%":
+                op = s[pos[0]]; pos[0] += 1; d = atom()
+                if d == 0: raise CmhgError("%s: division by zero" % text)
+                q = abs(v) // abs(d) * (1 if (v < 0) == (d < 0) else -1)          # C: truncation towards zero
+                v = q if op == "/" else v - q * d
+            else: return v
+    def add():
+        v = mul()
+        while True:
+            skip()
+            if pos[0] < n and s[pos[0]] == "+": pos[0] += 1; v += mul()
+            elif pos[0] < n and s[pos[0]] == "-": pos[0] += 1; v -= mul()
+            else: return v
+    def shift():
+        v = add()
+        while True:
+            skip()
+            if s.startswith("<<", pos[0]):
+                pos[0] += 2; k = add(); v = ((v & 0xFFFFFFFFFFFFFFFF) << k) & 0xFFFFFFFFFFFFFFFF if 0 <= k < 64 else 0
+            elif s.startswith(">>", pos[0]):
+                pos[0] += 2; k = add(); v = (v & 0xFFFFFFFFFFFFFFFF) >> k if 0 <= k < 64 else 0
+            else: return v
+    def band():
+        v = shift()
+        while True:
+            skip()
+            if pos[0] < n and s[pos[0]] == "&": pos[0] += 1; v &= shift()
+            else: return v
+    def bxor():
+        v = band()
+        while True:
+            skip()
+            if pos[0] < n and s[pos[0]] == "^": pos[0] += 1; v ^= band()
+            else: return v
+    def bor():
+        v = bxor()
+        while True:
+            skip()
+            if pos[0] < n and s[pos[0]] == "|": pos[0] += 1; v |= bxor()
+            else: return v
+    v = bor(); skip()
+    if pos[0] < n: fail()
+    if v < 0 or v > 0xFFFFFFFF: raise CmhgError("%s is out of range" % text)
+    return v
+
 def parse_command_table(rest):
     """'HANDLER\\n name(opts), name(opts) ...' -> (handler, [dict])"""
     m = re.match(r"\s*([A-Za-z_]\w*)\s*", rest)
@@ -136,10 +211,10 @@ def parse_command_table(rest):
                 if rest[pos] == ")": pos += 1; break
                 m = re.match(r"([A-Za-z][\w-]*)\s*:?\s*", rest[pos:]); key = m.group(1).lower(); pos += m.end()
                 if key in ("min-args", "max-args", "gstrans-map"):
-                    m = re.match(r"(0x[0-9A-Fa-f]+|&[0-9A-Fa-f]+|\d+)", rest[pos:])
+                    m = re.match(r"(\((?:[^()]|\([^()]*\))*\)|0x[0-9A-Fa-f]+|&[0-9A-Fa-f]+|\d+)", rest[pos:])        # (2): a number that the preprocessor made
                     if not m: raise CmhgError("a number was expected near '%s'" % rest[pos:pos + 30])
                     v = m.group(1); pos += m.end()
-                    v = int(v[1:], 16) if v[0] == "&" else int(v, 0)
+                    v = cexpr(v)
                     cmd[{"min-args": "min", "max-args": "max", "gstrans-map": "gstrans"}[key]] = v
                 elif key == "international": cmd["intl"] = True
                 elif key == "add-syntax": cmd["add_syntax"] = True
@@ -156,6 +231,13 @@ def parse_command_table(rest):
     if not cmds: raise CmhgError("the command-keyword-table has no commands")
     return handler, cmds
 
+def one_name(key, r):
+    """the value of a directive that names one function: a C identifier (CMHG's own options in brackets, such as swi-handler-code: name (flags-capable:), are not supported)"""
+    m = re.match(r"[A-Za-z_]\w*", r)
+    if not m: raise CmhgError("%s: needs the name of a function" % key)
+    if m.end() != len(r): raise CmhgError("%s: needs one function name; '%s' is not supported" % (key, r[m.end():]))
+    return r
+
 def parse(text):
     m = dict(title=None, help=None, date=None, init=None, final=None, service=None, service_numbers=[], commands=None, cmd_handler=None, swi_chunk=0, swi_prefix=None, swi_names=[], swi_handler=None,
              veneers=[], runnable=False, mfile=None, warnings=[])
@@ -164,27 +246,35 @@ def parse(text):
         if key == "title-string": m["title"] = unquote_first(r)
         elif key == "help-string": m["help"] = unquote_first(r)
         elif key == "date-string": m["date"] = unquote_first(r)
-        elif key == "initialisation-code": m["init"] = r
-        elif key == "finalisation-code": m["final"] = r
+        elif key == "initialisation-code": m["init"] = one_name(key, r)
+        elif key == "finalisation-code": m["final"] = one_name(key, r)
         elif key == "service-call-handler":
             parts = r.replace(",", " ").split(); m["service"] = parts[0]
             for p in parts[1:]:
-                m["service_numbers"].append(int(p[1:], 16) if p[0] == "&" else int(p, 0))
+                m["service_numbers"].append(cexpr(p))
         elif key == "command-keyword-table": m["cmd_handler"], m["commands"] = parse_command_table(rest)
         elif key == "swi-chunk-base-number":
-            m["swi_chunk"] = int(r[1:], 16) if r[0] == "&" else int(r, 0)
+            m["swi_chunk"] = cexpr(r)
             if m["swi_chunk"] == 0 or m["swi_chunk"] & 0x3f: raise CmhgError("swi-chunk-base-number: 0x%08x is not a SWI chunk (a multiple of 64, not 0)" % m["swi_chunk"])
             if m["swi_chunk"] & 0x20000: raise CmhgError("swi-chunk-base-number: 0x%08x has the X bit set (&20000)" % m["swi_chunk"])
         elif key == "swi-decoding-table":
             parts = [p.strip('"') for p in re.split(r"[\s,]+", r) if p]; m["swi_prefix"], m["swi_names"] = parts[0], parts[1:]
-        elif key == "swi-handler-code": m["swi_handler"] = r
+        elif key == "swi-handler-code": m["swi_handler"] = one_name(key, r)
         elif key in ("irq-handlers", "vector-handlers", "generic-veneers"):
             if "(" in r: raise CmhgError("%s: handler options such as private-word: and carry-capable: are not supported" % key)
             for ent in [p for p in re.split(r"[\s,]+", r) if p]:
                 e, h = ent.split("/", 1) if "/" in ent else (ent, ent + "_handler")             # CMunge: the handler of NAME is NAME_handler
-                m["veneers"].append((key, e, h))
+                m["veneers"].append((key, e, h, ()))
+        elif key == "event-handler":
+            # ENTRY[/HANDLER] [number ...]: a veneer for the event vector; events that are not in the list go on at once, otherwise it works as a vector-handlers veneer
+            if ":" in r: raise CmhgError("%s: handler options are not supported" % key)        # (the event numbers may be in parentheses: the preprocessor made them)
+            words = [p for p in re.split(r"[\s,]+", r) if p]
+            if not words: raise CmhgError("event-handler: needs the name of the handler function")
+            e, h = words[0].split("/", 1) if "/" in words[0] else (words[0], words[0] + "_handler")
+            m["veneers"].append((key, e, h, tuple(cexpr(w) for w in words[1:])))
         elif key == "module-is-runnable": m["runnable"] = True
         elif key == "international-help-file": m["mfile"], _ = parse_string_literals(rest, 0)
+        elif key in ("library-enter-code", "library-initialisation-code"): raise CmhgError("%s: is not supported (it redirects the start-up of the Shared C Library, which a modkit module does not have)" % key)
         else: raise CmhgError("%s: is not supported" % key)
     for k in ("title", "help"):
         if not m[k]: raise CmhgError("%s-string: is missing" % k)
@@ -355,9 +445,11 @@ def generate_asm(m, src):
         A("")
         A("swi_entry:\t\t\t\t\t@ r11 = SWI number - chunk base, r0 - r9 = the SWI's registers, r12 = private word\n\tstmfd\tsp!, {r0-r9, lr}\n\tmov\tr0, r11\n\tmov\tr1, sp\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tswi_err\n\tldmfd\tsp!, {r0-r9, pc}\nswi_err:\n\tadd\tsp, sp, #4\n\tldmfd\tsp!, {r1-r9, lr}\n\tmsr\tcpsr_f, #0x10000000\n\tmov\tpc, lr" % m["swi_handler"])
     # vector / IRQ / generic veneers
-    for kind, entry, handler in m["veneers"]:
+    for kind, entry, handler, events in m["veneers"]:
         A("")
         A("\t.global\t%s\n%s:\t\t\t\t\t\t@ %s: r12 = private word; for a vector lr = the pass-on address and the kernel stacked the claim address" % (entry, entry, kind))
+        for e, n in enumerate(events): A("\t%s\tr0, #%u" % ("teq" if e == 0 else "teqne", n))
+        if events: A("\tmovne\tpc, lr")
         A("\tstmfd\tsp!, {r0-r11, lr}\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7")
         if kind == "generic-veneers":
             # as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value
@@ -384,7 +476,7 @@ def generate_h(m, src, name):
     if m["final"]: A("_kernel_oserror *%s (int fatal, int podule_base, void *pw);" % m["final"])
     if m["commands"]:
         A("_kernel_oserror *%s (const char *arg_string, int argc, int number, void *pw);" % m["cmd_handler"])
-        A("#define help_PRINT_BUFFER\t\t((_kernel_oserror *) arg_string)\n")
+        A("#define help_PRINT_BUFFER\t\t((_kernel_oserror *) arg_string)\n#define arg_CONFIGURE_SYNTAX\t\t((char *) 0)\n#define arg_STATUS\t\t\t((char *) 1)\n#define configure_BAD_OPTION\t\t((_kernel_oserror *) -1)\n#define configure_NUMBER_NEEDED\t\t((_kernel_oserror *) 1)\n#define configure_TOO_LARGE\t\t((_kernel_oserror *) 2)\n#define configure_TOO_MANY_PARAMS\t((_kernel_oserror *) 3)\n")
         A("/* Command numbers, as passed to the command handler function */")
         for i, c in enumerate(m["commands"]): A("#undef CMD_%s\n#define CMD_%s (%d)" % (c["name"], c["name"], i))
         A("")
@@ -392,8 +484,11 @@ def generate_h(m, src, name):
     if m["swi_handler"]:
         A("_kernel_oserror *%s (int swi_offset, _kernel_swi_regs *r, void *pw);" % m["swi_handler"])
         A("#define Module_SWIChunk\t\t%#x" % m["swi_chunk"])
-        for i, n in enumerate(m["swi_names"]): A("#define %s_%s\t\t(%#x)" % (m["swi_prefix"], n, m["swi_chunk"] + i))
-    for kind, entry, handler in m["veneers"]:
+        A("\n/* SWI number definitions (as CMunge writes them) */\n#define %s_00 (%#x)" % (m["swi_prefix"], m["swi_chunk"]))
+        for i, n in enumerate(m["swi_names"]):
+            A("#undef %s_%s\n#undef X%s_%s\n#define %s_%s\t\t(%#x)\n#define X%s_%s\t\t(%#x)" % (m["swi_prefix"], n, m["swi_prefix"], n, m["swi_prefix"], n, m["swi_chunk"] + i, m["swi_prefix"], n, m["swi_chunk"] + i + 0x20000))
+        A("\n/* Special error for 'SWI values out of range for this module' */\n#define error_BAD_SWI ((_kernel_oserror *) -1)")
+    for kind, entry, handler, _ in m["veneers"]:
         A("extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);" % (entry, "_kernel_oserror *" if kind == "generic-veneers" else "int", handler))        # (CMunge: a generic handler returns an error)
     if m["veneers"]:
         A("\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)")

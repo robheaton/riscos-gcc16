@@ -45,7 +45,7 @@ def hdr_to_h(src, dst, extra=""):
 HDR = os.path.join(SRC, "Programmer", "HdrSrc", "hdr")
 for name in ("Services", "SWIs"):
     hdr_to_h(os.path.join(HDR, name), os.path.join(GL, name + ".h"))
-open(os.path.join(GL, "RISCOS.h"), "w").write("/* the RISC OS build's Global/RISCOS.h: nothing that a CMHG file needs, in this stand-in */\n")
+hdr_to_h(os.path.join(SRC, "Kernel", "hdr", "RISCOS"), os.path.join(GL, "RISCOS.h"))                          # (the events: Event_Internet ...)
 for root, dirs, files in os.walk(SRC):
     if os.path.basename(root) == "hdr" and "SDIO" in files and "SDIODriver" in root:
         hdr_to_h(os.path.join(root, "SDIO"), os.path.join(IF, "SDIO.h"))

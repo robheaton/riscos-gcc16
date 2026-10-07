@@ -8,6 +8,11 @@
 extern const char *progname;                  /* set by main () */
 
 void die (const char *fmt, ...) __attribute__ ((noreturn, format (printf, 1, 2)));
+/* A tool that wants to go on after one failure sets die_recover (a jmp_buf it has set with setjmp): die () then leaves the message in die_message (without the program name) and jumps there,
+   instead of printing it and ending the program. */
+#include <setjmp.h>
+extern jmp_buf *die_recover;
+extern char die_message[512];
 void *xmalloc (size_t n);
 void *xrealloc (void *p, size_t n);
 char *xstrdup (const char *s);
@@ -47,6 +52,7 @@ unsigned rd16 (const unsigned char *p);
 unsigned rd32 (const unsigned char *p);
 void wr32 (unsigned char *p, unsigned v);
 void elf_load (Elf *e, const char *path);                /* dies if it is not an ELF32 little endian file */
+void elf_load_mem (Elf *e, unsigned char *data, size_t len, const char *what);   /* the same for a file that is in memory already (a member of an archive): the Elf points into DATA, which stays with the caller */
 int elf_find_section (const Elf *e, const char *name);   /* index, or -1 */
 const char *elf_symname (const Elf *e, const ElfSec *symtab, unsigned strofs);
 

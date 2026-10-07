@@ -7,6 +7,7 @@ Build RISC OS **relocatable modules** with the GCC 16 EABI cross compiler, with 
 | `src/` | the C programs `cmunge`, `modreloc` and `mkoslib` (one source for Linux and for RISC OS: these are the tools that the tool chain and the native package ship) |
 | `bin/` | the first versions of the three tools, in Python (`cmunge`, `mkmodhdr.py` for the CMHG file to module header and veneers, `mkoslib.py`, `modreloc.py`), kept for the tests that compare the C ones with them |
 | `lib/` | the C library of the kit (one source per group of functions), integer division, the SWI veneer, the linker script, and the SWI and service numbers read from the RISC OS sources |
+| `bin/mkswis.py` | makes `include/swisnums.h`, the SWI numbers, from the assembler headers of the RISC OS Open sources (not needed to build or use the kit: the result is in the repository) |
 | `include/` | the few headers a module needs |
 | `module.mk` | make rules to include from a module's Makefile (needs GNU make 4.3 or later) |
 | `examples/tickmod` | a module that claims `TickerV` and uses callbacks |

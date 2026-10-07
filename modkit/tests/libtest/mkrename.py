@@ -11,7 +11,7 @@ inc = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path
 EXCLUDE = set("malloc free calloc realloc printf vprintf puts putchar exit _Exit abort atexit getenv setjmp longjmp".split())
 CTYPE = "isalnum isalpha iscntrl isdigit isgraph islower isprint ispunct isspace isupper isxdigit isblank isascii toascii tolower toupper".split()
 names, protos = [], []
-for h in ("string.h", "stdlib.h", "stdio.h", "time.h", "locale.h"):
+for h in ("string.h", "stdlib.h", "stdio.h", "time.h", "locale.h", "signal.h"):
     for line in open(os.path.join(inc, h)):
         m = re.match(r"^extern\s+([^()]*?)\b(\w+)\s*\((.*)$", line.rstrip("\n"))
         if not m or m.group(2) in EXCLUDE or m.group(2).startswith("__modlib"):
