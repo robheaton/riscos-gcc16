@@ -12,10 +12,12 @@ extern int errno;
 #define EACCES 13
 #define EBUSY 16
 #define EEXIST 17
+#define EXDEV 18
 #define ENOTDIR 20
 #define EISDIR 21
 #define EINVAL 22
 #define EMFILE 24
+#define EFBIG 27
 #define ENOSPC 28
 #define ESPIPE 29
 #define EROFS 30
@@ -25,6 +27,9 @@ extern int errno;
 #define EAGAIN 35
 #define EWOULDBLOCK EAGAIN
 #define EINPROGRESS 36
+#define ENAMETOOLONG 63
+#define ENOTEMPTY 66
 #define ECONNRESET 54
+#define EOVERFLOW 91
 #define ENOTCONN 57
 #endif

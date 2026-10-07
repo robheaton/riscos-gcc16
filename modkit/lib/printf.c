@@ -1,26 +1,17 @@
-/* printf.c - the formatted output of <stdio.h>: printf, vprintf, sprintf, snprintf, vsprintf, vsnprintf, putchar, puts.  The conversions of C99 without floating point (%d %i %u %x %X %o %p %c %s %%, the flags,
+/* printf.c - the formatted output of <stdio.h>: printf, vprintf, sprintf, snprintf, vsprintf, vsnprintf, putchar, puts.  The conversions of C99 without floating point (%d %i %u %x %X %o %p %c %s %n %%, the flags,
    width, precision and the lengths hh h l ll j z t: see format ()).  printf writes to the screen with OS_WriteC / OS_NewLine; the others format into memory. */
 #pragma GCC optimize ("Os")                       /* not a hot path: the smaller code is the better one in a module */
 #include <stddef.h>
 #include <stdarg.h>
+#include <limits.h>
+#include <errno.h>
 #include <stdio.h>
 
-#define XOS_WRITEC   0x20000
-#define XOS_NEWLINE  0x20003
-
-typedef struct { char *buf; size_t cap, n; int to_screen; } sink;
+/* the characters go to OUT (c, ctx) one at a time: into memory (snprintf and the rest), to the screen (printf) or to a file (vfprintf in fprintf.c, through __modlib_vformat) */
+typedef struct { void (*out) (int, void *); void *ctx; size_t n; } sink;
 static void put (sink *s, char c)
 {
-#ifndef MODLIB_HOST
-  if (s->to_screen)
-    {
-      if (c == '\n') { __asm__ volatile ("swi\t%[swi]" : : [swi] "i" (XOS_NEWLINE) : "lr", "memory", "cc"); s->n++; return; }     /* LF CR: the console needs both */
-      register int r0 __asm__ ("r0") = (unsigned char) c;
-      __asm__ volatile ("swi\t%[swi]" : "+r" (r0) : [swi] "i" (XOS_WRITEC) : "lr", "memory", "cc");
-    }
-  else
-#endif
-  if (s->n + 1 < s->cap) s->buf[s->n] = c;
+  s->out ((unsigned char) c, s->ctx);
   s->n++;
 }
 /* one more digit of a 64-bit number in base 10: *V = *V / 10, returns the remainder; only 32-bit divisions (the number is taken as one 32-bit half and two 16-bit halves of the other), so that no libgcc is needed */
@@ -46,8 +37,8 @@ static char *digits (char *e, unsigned long long u, unsigned base, const char *d
   else do { *--e = (char) ('0' + ((unsigned) u & 7)); u >>= 3; } while (u);
   return e;
 }
-/* the conversions of C99 that need no floating point: flags - + space # 0, width and precision (digits or *), the lengths hh h l ll j z t, and d i u x X o p c s % (%n and the floating point ones are not
-   converted: the text is copied as it is) */
+/* the conversions of C99 that need no floating point: flags - + space # 0, width and precision (digits or *), the lengths hh h l ll j z t, and d i u x X o p c s % (%n stores the count of characters; the
+   floating point ones are not converted: the text is copied as it is) */
 static int format (sink *s, const char *fmt, va_list ap)
 {
   for (; *fmt; fmt++)
@@ -59,13 +50,27 @@ static int format (sink *s, const char *fmt, va_list ap)
         {
           if (*fmt == '-') left = 1; else if (*fmt == '0') zero = 1; else if (*fmt == '+') plus = 1; else if (*fmt == ' ') space = 1; else if (*fmt == '#') alt = 1; else break;
         }
-      if (*fmt == '*') { width = va_arg (ap, int); if (width < 0) { left = 1; width = -width; } fmt++; }
-      else while (*fmt >= '0' && *fmt <= '9') width = width * 10 + (*fmt++ - '0');
+      if (*fmt == '*')
+        {
+          width = va_arg (ap, int);
+          if (width == INT_MIN) { errno = EOVERFLOW; return -1; }
+          if (width < 0) { left = 1; width = -width; }
+          fmt++;
+        }
+      else while (*fmt >= '0' && *fmt <= '9')
+        {
+          if (width > (INT_MAX - (*fmt - '0')) / 10) { errno = EOVERFLOW; return -1; }          /* a width that is more than an int */
+          width = width * 10 + (*fmt++ - '0');
+        }
       if (*fmt == '.')
         {
           fmt++; prec = 0;
           if (*fmt == '*') { prec = va_arg (ap, int); fmt++; }                                   /* a negative precision is none */
-          else while (*fmt >= '0' && *fmt <= '9') prec = prec * 10 + (*fmt++ - '0');
+          else while (*fmt >= '0' && *fmt <= '9')
+            {
+              if (prec > (INT_MAX - (*fmt - '0')) / 10) { errno = EOVERFLOW; return -1; }
+              prec = prec * 10 + (*fmt++ - '0');
+            }
         }
       for (;; fmt++)
         {
@@ -106,8 +111,18 @@ static int format (sink *s, const char *fmt, va_list ap)
             break;
           }
         case 'c': tmp[0] = (char) va_arg (ap, int); len = 1; break;
-        case 's': str = va_arg (ap, const char *); if (!str) str = "(null)"; while (str[len] && (prec < 0 || len < prec)) len++; break;
+        case 's': str = va_arg (ap, const char *); if (!str) str = "(null)"; while ((prec < 0 || len < prec) && str[len]) len++; break;        /* (an array that is not ended by a NUL is read up to the precision, not one more) */
         case '%': tmp[0] = '%'; len = 1; break;
+        case 'n':                                                                                   /* the number of characters so far, to the int (or the other size) that is pointed to */
+          {
+            void *dst = va_arg (ap, void *);
+            if (size == 2) *(long long *) dst = (long long) s->n;
+            else if (size == 1) *(long *) dst = (long) s->n;
+            else if (size == -1) *(short *) dst = (short) s->n;
+            else if (size == -2) *(signed char *) dst = (signed char) s->n;
+            else *(int *) dst = (int) s->n;
+            continue;
+          }
         case 0: return (int) s->n;
         default:                                                                                    /* not converted: the whole conversion is copied */
           for (; start <= fmt; start++) put (s, *start);
@@ -131,11 +146,23 @@ static int format (sink *s, const char *fmt, va_list ap)
     }
   return (int) s->n;
 }
+int __modlib_vformat (void (*out) (int, void *), void *ctx, const char *fmt, va_list ap)
+{
+  sink s = { out, ctx, 0 };
+  return format (&s, fmt, ap);
+}
+typedef struct { char *buf; size_t cap, n; } memsink;
+static void put_mem (int c, void *ctx)
+{
+  memsink *m = ctx;
+  if (m->n + 1 < m->cap) m->buf[m->n] = (char) c;
+  m->n++;
+}
 int vsnprintf (char *buf, size_t cap, const char *fmt, va_list ap)
 {
-  sink s = { buf, cap, 0, 0 };
-  int n = format (&s, fmt, ap);
-  if (cap) buf[s.n < cap ? s.n : cap - 1] = 0;
+  memsink m = { buf, cap, 0 };
+  int n = __modlib_vformat (put_mem, &m, fmt, ap);
+  if (cap) buf[m.n < cap ? m.n : cap - 1] = 0;
   return n;
 }
 int vsprintf (char *buf, const char *fmt, va_list ap) { return vsnprintf (buf, (size_t) -1 >> 1, fmt, ap); }
@@ -148,11 +175,34 @@ int sprintf (char *buf, const char *fmt, ...)
   va_list ap; va_start (ap, fmt); int n = vsnprintf (buf, (size_t) -1 >> 1, fmt, ap); va_end (ap); return n;
 }
 #ifndef MODLIB_HOST
-int vprintf (const char *fmt, va_list ap) { sink s = { 0, 0, 0, 1 }; return format (&s, fmt, ap); }
+extern void __modlib_scrputc (int c);                                 /* scr.c: OS_WriteC, and OS_NewLine for a line feed */
+extern int (*__modlib_stdout_hook) (int);                             /* scr.c: set while stdout is a file (freopen): the characters go there */
+static void put_scr (int c, void *ctx)
+{
+  if (__modlib_stdout_hook) { if (__modlib_stdout_hook (c) == EOF) *(int *) ctx = 1; }
+  else __modlib_scrputc (c);
+}
+int vprintf (const char *fmt, va_list ap)
+{
+  int failed = 0, n = __modlib_vformat (put_scr, &failed, fmt, ap);
+  return failed ? -1 : n;
+}
 int printf (const char *fmt, ...)
 {
   va_list ap; va_start (ap, fmt); int n = vprintf (fmt, ap); va_end (ap); return n;
 }
-int putchar (int c) { sink s = { 0, 0, 0, 1 }; put (&s, (char) c); return c; }
-int puts (const char *str) { sink s = { 0, 0, 0, 1 }; while (*str) put (&s, *str++); put (&s, '\n'); return 0; }
+int putchar (int c)
+{
+  c = (unsigned char) c;
+  if (__modlib_stdout_hook) return __modlib_stdout_hook (c);
+  __modlib_scrputc (c);
+  return c;
+}
+int puts (const char *str)
+{
+  int failed = 0;
+  while (*str) put_scr (*str++, &failed);
+  put_scr ('\n', &failed);
+  return failed ? EOF : 0;
+}
 #endif

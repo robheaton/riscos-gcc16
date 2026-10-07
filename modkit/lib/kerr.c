@@ -14,6 +14,11 @@ _kernel_oserror *__modlib_remember (const _kernel_oserror *e)
   last_valid = 1;
   return &last_err;
 }
+/* the error without taking it: the stdio functions map it to errno and leave it for _kernel_last_oserror, as the Shared C Library does */
+const _kernel_oserror *__modlib_peek_oserror (void)
+{
+  return last_valid ? &last_err : 0;
+}
 _kernel_oserror *_kernel_last_oserror (void)
 {
   if (!last_valid) return 0;

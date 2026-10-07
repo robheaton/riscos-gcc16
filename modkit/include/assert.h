@@ -1,4 +1,4 @@
-/* assert.h - assert (e): when e is false the message "Assertion failed: e, file F, line N" is written (OS_Write0 / OS_NewLine) and the module is stopped with an error (abort ()).  NDEBUG switches it off.
+/* assert.h - assert (e): when e is false the message "Assertion failed: e, file F, line N" is written to stdout (printf: OS_WriteC and OS_NewLine) and the module is stopped with an error (abort ()).  NDEBUG switches it off.
    Like the standard header this one can be included again after defining or undefining NDEBUG. */
 #undef assert
 #ifdef NDEBUG

@@ -9,6 +9,7 @@ The SWIs (the numbers include the X bit when the program set it; OS_CallASWI dis
   OS_ReadMonotonicTime                 a counter
   OS_ReadVarVal / OS_SetVarVal         system variables
   OS_GenerateError, OS_Exit            the end of the program
+  0x5AB04 .. 0x5AB07                   the screen, a line for OS_ReadLine, and the faults of the file model (see the SWIs below)
   0x5AB00 .. 0x5AB03                   the test SWIs of libtest.c (the same model as tests/libtest/hosthooks.c; 0x5AB03 sums r0 words at r1, or at r3 when r1 is 0)"""
 import os, struct, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -20,6 +21,8 @@ HEAP = 0x00600000
 STACK = 0x00F00000
 RETURN = 0xFFFF0000
 ERR_TEST, ERR_VAR, ERR_UNKNOWN = 0x00480000, 0x00480100, 0x00480200
+from fsmodel import FileModel, SWIS as FS_SWIS
+ERR_FS = 0x00480300                                         # the error blocks of the file system model (a ring: they are made when needed)
 
 
 class Exit(Exception):
@@ -39,6 +42,10 @@ class Machine:
         self.swis = {}                                          # SWI number -> number of calls
         for addr, num, text in ((ERR_TEST, 0xB00B, "Test error"), (ERR_VAR, 0x124, "Variable not found"), (ERR_UNKNOWN, 0x1E6, "SWI not known to the model")):
             self.put_bytes(addr, struct.pack("<I", num) + text.encode() + b"\0")
+        self.nerr = 0
+        self.fs = FileModel(self.fs_error, self.cstr, self.get_bytes, self.put_bytes)      # the files are the files of the host (the test names a folder of its own)
+        self.capture = None                                  # the screen, kept for the test when it asks (0x5AB04)
+        self.keys = []                                       # the lines for OS_ReadLine (None: Escape)
 
     # memory
     def put_bytes(self, a, b):
@@ -52,6 +59,14 @@ class Machine:
             s.append(self.cpu.rd8(a)); a += 1
         return s.decode("latin-1")
 
+    def fs_error(self, num, text):
+        addr = ERR_FS + 0x100 * (self.nerr % 8); self.nerr += 1
+        self.put_bytes(addr, struct.pack("<I", num) + text.encode() + b"\0")
+        return addr
+
+    def emit(self, s):
+        (self.out if self.capture is None else self.capture).append(s)
+
     def error(self, cpu, addr, x):
         if not x:
             raise Exit("a SWI without the X bit gave an error: %s" % self.cstr(addr + 4))
@@ -61,10 +76,10 @@ class Machine:
         x = bool(swi & 0x20000); n = swi & ~0x20000
         self.swis[n] = self.swis.get(n, 0) + 1
         cpu.v = 0
-        if n == 0x00: self.out.append(chr(cpu.r[0] & 0xFF))                                       # OS_WriteC
-        elif n == 0x03: self.out.append("\n")                                                      # OS_NewLine
+        if n == 0x00: self.emit(chr(cpu.r[0] & 0xFF))                                             # OS_WriteC
+        elif n == 0x03: self.emit("\n\r")                                                          # OS_NewLine: a line feed and a carriage return
         elif n == 0x02:                                                                            # OS_Write0
-            s = self.cstr(cpu.r[0]); self.out.append(s); cpu.r[0] += len(s) + 1
+            s = self.cstr(cpu.r[0]); self.emit(s); cpu.r[0] += len(s) + 1
         elif n == 0x1E:                                                                            # OS_Module
             if cpu.r[0] == 6:
                 size = cpu.r[3]; p = (self.heap + 7) & ~7; self.heap = p + size + 8; cpu.r[2] = p
@@ -77,6 +92,23 @@ class Machine:
                 self.put_bytes(cpu.r[1], (self.clock & ((1 << 40) - 1)).to_bytes(5, "little"))
                 if self.hw: self.clock += 10                                                       # (--hw: the clock runs: ten centiseconds per read)
             else: raise Fault("OS_Word %d not modelled" % cpu.r[0])
+        elif n in FS_SWIS: self.fs.swi(cpu, n)                                                     # OS_Find, OS_GBPB, OS_Args, OS_File 6, OS_FSControl 25 (fsmodel.py)
+        elif n == 0x06: pass                                                                       # OS_Byte (acknowledge Escape)
+        elif n == 0x0E:                                                                            # OS_ReadLine: the lines that the test pushed, then Escape
+            if not self.keys or self.keys[0] is None:
+                if self.keys: self.keys.pop(0)
+                cpu.c = 1
+            else:
+                line = self.keys.pop(0)[:cpu.r[1]]
+                self.put_bytes(cpu.r[0], line + b"\r"); cpu.r[1] = len(line); cpu.c = 0
+        elif n == 0x5AB04:                                                                         # the screen: r0 = 1 start keeping it; r0 = 2: copy it to r1 (size r2), r0 = its length
+            if cpu.r[0] == 1: self.capture = []
+            else:
+                data = "".join(self.capture or []).encode("latin-1")[:cpu.r[2]]
+                self.put_bytes(cpu.r[1], data); cpu.r[0] = len(data); self.capture = None
+        elif n == 0x5AB07: self.fs.ctl(cpu)                                                        # file system faults and sparse files (fsmodel.py)
+        elif n == 0x5AB06:                                                                         # a line for OS_ReadLine (r1 = -1: Escape)
+            self.keys.append(None if cpu.r[1] == M else self.get_bytes(cpu.r[0], cpu.r[1]))
         elif n == 0x42:                                                                            # OS_ReadMonotonicTime (--hw: one centisecond per read)
             if self.hw: self.mono += 1
             cpu.r[0] = self.mono & M

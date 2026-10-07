@@ -2,12 +2,14 @@
      *MK32_SelfTest           the SWIs of the module (OS_SWINumberFromString / ToString, the kernel's dispatch, a SWI error), the generic veneer called from SVC code, getenv, the heap
      *RMRun MK32 test         the same in USER mode (the module is run as a program)
      *RMRun MK32 a "b c" d    argc / argv;   *RMRun MK32 exit [n]   the exit code
+     *RMRun MK32 leave        writes a file in the scrap directory and does not close it (the end of the program must);  *RMRun MK32 leavecheck   the next program: the file has the text, then it is deleted
      *MK32_After <n>          the generic veneer mk_after called by OS_CallEvery (R0 = n: every n + 1 centiseconds) in interrupt time: the mode, the stack, r12, how many calls
      *MK32_Try <command>      runs a command and prints its error (the Obey file uses it for the commands whose errors are the test)
      *Help MK32_Tokens ...    the international help and the add-syntax text, as the kernel prints them */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <kernel.h>
 #include <swis.h>
 #include "header.h"
@@ -130,6 +132,31 @@ static int selftest (const char *where)
   { const char *v = getenv ("MK32$Path"); check (v != 0 && v[0] != 0, "getenv (\"MK32$Path\") finds the system variable"); }
   { void *p = malloc (1000), *q = malloc (5000); check (p != 0 && q != 0 && p != q && ((unsigned) p & 7) == 0, "malloc: two blocks from the RMA, 8 byte aligned"); free (p); free (q); }
   { char t[40]; snprintf (t, sizeof t, "%lld|%#x|% d|%.3d", -5000000000LL, 255u, 42, 7); check (!strcmp (t, "-5000000000|0xff| 42|007"), "snprintf of long long, #, space and precision"); }
+  /* files in the scrap directory (OS_Find, OS_GBPB, OS_Args, OS_File 6 through stdio) */
+  {
+    const char *d = getenv ("Wimp$ScrapDir");
+    char name[300], b[64];
+    FILE *f;
+    int ok = d != 0 && strlen (d) < 200;
+    if (ok)
+      {
+        strcpy (name, d); strcat (name, ".MK32T");
+        remove (name);
+        f = fopen (name, "w");
+        ok = f && fprintf (f, "hello %d\n", 42) == 9 && fputs ("second line\n", f) >= 0 && fclose (f) == 0;
+        f = ok ? fopen (name, "r") : 0;
+        ok = f && fgets (b, sizeof b, f) && !strcmp (b, "hello 42\n") && ftell (f) == 9 && fgets (b, sizeof b, f) && !strcmp (b, "second line\n") && fgetc (f) == EOF && feof (f);
+        ok = ok && fseek (f, 6, SEEK_SET) == 0 && fread (b, 1, 2, f) == 2 && !memcmp (b, "42", 2) && fclose (f) == 0;
+        f = ok ? fopen (name, "a") : 0;
+        ok = f && fputs ("tail", f) >= 0 && fclose (f) == 0;
+        f = ok ? fopen (name, "rb") : 0;
+        ok = f && fseek (f, -4, SEEK_END) == 0 && fread (b, 1, 4, f) == 4 && !memcmp (b, "tail", 4) && ftell (f) == 25 && fclose (f) == 0;
+        check (ok, "files in the scrap directory: write, read back, seek, append, read the tail");
+        errno = 0;
+        check (remove (name) == 0 && fopen (name, "r") == 0 && errno == ENOENT, "files: remove, and a file that is not there is ENOENT");
+      }
+    else check (0, "files: Wimp$ScrapDir is not set");
+  }
   printf ("MK32 self test (%s): %d checks, %d FAILED\n", where, checks, fails);
   return fails;
 }
@@ -173,6 +200,48 @@ _kernel_oserror *mk_command (const char *arg_string, int argc, int number, void 
 }
 
 static void bye (void) { puts ("atexit: bye"); }
+
+/* the keyboard: *RMRun MK32 keys asks for four lines and checks them (OS_ReadLine through stdin); run it by hand in a Task window */
+static int keys_test (void)
+{
+  char line[100], w[40];
+  int n = 0, bad = 0;
+  fputs ("Type  alpha  and press Return: ", stdout);
+  if (!fgets (line, sizeof line, stdin) || strcmp (line, "alpha\n")) { printf ("FAIL: got %s\n", feof (stdin) ? "the end of the input" : line); bad++; } else puts ("  ok");
+  fputs ("Type  12 beta  and press Return: ", stdout);
+  if (!fgets (line, sizeof line, stdin) || sscanf (line, "%d %39s", &n, w) != 2 || n != 12 || strcmp (w, "beta")) { printf ("FAIL: got %s\n", line); bad++; } else puts ("  ok");
+  fputs ("Just press Return: ", stdout);
+  if (!fgets (line, sizeof line, stdin) || strcmp (line, "\n")) { printf ("FAIL: got %s\n", line); bad++; } else puts ("  ok");
+  fprintf (stdout, "Press Escape now: ");
+  if (fgetc (stdin) != EOF || !feof (stdin)) { puts ("FAIL: Escape did not end the input"); bad++; } else puts ("  ok (the end of the input)");
+  clearerr (stdin);
+  fprintf (stderr, "stderr: %d problems\n", bad);
+  return bad ? 1 : 0;
+}
+/* the end of a program with a file still open: the OS does not close files at OS_Exit, so the library does (exit): "leave" then "leavecheck" (two programs of the same module) show it */
+static int leave_test (int check)
+{
+  static const char text[] = "left open at the end of the program\n";
+  char name[200], line[100];
+  const char *d = getenv ("Wimp$ScrapDir");
+  FILE *f;
+  if (!d) { puts ("FAIL: Wimp$ScrapDir is not set"); return 1; }
+  strcpy (name, d); strcat (name, ".MK32L");
+  if (!check)
+    {
+      f = fopen (name, "w");
+      if (!f || fputs (text, f) < 0) { printf ("FAIL: the file could not be written (errno %d)\n", errno); return 1; }
+      puts ("leave: wrote the file and left it open (no fclose); now run  *RMRun MK32 leavecheck");
+      return 0;
+    }
+  f = fopen (name, "r");
+  if (!f) { printf ("FAIL: the file could not be opened (errno %d): it was left open or its text was lost\n", errno); return 1; }
+  if (!fgets (line, sizeof line, f) || strcmp (line, text)) { puts ("FAIL: the file does not have what the program wrote"); fclose (f); return 1; }
+  fclose (f);
+  if (remove (name)) { printf ("FAIL: remove (errno %d)\n", errno); return 1; }
+  puts ("  ok: the file was flushed and closed at the end of the previous program");
+  return 0;
+}
 int main (int argc, char **argv)
 {
   int i;
@@ -180,6 +249,9 @@ int main (int argc, char **argv)
   for (i = 0; i < argc; i++) printf ("argv[%d]=<%s>\n", i, argv[i]);
   atexit (bye);
   if (argc > 1 && !strcmp (argv[1], "test")) return selftest ("USER mode") ? 1 : 0;
+  if (argc > 1 && !strcmp (argv[1], "keys")) return keys_test ();
+  if (argc > 1 && !strcmp (argv[1], "leave")) return leave_test (0);
+  if (argc > 1 && !strcmp (argv[1], "leavecheck")) return leave_test (1);
   if (argc > 1 && !strcmp (argv[1], "exit")) exit (argc > 2 ? atoi (argv[2]) : 7);
   return 0;
 }

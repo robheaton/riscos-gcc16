@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <kernel.h>
 #include <swis.h>
+#include "hostptr.h"
 
 extern _kernel_oserror *__modlib_xswi (unsigned swi_x, unsigned *regs);
 extern _kernel_oserror *__modlib_xswif (unsigned swi_x, unsigned *regs, unsigned *flags);
@@ -50,7 +51,7 @@ int _kernel_osbput (int ch, unsigned handle)
 }
 int _kernel_osfile (int op, const char *name, _kernel_osfile_block *b)
 {
-  unsigned r[10] = { (unsigned) op, (unsigned) name, (unsigned) b->load, (unsigned) b->exec, (unsigned) b->start, (unsigned) b->end };
+  unsigned r[10] = { (unsigned) op, PIN (name), (unsigned) b->load, (unsigned) b->exec, (unsigned) b->start, (unsigned) b->end };
   _kernel_oserror *e = __modlib_xswi (0x08 | X, r);
   b->load = (int) r[2]; b->exec = (int) r[3]; b->start = (int) r[4]; b->end = (int) r[5];
   if (e) { remember (e); return _kernel_ERROR; }
@@ -58,22 +59,25 @@ int _kernel_osfile (int op, const char *name, _kernel_osfile_block *b)
 }
 int _kernel_osgbpb (int op, unsigned handle, _kernel_osgbpb_block *b)
 {
-  unsigned r[10] = { (unsigned) op, handle, (unsigned) b->dataptr, (unsigned) b->nbytes, (unsigned) b->fileptr, (unsigned) b->buf_len, (unsigned) b->wild_fld }, f = 0;
+  unsigned r[10] = { (unsigned) op, handle, PIN (b->dataptr), (unsigned) b->nbytes, (unsigned) b->fileptr, (unsigned) b->buf_len, PIN (b->wild_fld) }, f = 0;
   _kernel_oserror *e = __modlib_xswif (0x0C | X, r, &f);
   if (e) { remember (e); return _kernel_ERROR; }
-  b->dataptr = (void *) r[2]; b->nbytes = (int) r[3]; b->fileptr = (int) r[4]; b->buf_len = (int) r[5]; b->wild_fld = (char *) r[6];
+  b->nbytes = (int) r[3]; b->fileptr = (int) r[4]; b->buf_len = (int) r[5];
+#ifndef MODLIB_HOST                                                                      /* (on the host the registers hold tokens, not pointers) */
+  b->dataptr = (void *) r[2]; b->wild_fld = (char *) r[6];
+#endif
   return (f & CARRY) ? -1 : (int) r[0];
 }
 int _kernel_osword (int op, int *data)
 {
-  unsigned r[10] = { (unsigned) op, (unsigned) data };
+  unsigned r[10] = { (unsigned) op, PIN (data) };
   _kernel_oserror *e = __modlib_xswi (0x07 | X, r);
   if (e) { remember (e); return _kernel_ERROR; }
   return 0;
 }
 int _kernel_osfind (int op, const char *name)
 {
-  unsigned r[10] = { (unsigned) op, (unsigned) name };
+  unsigned r[10] = { (unsigned) op, op ? PIN (name) : (unsigned) (size_t) name };       /* a close (op 0) has the handle where the name is */
   _kernel_oserror *e = __modlib_xswi (0x0D | X, r);
   if (e) { remember (e); return _kernel_ERROR; }
   return (int) r[0];
@@ -87,7 +91,7 @@ int _kernel_osargs (int op, unsigned handle, int arg)
 }
 int _kernel_oscli (const char *s)
 {
-  unsigned r[10] = { (unsigned) s };
+  unsigned r[10] = { PIN (s) };
   _kernel_oserror *e = __modlib_xswi (0x05 | X, r);
   if (e) { remember (e); return _kernel_ERROR; }
   return 1;

@@ -13,6 +13,8 @@ sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(HERE, "..", "..", "mod
 from riscosmodel import RiscosModel
 from kernelmodel import u32, cstr
 from a32 import Fault
+sys.path.insert(0, os.path.join(HERE, "libtest"))
+from fsmodel import FileModel, SWIS as FS_SWIS
 
 TC = os.environ.get("TC") or next(p for p in (os.path.expanduser("~/gccsdk-next/tc-dev/riscos-gcc16-cross-16.2.0-14-x86_64-linux"), os.path.expanduser("~/gccsdk-next/env-f")) if os.path.exists(p))
 BIN = os.path.join(TC, "bin")
@@ -49,6 +51,8 @@ def fresh():
     mod = k.load(data, BASE)
     k.cpu.r[13] = k.sp0
     k.vars["mk32$path"] = "ADFS::Pi.$.Pack."
+    k.vars["wimp$scrapdir"] = os.path.join(W, "scrap")                                  # the scrap directory of the model: a name inside the temporary folder (the file is called scrap.MK32T)
+    fm = FileModel(k.error_block, k.read_cstr, lambda a, n: bytes(k.cpu.rd8(a + i) for i in range(n)), lambda a, b: [k.cpu.wr8(a + i, x) for i, x in enumerate(b)])
     orig = RiscosModel.swi_hook.__get__(k)                                              # (the model calls self.swi_hook again for OS_CallASWI, which is what _swix uses: the hook must be on the object)
     state = {}
     def hook(cpu, swi):
@@ -57,6 +61,18 @@ def fresh():
             cpu.r[0] = k.put_string(state.get("tail", "RMRun MK32")); cpu.r[1] = 0x00800000; cpu.r[2] = k.put_string("\0\0\0\0\0"); cpu.v = 0
         elif n == 0x11: raise Done("exit", code=cpu.r[2], r1=cpu.r[1], mode=cpu.mode)                                 # OS_Exit
         elif n == 0x2B: raise Done("error", text=k.read_cstr(cpu.r[0] + 4))                                           # OS_GenerateError
+        elif n == 0x06: cpu.v = 0                                                       # OS_Byte (acknowledge Escape)
+        elif n == 0x0E:                                                                 # OS_ReadLine: the lines of the test, then Escape (C set)
+            keys = state.setdefault("keys", [])
+            if not keys or keys[0] is None:
+                if keys: keys.pop(0)
+                cpu.c = 1
+            else:
+                line = keys.pop(0).encode()[:cpu.r[1]]
+                for i, c in enumerate(line + b"\r"): cpu.wr8(cpu.r[0] + i, c)
+                cpu.r[1] = len(line); cpu.c = 0
+            cpu.v = 0
+        elif n in FS_SWIS: fm.swi(cpu, n)                                               # OS_Find, OS_GBPB, OS_Args, OS_File 6, OS_FSControl 25
         elif n == 0x38:                                                                 # OS_SWINumberToString: r0 = number, r1 = buffer, r2 = size -> r2 = bytes used
             num = cpu.r[0]; text = None
             for m in k.modules:
@@ -67,13 +83,15 @@ def fresh():
                 cpu.r[2] = len(text) + 1; cpu.v = 0
         else: orig(cpu, swi)
     k.swi_hook = hook; k.cpu.swi_hook = hook
+    state["fm"] = fm
     r0, v = k.init(mod)
     assert r0 == 0 and v == 0, (r0, v)
     return k, mod, state
 
-def program(tail):
-    """*RMRun MK32 <tail>: the start entry in USER mode"""
-    k, mod, state = fresh()
+def program(tail, keys=None, m=None):
+    """*RMRun MK32 <tail>: the start entry in USER mode (M: the machine of an earlier run, to run the module again on it)"""
+    k, mod, state = m or fresh()
+    state["keys"] = list(keys) if keys is not None else []
     cpu = k.cpu
     state["tail"] = "RMRun MK32 " + tail
     for i in range(16): cpu.r[i] = 0x55000000 + i
@@ -124,7 +142,7 @@ print("*MK32_SelfTest (SVC mode)")
 err, out = k.command(mod, "MK32_SelfTest")
 for l in out.replace("\n\r", "\n").split("\n"):
     if l.strip(): print("      " + l)
-check(err is None and "0 FAILED" in out and out.count("  ok ") >= 14 and "FAIL " not in out.replace("0 FAILED", ""), "no check failed (%d ok)" % out.count("  ok "))
+check(err is None and "0 FAILED" in out and out.count("  ok ") >= 16 and "FAIL " not in out.replace("0 FAILED", ""), "no check failed (%d ok)" % out.count("  ok "))
 check(not k.problems and not k.log, "no complaints of the model %s" % ((k.problems + k.log)[:3],))
 print()
 
@@ -133,7 +151,14 @@ res, out = program("test")
 for l in out.split("\n"):
     if l.strip(): print("      " + l)
 if res.kind != "exit": print("      ended with %s %s" % (res.kind, res.kw))
-check(res.kind == "exit" and res.kw["code"] == 0 and res.kw["mode"] == 0x10 and "0 FAILED" in out and out.count("  ok ") >= 14 and "atexit: bye" in out, "OS_Exit 0 in USER mode, no check failed (%d ok), atexit ran" % out.count("  ok "))
+check(res.kind == "exit" and res.kw["code"] == 0 and res.kw["mode"] == 0x10 and "0 FAILED" in out and out.count("  ok ") >= 16 and "atexit: bye" in out, "OS_Exit 0 in USER mode, no check failed (%d ok), atexit ran" % out.count("  ok "))
+print()
+
+print("*RMRun MK32 keys: the keyboard (stdin through OS_ReadLine)")
+res, out = program("keys", ["alpha", "12 beta", "", None])
+check(res.kind == "exit" and res.kw["code"] == 0 and out.count("  ok") == 4 and "FAIL" not in out and "the end of the input" in out, "four lines typed as asked, then Escape: %r" % out[:200])
+res, out = program("keys", ["alpha", "13 beta", "x", None])
+check(res.kind == "exit" and res.kw["code"] == 1 and out.count("FAIL") == 2, "wrong lines are reported (code 1, two FAIL lines)")
 print()
 
 print('*RMRun MK32 a "b c" d, exit codes')
@@ -143,6 +168,17 @@ res, out = program("exit 3")
 check(res.kind == "exit" and res.kw["code"] == 3, "exit 3: OS_Exit with the code 3")
 res, out = program("")
 check(res.kind == "exit" and res.kw["code"] == 0 and out.startswith("MK32 as a program (user mode): argc=1\n"), "no arguments: argc 1, code 0")
+
+print("the end of a program: the files that are still open are flushed and closed (the OS does not close them), run after run on one machine")
+m = fresh()
+res, out = program("leave", m=m)
+check(res.kind == "exit" and res.kw["code"] == 0 and "FAIL" not in out and not m[2]["fm"].files, "*RMRun MK32 leave: no handle is left open at OS_Exit (%d open)" % len(m[2]["fm"].files))
+res, out = program("leave", m=m)
+check(res.kind == "exit" and res.kw["code"] == 0 and "FAIL" not in out and not m[2]["fm"].files, "the second run on the same machine: the file can be opened again, and is closed at the end")
+res, out = program("leavecheck", m=m)
+check(res.kind == "exit" and res.kw["code"] == 0 and "FAIL" not in out and "  ok" in out, "*RMRun MK32 leavecheck: the file has what the program wrote: %r" % out[-70:])
+res, out = program("leavecheck", m=m)
+check(res.kind == "exit" and res.kw["code"] == 1 and "FAIL" in out, "the file is gone after leavecheck: the third run fails to open it")
 
 if fails:
     print("%d FAILED" % fails); sys.exit(1)

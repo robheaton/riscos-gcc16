@@ -14,7 +14,7 @@ names, protos = [], []
 for h in ("string.h", "stdlib.h", "stdio.h", "time.h", "locale.h"):
     for line in open(os.path.join(inc, h)):
         m = re.match(r"^extern\s+([^()]*?)\b(\w+)\s*\((.*)$", line.rstrip("\n"))
-        if not m or m.group(2) in EXCLUDE:
+        if not m or m.group(2) in EXCLUDE or m.group(2).startswith("__modlib"):
             continue
         name = m.group(2)
         names.append(name)

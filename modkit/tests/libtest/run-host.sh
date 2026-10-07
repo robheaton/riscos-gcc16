@@ -7,6 +7,9 @@ K=$HERE/../..
 B=${BUILD:-$HERE/build}
 SCALE=${1:-1}
 mkdir -p "$B"
+# the folder of the files that the stdio test makes (the same folder for the glibc run and the library run)
+FS=${FSDIR:-$(mktemp -d /tmp/mkstdio-XXXXXX)}/
+trap '[ -z "${FSDIR:-}" ] && rm -rf "$FS"' EXIT
 python3 "$HERE/mkrename.py" "$B" "$K/include" >/dev/null
 GCCINC=$(gcc -print-file-name=include)
 SAN="-fsanitize=address,undefined -fno-sanitize-recover=all"
@@ -17,9 +20,9 @@ for f in $LIBSRC; do
       -include "$B/mk_rename.h" -c "$K/lib/$f.c" -o "$B/$f.o"
 done
 gcc -std=gnu11 -O1 -g $SAN -c "$HERE/hosthooks.c" -o "$B/hosthooks.o"
-gcc -std=gnu11 -O1 -g -fno-builtin $SAN -Wall -Wno-unused-function -DT_HOSTLIB -DSCALE="$SCALE" -I"$B" -idirafter "$K/include" -c "$HERE/libtest.c" -o "$B/libtest-hostlib.o"
+gcc -std=gnu11 -O1 -g -fno-builtin $SAN -Wall -Wno-unused-function -DT_HOSTLIB -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -I"$B" -idirafter "$K/include" -c "$HERE/libtest.c" -o "$B/libtest-hostlib.o"
 gcc $SAN -o "$B/libtest-hostlib" "$B/libtest-hostlib.o" "$B/hosthooks.o" $(for f in $LIBSRC; do echo "$B/$f.o"; done)
-gcc -std=gnu11 -O1 -g -fno-builtin -Wall -Wno-unused-function -DT_ORACLE -DSCALE="$SCALE" -o "$B/libtest-oracle" "$HERE/libtest.c"
+gcc -std=gnu11 -O1 -g -fno-builtin -Wall -Wno-unused-function -DT_ORACLE -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -o "$B/libtest-oracle" "$HERE/libtest.c"
 V=""; [ -n "${VERBOSE:-}" ] && V="-v"
 "$B/libtest-oracle" $V > "$B/oracle.out" 2>&1 || true
 "$B/libtest-hostlib" $V > "$B/hostlib.out" 2>&1 || { echo "the library build stopped:"; tail -5 "$B/hostlib.out"; }
@@ -31,3 +34,5 @@ grep -E '^(SECTION|FAIL|TOTAL)' "$B/hostlib.out" > "$B/hostlib.sec"
 SECS=$(grep ^SECTION "$B/oracle.sec" | awk '{print $2}' | paste -sd'|')
 if diff <(grep ^SECTION "$B/oracle.sec") <(grep -E "^SECTION ($SECS) " "$B/hostlib.sec") ; then echo "SAME: every section of the library build equals glibc's"; else echo "DIFFERENT: see above"; fi
 grep '^FAIL' "$B/hostlib.sec" | head -20 || true
+# the model of the file system against what the Pi gave (the section probe): the lines must be the same but for the known differences
+python3 "$HERE/check-probe.py" "$B/hostlib.out" | tail -1

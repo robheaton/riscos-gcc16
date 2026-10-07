@@ -38,7 +38,7 @@ ln -sf ../../bin/$T-modreloc "$TC/$T/bin/modreloc"
 # what module.mk needs
 S=$TC/share/riscos-modkit
 rm -rf "$S" && mkdir -p "$S/lib" "$S/include"
-cp "$K"/lib/*.c "$K"/lib/*.S "$K"/lib/module.ld "$S/lib/"
+cp "$K"/lib/*.c "$K"/lib/*.S "$K"/lib/*.h "$K"/lib/module.ld "$S/lib/"
 cp "$K"/include/*.h "$S/include/"
 cp "$K/module.mk" "$S/module.mk"
 echo "modkit installed in $TC (gcc $VER): libmodkit-core.a $(stat -c %s "$TC/$T/lib/libmodkit-core.a") bytes (+ libmodkit.a: the script that adds libgcc), cmunge, $T-modreloc, $T-mkoslib"

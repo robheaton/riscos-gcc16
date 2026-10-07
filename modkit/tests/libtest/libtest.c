@@ -46,6 +46,8 @@ static size_t t_len (const char *s) { size_t n = 0; while (s[n]) n++; return n; 
 static void t_cpy (char *d, const char *s) { while ((*d++ = *s++)) ; }
 static void t_set (void *p, int c, size_t n) { unsigned char *q = p; while (n--) *q++ = (unsigned char) c; }
 static void t_mov (void *d, const void *s, size_t n) { unsigned char *a = d; const unsigned char *b = s; while (n--) *a++ = *b++; }
+static int t_cmp (const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return (unsigned char) *a - (unsigned char) *b; }
+static int t_memcmp (const void *a, const void *b, size_t n) { const unsigned char *p = a, *q = b; while (n--) { if (*p != *q) return *p - *q; p++; q++; } return 0; }
 static void t_hash (unsigned char b) { g_hash = (g_hash ^ b) * 16777619u; }
 static void vcat (const char *s) { while (*s && g_ll < sizeof g_line - 2) g_line[g_ll++] = *s++; }
 static void vnum (long long v, int base, int width)
@@ -92,7 +94,21 @@ static void case_begin (unsigned i) { g_ll = 0; if (g_verbose) { vcat (g_sect); 
 static void case_end (void) { if (g_verbose) { g_line[g_ll] = 0; puts (g_line); } g_ll = 0; }
 static void check (int ok, const char *what)
 {
-  if (!ok) { g_fail++; char b[160] = "FAIL "; t_cpy (b + 5, g_sect); size_t n = t_len (b); b[n++] = ' '; t_cpy (b + n, what); puts (b); }
+  if (!ok)
+    {
+      char b[220] = "FAIL ", d[12];
+      size_t n;
+      int k = 0, e = T_ERRNO;
+      unsigned v = e < 0 ? (unsigned) -e : (unsigned) e;
+      g_fail++;
+      t_cpy (b + 5, g_sect); n = t_len (b); b[n++] = ' '; t_cpy (b + n, what); n = t_len (b);
+      t_cpy (b + n, "  [errno "); n += 9;                                  /* (errno as it is when the check fails: it shows which error a failed call had) */
+      if (e < 0) b[n++] = '-';
+      do d[k++] = (char) ('0' + v % 10); while (v /= 10);
+      while (k) b[n++] = d[--k];
+      b[n++] = ']'; b[n] = 0;
+      puts (b);
+    }
   g_count++;
 }
 static void sect_end (void)
@@ -443,6 +459,690 @@ static void test_printf (void)
   sect_end ();
 }
 
+/* ======================================================================== stdio: files (against glibc's, on files of the folder T_FSDIR; on the machine of the scrap directory) */
+#ifndef T_FSDIR
+# define T_FSDIR "/tmp/mkstdio-"
+#endif
+static char g_fsbase[200];                                                 /* the start of the name of every file of the test */
+static const char *fsname (int i)
+{
+  static char n[4][220];
+  size_t l = t_len (g_fsbase);
+  t_mov (n[i], g_fsbase, l);
+  n[i][l] = 'f'; n[i][l + 1] = (char) ('0' + i); n[i][l + 2] = 0;
+  return n[i];
+}
+/* random bytes with a lot of white space, digits and letters (so that fgets and fscanf have something to read) */
+static void rtext (unsigned char *d, unsigned n)
+{
+  for (unsigned i = 0; i < n; i++)
+    {
+      unsigned k = rr (10);
+      d[i] = (unsigned char) (k == 0 ? '\n' : k == 1 ? ' ' : k < 4 ? '0' + rr (10) : k < 7 ? 'a' + rr (26) : k == 7 ? (rr (2) ? '-' : '+') : k == 8 ? (int) rr (256) : (int) ('A' + rr (26)));
+    }
+}
+static void put_file (const char *name, unsigned n)                         /* a file of N random bytes, made with fopen / fwrite */
+{
+  unsigned char b[1400];
+  FILE *f = fopen (name, "wb");
+  rtext (b, n);
+  if (f) { if (n) fwrite (b, 1, n, f); fclose (f); }
+}
+static void rec_file (const char *name)                                    /* the whole file */
+{
+  unsigned char b[100];
+  FILE *f = fopen (name, "rb");
+  rec_i (f != 0);
+  if (!f) return;
+  for (;;)
+    {
+      size_t k = fread (b, 1, sizeof b, f);
+      rec_i ((long long) k);
+      if (k) rec_m (b, k);
+      if (k < sizeof b) break;
+    }
+  rec_i (ferror (f) != 0);
+  fclose (f);
+}
+static void test_stdio (void)
+{
+  static const char *const modes[] = { "r", "w", "a", "r+", "w+", "a+", "rb", "wb", "ab", "r+b", "w+b", "a+b", "rb+", "wb+" };
+  const char *name = fsname (0), *name2 = fsname (1);
+  sect_begin ("stdio", 19);
+  for (unsigned i = 0; i < N (700); i++)
+    {
+      const char *mode = modes[rr (14)];
+      int update = 0, last = 0, lastget = -2;                              /* last: 1 = the last operation read, 2 = it wrote; lastget: the character that the last operation (fgetc) gave */
+      unsigned nops;
+      FILE *f;
+      fpos_t pos;
+      int have_pos = 0;
+      case_begin (i);
+      for (const char *m = mode; *m; m++) if (*m == '+') update = 1;
+      rec_s (mode);
+      remove (name);
+      if (rr (4) != 0) put_file (name, rr (3) == 0 ? rr (30) : rr (1300));
+      f = fopen (name, mode);
+      rec_i (f != 0);
+      if (!f) { rec_i (remove (name) != 0); case_end (); continue; }
+      switch (rr (8))
+        {
+        case 0: rec_i (setvbuf (f, 0, _IONBF, 0)); break;
+        case 1: rec_i (setvbuf (f, 0, _IOLBF, 80)); break;
+        case 2: rec_i (setvbuf (f, 0, _IOFBF, 100)); break;
+        case 3: setbuf (f, 0); break;
+        default: break;
+        }
+      nops = 1 + rr (14);
+      for (unsigned k = 0; k < nops; k++)
+        {
+          unsigned op = rr (17);
+          int prev_get = lastget;
+          lastget = -2;
+          rec_i (-1000 - (long long) op);                                       /* (which operation: for reading a difference in the verbose output) */
+          int is_read = op == 3 || op == 4 || op == 5 || op == 6 || op == 14, is_write = op == 0 || op == 1 || op == 2 || op == 13;
+          if (update && ((is_read && last == 2) || (is_write && last == 1)))             /* in an update stream a read and a write need a positioning call or a flush between them */
+            {
+              if (rr (2)) rec_i (fflush (f)); else rec_i (fseek (f, 0, SEEK_CUR));
+              last = 0;
+            }
+          switch (op)
+            {
+            case 0:                                                        /* fwrite */
+              {
+                unsigned char b[1400];
+                static const unsigned sizes[] = { 1, 1, 2, 3, 7 };
+                size_t sz = sizes[rr (5)], cnt = rr (3) == 0 ? rr (200) : rr (40);
+                rtext (b, (unsigned) (sz * cnt));
+                rec_i ((long long) fwrite (b, sz, cnt, f));
+                break;
+              }
+            case 1: rec_i (fputc ((int) rr (256), f)); break;
+            case 2:
+              {
+                char s[50];
+                unsigned len = rr (45);
+                rtext ((unsigned char *) s, len);
+                for (unsigned j = 0; j < len; j++) if (!s[j]) s[j] = 'z';        /* no NUL inside the string */
+                s[len] = 0;
+                rec_i (fputs (s, f) >= 0);
+                break;
+              }
+            case 3:                                                        /* fread */
+              {
+                unsigned char b[1800];
+                static const unsigned sizes[] = { 1, 1, 2, 3, 7 };
+                size_t sz = sizes[rr (5)], cnt = rr (4) == 0 ? rr (250) : rr (30), got;
+                t_set (b, 0xA5, sizeof b);
+                got = fread (b, sz, cnt, f);
+                rec_i ((long long) got);
+                rec_m (b, got * sz);
+                break;
+              }
+            case 4: lastget = fgetc (f); rec_i (lastget); break;
+            case 5:
+              {
+                char s[90];
+                int n = (int) rr (75);
+                char *r;
+                if (n == 1) n = 2;                                         /* (glibc's fgets with 1 is NULL when it is fortified, and the string when it is not) */
+                t_set (s, 0x55, sizeof s);
+                r = fgets (s, n, f);
+                rec_i (n);
+                rec_i (r != 0);
+                if (r) rec_s (s);
+                break;
+              }
+            case 6: rec_i (ungetc (prev_get >= 0 ? prev_get : EOF, f)); break;                 /* the character that was just read (glibc has trouble with other ones and with many pushed back) */
+            case 7:
+              {
+                static const int whence[] = { SEEK_SET, SEEK_CUR, SEEK_END, SEEK_SET, SEEK_CUR };
+                long off = (long) rr (500);
+                int w;
+                off -= (long) rr (150);
+                w = whence[rr (5)];
+                if (rr (30) == 0) w = 7;                                    /* not a place */
+                rec_i (fseek (f, off, w));
+                last = 0;
+                break;
+              }
+            case 8: rec_i (ftell (f)); break;
+            case 9: rewind (f); last = 0; break;
+            case 10: rec_i (feof (f) != 0); rec_i (ferror (f) != 0); break;
+            case 11: clearerr (f); break;
+            case 12: rec_i (fflush (f)); last = 0; break;
+            case 13:
+              {
+                char s[40];
+                unsigned len = rr (20);
+                for (unsigned j = 0; j < len; j++) s[j] = (char) ('a' + rr (26));
+                s[len] = 0;
+                int num = rshift (20);
+                unsigned un = rnd () >> 20;
+                rec_i (fprintf (f, "%d:%s|%5.2s|%-4u|", num, s, s, un));
+                break;
+              }
+            case 14:
+              {
+                int v = -77, r;
+                char s[30];
+                t_set (s, 0x55, sizeof s);
+                s[sizeof s - 1] = 0;
+                r = fscanf (f, rr (2) ? "%d %20s" : " %d%20[a-z]", &v, s);
+                rec_i (r); rec_i (v); rec_s (s);
+                break;
+              }
+            case 15:
+              if (!have_pos) { have_pos = fgetpos (f, &pos) == 0; rec_i (have_pos); }
+              else { rec_i (fsetpos (f, &pos)); have_pos = 0; last = 0; }
+              break;
+            default: rec_i (ftell (f)); break;
+            }
+          if (is_read) last = 1;
+          if (is_write) last = 2;
+        }
+      rec_i (fclose (f));
+      rec_file (name);
+      rec_i (remove (name));
+      rec_i (remove (name));                                               /* the second one: not there */
+      case_end ();
+    }
+  /* names: rename, remove, a file that is not there */
+  for (unsigned i = 0; i < N (20); i++)
+    {
+      unsigned char b[64];
+      FILE *f;
+      case_begin (i);
+      remove (name); remove (name2);
+      put_file (name, rr (60));
+      rec_i (rename (name, name2));
+      rec_i (rename (name, name2));                                        /* the old one is gone */
+      f = fopen (name, "rb"); rec_i (f != 0);
+      f = fopen (name2, "rb"); rec_i (f != 0);
+      if (f) { size_t k = fread (b, 1, sizeof b, f); rec_i ((long long) k); rec_m (b, k); fclose (f); }
+      rec_i (remove (name2));
+      rec_i (remove (name2));
+      case_end ();
+    }
+  sect_end ();
+}
+
+#if !defined (T_ORACLE)
+/* ======================================================================== stdio: what has answers of its own (errno, freopen, big buffers, the screen and the keyboard streams) */
+#include <kernel.h>
+#if defined (T_HW)
+# define FS_SEP '.'                                                        /* the separator of the path names of the machine, of the host */
+#else
+# define FS_SEP '/'
+#endif
+#if defined (T_HOSTLIB)                                                    /* (the library has the BSD / UnixLib numbers; the host's headers are glibc's: the two that differ) */
+# undef ENOTEMPTY
+# undef EOVERFLOW
+# define ENOTEMPTY 66
+# define EOVERFLOW 91
+#endif
+extern int __modlib_closeall (void);
+extern void (*__modlib_stdio_end_hook) (int);
+#if defined (T_HOSTLIB)
+extern void mk_host_fs_ctl (int reason, const char *name, unsigned value);
+static void t_fs (int reason, const char *name, unsigned value) { mk_host_fs_ctl (reason, name, value); }
+#elif !defined (T_HW)
+#include <swis.h>
+static void t_fs (int reason, const char *name, unsigned value) { _swix (0x5AB07, _INR (0, 2), (unsigned) reason, name, value); }       /* the faults of the file model, the host's sparse files */
+#endif
+static int set_attr (const char *name, int attr)                          /* OS_File 4: the attributes (bit 0 read, bit 1 write, bit 3 locked) */
+{
+  _kernel_osfile_block b;
+  b.load = b.exec = b.start = 0; b.end = attr;
+  return _kernel_osfile (4, name, &b) != _kernel_ERROR;
+}
+static long length_of (const char *name)                                   /* OS_File 17: the length that the catalogue has, or -1 */
+{
+  _kernel_osfile_block b;
+  b.load = b.exec = b.start = b.end = 0;
+  return _kernel_osfile (17, name, &b) == 1 ? (long) (unsigned) b.start : -1L;
+}
+static void put_text (const char *name, const char *text)                 /* the file holds TEXT */
+{
+  FILE *f = fopen (name, "wb");
+  if (f) { fputs (text, f); fclose (f); }
+}
+static int file_is (const char *name, const char *text)                   /* the file holds exactly TEXT */
+{
+  char b[64];
+  size_t n, l = t_len (text);
+  FILE *f = fopen (name, "rb");
+  if (!f) return 0;
+  n = fread (b, 1, sizeof b, f);
+  fclose (f);
+  return n == l && !t_memcmp (b, text, l);
+}
+/* the second half of the checks: ungetc and positions, the modes, access, files that are open, errors of the disc, the end of a program, printf details */
+static void stdio_more (const char *name, const char *name2, const char *name3)
+{
+  FILE *f, *g;
+  fpos_t pos;
+  char b[80];
+  int v = -1, v2 = -1;
+  /* ungetc: a character other than the one read does not change the file's bytes in the buffer; the position is one back, also after a seek; one character only */
+  put_text (name, "ABCDEFGHIJ");
+  f = fopen (name, "rb");
+  check (f && fgetc (f) == 'A' && ungetc ('Z', f) == 'Z' && fgetc (f) == 'Z' && fseek (f, 0, SEEK_SET) == 0 && fgetc (f) == 'A', "ungetc of another character, then a seek back: the file's byte, not the pushed one");
+  check (f && fgetc (f) == 'B' && ungetc ('Q', f) == 'Q' && fseek (f, 1, SEEK_SET) == 0 && fgetc (f) == 'B', "ungetc of another character, a seek inside the buffer: the file's byte");
+  check (f && fseek (f, 5, SEEK_SET) == 0 && fgetc (f) == 'F' && ungetc ('x', f) == 'x' && ftell (f) == 5 && fseek (f, 0, SEEK_CUR) == 0 && fgetc (f) == 'F', "ungetc after a read: the position is one back, a seek to it drops the character");
+  check (f && fseek (f, 5, SEEK_SET) == 0 && ungetc ('x', f) == 'x' && ftell (f) == 4 && ungetc ('y', f) == EOF && fseek (f, 0, SEEK_CUR) == 0 && fgetc (f) == 'E', "ungetc on an idle stream: ftell is one back, the second one is refused, a seek to the position drops it");
+  check (f && fseek (f, 8, SEEK_SET) == 0 && ungetc ('y', f) == 'y' && fgetpos (f, &pos) == 0 && fsetpos (f, &pos) == 0 && fgetc (f) == 'H', "ungetc, fgetpos and fsetpos: the position is the one before the pushed character");
+  check (f && fseek (f, 2, SEEK_SET) == 0 && ungetc ('x', f) == 'x' && fseek (f, 1, SEEK_CUR) == 0 && fgetc (f) == 'C', "ungetc then a relative seek counts from the position that the pushed character gives");
+  if (f) fclose (f);
+  /* fscanf: "0x" with no hex digit is used up, as in glibc; with a small buffer too */
+  put_text (name, "0xg rest");
+  f = fopen (name, "rb");
+  check (f && fscanf (f, "%i", &v) == 0 && ftell (f) == 2 && fgetc (f) == 'g', "fscanf of 0x with no hex digit: 0x is used up, the next character is there");
+  if (f) fclose (f);
+  f = fopen (name, "rb");
+  check (f && setvbuf (f, 0, _IONBF, 0) == 0 && fscanf (f, "%x", &v) == 0 && ftell (f) == 2 && fgetc (f) == 'g', "the same on an unbuffered stream");
+  if (f) fclose (f);
+  put_text (name, "0x1F, 42 z");
+  f = fopen (name, "rb");
+  check (f && setvbuf (f, 0, _IONBF, 0) == 0 && fscanf (f, "%i%d", &v, &v2) == 1 && v == 31 && fgetc (f) == ',', "fscanf %i of 0x1F on an unbuffered stream: the comma is the next character");
+  if (f) fclose (f);
+  /* "wx" */
+  put_text (name, "KEEP");
+  T_ERRNO = 0; check (fopen (name, "wx") == 0 && T_ERRNO == EEXIST && file_is (name, "KEEP"), "wx of a file that is there: NULL, EEXIST, the file is not touched");
+  remove (name);
+  f = fopen (name, "wx");
+  check (f && fputs ("new", f) >= 0 && fclose (f) == 0 && file_is (name, "new"), "wx of a file that is not there: it is made");
+  T_ERRNO = 0; check (fopen (name, "rx") == 0 && T_ERRNO == EINVAL, "x goes with w only: EINVAL");
+  /* a file that is read only or locked cannot be opened for writing; nothing of it is touched */
+  remove (name2);                                                         /* (FileSwitch looks for the destination before it looks at the source: a rename onto a file is "Bad rename" whatever the state of the source) */
+  put_text (name, "RDONLY");
+  check (set_attr (name, 0x01), "OS_File 4 makes the file read only");
+  T_ERRNO = 0; check (fopen (name, "r+") == 0 && T_ERRNO == EACCES, "r+ of a read only file: NULL and EACCES");
+  T_ERRNO = 0; check (fopen (name, "w") == 0 && T_ERRNO == EACCES, "w of a read only file: NULL and EACCES");
+  T_ERRNO = 0; check (fopen (name, "a") == 0 && T_ERRNO == EACCES, "a of a read only file: NULL and EACCES");
+  T_ERRNO = 0; check (fopen (name, "a+") == 0 && T_ERRNO == EACCES, "a+ of a read only file: NULL and EACCES");
+  f = fopen (name, "r");
+  check (f && fgets (b, sizeof b, f) && !t_cmp (b, "RDONLY"), "r of a read only file works, and the data is still there");
+  if (f) fclose (f);
+  check (set_attr (name, 0x0B), "OS_File 4 locks the file");
+  T_ERRNO = 0; check (fopen (name, "r+") == 0 && T_ERRNO == EACCES, "r+ of a locked file: NULL and EACCES");
+  T_ERRNO = 0; check (remove (name) == -1 && T_ERRNO == EACCES, "remove of a locked file: -1 and EACCES");
+  T_ERRNO = 0; check (rename (name, name2) == -1 && T_ERRNO == EACCES, "rename of a locked file: -1 and EACCES");
+  check (set_attr (name, 0x03) && file_is (name, "RDONLY"), "writable again, with its data");
+  /* a file that is open for writing is open for nobody; two readers are fine; a rename does not replace */
+  remove (name2);
+  f = fopen (name, "w");
+  T_ERRNO = 0; check (f && fopen (name, "r") == 0 && T_ERRNO == EBUSY, "a file open for writing cannot be opened for reading: EBUSY");
+  T_ERRNO = 0; check (fopen (name, "w") == 0 && T_ERRNO == EBUSY, "nor for writing: EBUSY");
+  T_ERRNO = 0; check (remove (name) == -1 && T_ERRNO == EBUSY, "remove of an open file: -1 and EBUSY");
+  T_ERRNO = 0; check (rename (name, name2) == -1 && T_ERRNO == EBUSY, "rename of an open file: -1 and EBUSY");
+  if (f) fclose (f);
+  put_text (name, "two readers");
+  f = fopen (name, "r"); g = fopen (name, "r");
+  check (f && g && fgetc (f) == 't' && fgetc (g) == 't', "two streams can read one file");
+  T_ERRNO = 0; check (fopen (name, "r+") == 0 && T_ERRNO == EBUSY, "r+ of a file that is open for reading: EBUSY");
+  if (f) fclose (f);
+  if (g) fclose (g);
+  put_text (name2, "the other");
+  T_ERRNO = 0; check (rename (name, name2) == -1 && T_ERRNO == EEXIST && file_is (name2, "the other"), "rename onto a file that is there: -1, EEXIST, the file is not replaced");
+  f = fopen (name, "r");
+  T_ERRNO = 0; check (f && rename (name, name2) == -1 && T_ERRNO == EEXIST, "rename of an open file onto a file that is there: EEXIST (the destination is looked at first)");
+  if (f) fclose (f);
+  check (set_attr (name, 0x0B), "OS_File 4 locks the file again");
+  T_ERRNO = 0; check (rename (name, name2) == -1 && T_ERRNO == EEXIST, "rename of a locked file onto a file that is there: EEXIST (the destination is looked at first)");
+  check (set_attr (name, 0x03), "writable again");
+  remove (name2);
+  /* a folder is not a file */
+  {
+    char dir[220], inner[230];
+    size_t l = t_len (g_fsbase);
+    _kernel_osfile_block b = { 0, 0, 0, 0 };
+    t_mov (dir, g_fsbase, l); dir[l] = 'd'; dir[l + 1] = 0;
+    t_mov (inner, dir, l + 1); inner[l + 1] = FS_SEP; inner[l + 2] = 'x'; inner[l + 3] = 0;
+    check (_kernel_osfile (8, dir, &b) != _kernel_ERROR, "OS_File 8 makes a folder");
+    T_ERRNO = 0; check (fopen (dir, "r") == 0 && T_ERRNO == EISDIR, "fopen of a folder: NULL and EISDIR");
+    T_ERRNO = 0; check (fopen (dir, "w") == 0 && T_ERRNO == EISDIR, "fopen of a folder for writing: NULL and EISDIR");
+    put_text (inner, "x");
+    T_ERRNO = 0; check (remove (dir) == -1 && T_ERRNO == ENOTEMPTY, "remove of a folder that is not empty: -1 and ENOTEMPTY");
+    check (remove (inner) == 0 && remove (dir) == 0, "remove of the file and then of the empty folder");
+    remove (inner); remove (dir);
+  }
+  /* the OS error stays for the program */
+  { _kernel_oserror *e; (void) _kernel_last_oserror (); T_ERRNO = 0; check (fopen (name2, "r") == 0 && T_ERRNO == ENOENT, "fopen of a file that is not there"); e = _kernel_last_oserror ();
+    check (e != 0 && (e->errnum & 0xFF) == 0xD6, "_kernel_last_oserror () has the OS error of the failed fopen (File not found)"); }
+  /* what is open at the end of a program is flushed and closed (exit), or closed (_Exit); the hook is what exit.c calls */
+  f = fopen (name, "w"); if (f) fputs ("hello", f);
+  if (__modlib_stdio_end_hook) __modlib_stdio_end_hook (1);
+  check (__modlib_stdio_end_hook != 0 && __modlib_closeall () == 0 && file_is (name, "hello"), "the end of a program: the open file is flushed and closed");
+  f = fopen (name, "w"); if (f) fputs ("lost", f);
+  if (__modlib_stdio_end_hook) __modlib_stdio_end_hook (0);
+  check (__modlib_closeall () == 0 && file_is (name, ""), "_Exit: the open file is closed, what was in the buffer is not written");
+  /* closed streams: a bad file for every call, EOF for a second fclose, NULL */
+  f = fopen (name, "r"); if (f) fclose (f);
+  T_ERRNO = 0; check (fclose (0) == EOF && T_ERRNO == EBADF, "fclose (NULL): EOF and EBADF");
+  /* a 2 GB file does not fit the C types: it is not opened, and what would pass 2 GB is an error */
+#if !defined (T_HW)
+  t_fs (1, name, 2500000000u);
+  T_ERRNO = 0; check (fopen (name, "rb") == 0 && T_ERRNO == EOVERFLOW && (unsigned) length_of (name) == 2500000000u, "a file of 2.5 GB is not opened for reading: NULL and EOVERFLOW");
+  T_ERRNO = 0; check (fopen (name, "r+b") == 0 && T_ERRNO == EOVERFLOW, "nor for update: EOVERFLOW");
+  T_ERRNO = 0; check (fopen (name, "ab") == 0 && T_ERRNO == EOVERFLOW, "nor to append: EOVERFLOW");
+  remove (name);
+  t_fs (1, name, 0x7FFFFFFFu);
+  f = fopen (name, "r+b");
+  check (f && fseek (f, 0, SEEK_END) == 0 && ftell (f) == 0x7FFFFFFF && fgetc (f) == EOF, "a file of 2 GB - 1: the end is where the C types end");
+  T_ERRNO = 0; check (f && fputc ('x', f) == 'x' && fflush (f) == EOF && ferror (f) && T_ERRNO == EFBIG, "a write that would pass 2 GB - 1: EOF, EFBIG and the error flag");
+  T_ERRNO = 0; check (f && fseek (f, 0x7FFFFFFFL, SEEK_END) == -1 && T_ERRNO == EOVERFLOW, "fseek beyond 2 GB - 1: -1 and EOVERFLOW");
+  if (f) fclose (f);
+  remove (name);
+  put_text (name, "0123456789");
+  f = fopen (name, "rb");
+  T_ERRNO = 0; check (f && fseek (f, 0x7FFFFFFFL, SEEK_END) == -1 && T_ERRNO == EOVERFLOW && ftell (f) == 0, "fseek (LONG_MAX, SEEK_END) on a small file: -1 and EOVERFLOW, the position is where it was");
+  check (f && fgetc (f) == '0' && fseek (f, 0x7FFFFFFFL, SEEK_CUR) == -1 && fgetc (f) == '1', "fseek (LONG_MAX, SEEK_CUR): -1, the position is where it was");
+  check (f && fseek (f, -1, SEEK_SET) == -1 && fseek (f, -20, SEEK_END) == -1, "a seek before the start: -1");
+  if (f) fclose (f);
+  /* a disc error that FileSwitch shows when it writes: fflush gives it */
+  f = fopen (name, "w");
+  t_fs (2, 0, 0);
+  T_ERRNO = 0; check (f && fputs ("data", f) >= 0 && fflush (f) == EOF && ferror (f) && T_ERRNO == ENOSPC, "fflush: a disc error of OS_Args 255 is EOF, ENOSPC and the error flag");
+  clearerr (f);
+  t_fs (3, 0, 0);
+  T_ERRNO = 0; check (f && fputs ("more", f) >= 0 && fflush (f) == EOF && ferror (f) && T_ERRNO == ENOSPC, "fflush: a full disc in the write is EOF, ENOSPC and the error flag");
+  t_fs (4, 0, 0);
+  if (f) fclose (f);
+  f = fopen (name, "w");
+  t_fs (3, 0, 0);
+  check (f && fputs ("more", f) >= 0 && fclose (f) == EOF, "fclose: a full disc in the last write is EOF");
+  t_fs (4, 0, 0);
+  /* fflush (NULL) wrote everything: the catalogue has the lengths, with the files still open */
+  f = fopen (name, "w"); g = fopen (name2, "w");
+  if (f) fputs ("1", f);
+  if (g) fputs ("22", g);
+  check (fflush (0) == 0 && length_of (name) == 1 && length_of (name2) == 2, "fflush (NULL): the lengths of the open files");
+  check (__modlib_closeall () == 2, "__modlib_closeall closes them");
+  remove (name2);
+#endif
+  /* printf details: %n, a string that is not ended, widths that are too big; scanf: wide characters are not there */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-overflow"
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-extra-args"
+  { char o[40]; int n = -77; short sh = -1; signed char sc = -1; long ln = -1; long long ll = -1; unsigned w[4] = { 7, 7, 7, 7 };
+    check (sprintf (o, "ab%n cd %d", &n, 7) == 7 && n == 2 && !t_cmp (o, "ab cd 7"), "printf %n: the count so far");
+    sprintf (o, "abc%hhn%hn%ln%lln", &sc, &sh, &ln, &ll);
+    check (sc == 3 && sh == 3 && ln == 3 && ll == 3, "printf %hhn %hn %ln %lln");
+    { char *a = (char *) malloc (3); if (a) { a[0] = 'a'; a[1] = 'b'; a[2] = 'c'; check (snprintf (o, sizeof o, "%.3s|", a) == 4 && !t_cmp (o, "abc|"), "%.3s of an array that is not ended: nothing is read beyond the precision"); free (a); } }
+    T_ERRNO = 0; check (snprintf (o, sizeof o, "%99999999999d", 1) == -1 && T_ERRNO == EOVERFLOW, "printf: a width of more than an int: -1 and EOVERFLOW");
+    T_ERRNO = 0; check (snprintf (o, sizeof o, "%.99999999999d", 1) == -1 && T_ERRNO == EOVERFLOW, "printf: a precision of more than an int: -1 and EOVERFLOW");
+    T_ERRNO = 0; check (snprintf (o, sizeof o, "%*d", INT_MIN, 1) == -1 && T_ERRNO == EOVERFLOW, "printf: a width of INT_MIN: -1 and EOVERFLOW");
+    check (sscanf ("ab", "%ls", (wchar_t *) w) == 0 && w[0] == 7 && sscanf ("ab", "%lc", (wchar_t *) w) == 0 && w[0] == 7, "scanf %ls and %lc (wide characters) stop the scan, nothing is stored");
+  }
+#pragma GCC diagnostic pop
+}
+static void test_stdio_misc (void)
+{
+  const char *name = fsname (0), *name2 = fsname (1), *name3 = fsname (2);
+  FILE *f, *g;
+  fpos_t pos;
+  char b[300];
+  unsigned char big[3000], back[3000];
+  sect_begin ("stdio2", 20);
+  remove (name); remove (name2); remove (name3);
+  T_ERRNO = 0; check (fopen (name, "r") == 0 && T_ERRNO == ENOENT, "fopen of a file that is not there: NULL and ENOENT");
+  T_ERRNO = 0; check (fopen (name, "r+") == 0 && T_ERRNO == ENOENT, "fopen r+ of a file that is not there: NULL and ENOENT");
+  T_ERRNO = 0; check (fopen (name, "q") == 0 && T_ERRNO == EINVAL, "a bad mode: NULL and EINVAL");
+  T_ERRNO = 0; check (remove (name) == -1 && T_ERRNO == ENOENT, "remove of a file that is not there: -1 and ENOENT");
+  T_ERRNO = 0; check (rename (name, name2) == -1, "rename of a file that is not there: -1");
+  /* freopen: the same stream, a different file and mode */
+  f = fopen (name, "w");
+  check (f && fputs ("one\ntwo\n", f) >= 0, "a file of two lines");
+  g = freopen (name, "r", f);
+  check (g == f, "freopen gives the same stream");
+  check (g && fgets (b, sizeof b, g) && !t_cmp (b, "one\n") && fgets (b, sizeof b, g) && !t_cmp (b, "two\n") && !fgets (b, sizeof b, g) && feof (g), "freopen to read: the two lines, then the end");
+  if (g) fclose (g);
+  /* a big buffer, odd chunks, and a long file read back with seeks */
+  for (unsigned i = 0; i < sizeof big; i++) big[i] = (unsigned char) (i * 7 + (i >> 8));
+  f = fopen (name, "wb");
+  check (f && setvbuf (f, 0, _IOFBF, 2048) == 0, "setvbuf of a big buffer");
+  { unsigned done = 0; static const unsigned chunk[] = { 1, 5, 100, 513, 31, 1000, 2 }; unsigned k = 0; while (done < sizeof big) { unsigned c = chunk[k++ % 7]; if (c > sizeof big - done) c = sizeof big - done; if (fwrite (big + done, 1, c, f) != c) break; done += c; } check (done == sizeof big, "3000 bytes written in odd chunks"); }
+  check (fclose (f) == 0, "fclose of the written file");
+  f = fopen (name, "rb");
+  check (f && fread (back, 1, sizeof back, f) == sizeof back && !t_memcmp (back, big, sizeof big) && fread (back, 1, 1, f) == 0 && feof (f), "the file read back: the same 3000 bytes, then the end");
+  check (f && fseek (f, 1000, SEEK_SET) == 0 && !feof (f) && ftell (f) == 1000 && fgetc (f) == big[1000] && ftell (f) == 1001, "fseek to 1000: not at the end, the byte there");
+  check (f && fseek (f, -10, SEEK_END) == 0 && fread (back, 1, 100, f) == 10 && !t_memcmp (back, big + 2990, 10) && ftell (f) == 3000, "fseek -10 from the end: 10 bytes");
+  check (f && fseek (f, 5, SEEK_CUR) == 0 && ftell (f) == 3005 && fgetc (f) == EOF, "a seek beyond the end: the position is there, and reading gives the end");
+  if (f) fclose (f);
+  /* the other way: an unbuffered stream, ungetc of a character that is not the one read */
+  f = fopen (name, "rb");
+  check (f && setvbuf (f, 0, _IONBF, 0) == 0 && fgetc (f) == big[0] && ungetc ('Z', f) == 'Z' && fgetc (f) == 'Z' && fgetc (f) == big[1], "unbuffered: ungetc of another character gives it back");
+  check (f && ftell (f) == 2 && ungetc ('A', f) == 'A' && ftell (f) == 1, "ftell after ungetc is one back");
+  if (f) fclose (f);
+  /* update modes: write in the middle of a file, read it back */
+  f = fopen (name, "r+b");
+  check (f && fseek (f, 100, SEEK_SET) == 0 && fwrite ("HELLO", 1, 5, f) == 5 && fflush (f) == 0 && fseek (f, 98, SEEK_SET) == 0 && fread (back, 1, 9, f) == 9 && back[2] == 'H' && back[6] == 'O' && back[0] == big[98], "r+: write 5 bytes at 100 and read around them");
+  check (f && fseek (f, 0, SEEK_END) == 0 && fwrite ("END", 1, 3, f) == 3 && ftell (f) == 3003, "r+: write at the end");
+  if (f) fclose (f);
+  f = fopen (name, "a+");
+  check (f && ftell (f) == 0 && fgetc (f) == big[0] && fseek (f, 0, SEEK_END) == 0 && fputs ("more", f) >= 0 && fflush (f) == 0 && ftell (f) == 3007, "a+: reads from the start, writes go to the end");
+  if (f) fclose (f);
+  f = fopen (name, "w+");
+  check (f && fputs ("abc", f) >= 0 && fseek (f, 0, SEEK_SET) == 0 && fgetc (f) == 'a' && fgetc (f) == 'b' && ftell (f) == 2, "w+: write, seek back, read");
+  check (f && fgetpos (f, &pos) == 0 && fgetc (f) == 'c' && fgetc (f) == EOF && feof (f) && fsetpos (f, &pos) == 0 && !feof (f) && fgetc (f) == 'c', "fgetpos / fsetpos");
+  rewind (f);
+  check (ftell (f) == 0 && !ferror (f) && !feof (f), "rewind");
+  if (f) fclose (f);
+  /* a stream that is not there any more is a bad file: no crash for the calls that check */
+  f = fopen (name, "r");
+  check (f && fputc ('x', f) == EOF && ferror (f), "fputc on a stream opened for reading: EOF and the error flag");
+  clearerr (f);
+  check (!ferror (f) && fgetc (f) == 'a', "clearerr, then reading works");
+  if (f) fclose (f);
+  f = fopen (name, "w");
+  check (f && fgetc (f) == EOF && ferror (f), "fgetc on a stream opened for writing: EOF and the error flag");
+  if (f) fclose (f);
+  /* several files at once, fflush (NULL), and closing them all */
+  f = fopen (name, "w"); g = fopen (name2, "w");
+  { FILE *h = fopen (name3, "w"); check (f && g && h, "three files open"); if (f) fputs ("1", f); if (g) fputs ("22", g); if (h) fputs ("333", h); }
+  check (fflush (0) == 0, "fflush (NULL)");
+  check (__modlib_closeall () == 3, "__modlib_closeall closes the three");
+  { FILE *r = fopen (name2, "r"); check (r && fgets (b, sizeof b, r) && !t_cmp (b, "22"), "closeall wrote the buffers"); if (r) fclose (r); }
+  { FILE *r = fopen (name3, "r"); check (r && fgets (b, sizeof b, r) && !t_cmp (b, "333"), "the third file has its data too"); if (r) fclose (r); }
+  /* a line longer than the buffer, with fgets in small pieces */
+  f = fopen (name, "w");
+  { for (int i = 0; i < 700; i++) fputc ('a' + i % 26, f); fputc ('\n', f); fputs ("tail", f); fclose (f); }
+  f = fopen (name, "r");
+  { unsigned total = 0, pieces = 0; char *r; while ((r = fgets (b, 100, f)) != 0) { total += (unsigned) t_len (b); pieces++; } check (total == 705 && pieces == 9, "fgets in pieces of 99: 705 characters in 8 pieces and the tail"); }
+  if (f) fclose (f);
+  stdio_more (name, name2, name3);
+  remove (name); remove (name2); remove (name3);
+  sect_end ();
+}
+
+/* ======================================================================== probe: what the file system says (information, not checks).  The same lines come from the model (the host and the interpreter) and from the machine:
+   the difference between them is what the model has wrong.  Every line starts with INFO. */
+#include <swis.h>
+static void info (const char *what, long ret)
+{
+  int e = T_ERRNO;
+  _kernel_oserror *oe = _kernel_last_oserror ();
+  char b[330];
+  if (oe) snprintf (b, sizeof b, "INFO %s: ret=%ld errno=%d os=&%X \"%s\"", what, ret, e, (unsigned) oe->errnum, oe->errmess);
+  else snprintf (b, sizeof b, "INFO %s: ret=%ld errno=%d", what, ret, e);
+  puts (b);
+}
+#define PROBE(what, expr) do { long pr_; T_ERRNO = 0; (void) _kernel_last_oserror (); pr_ = (long) (expr); info (what, pr_); } while (0)
+#define PROBE_V(var, what, expr) do { T_ERRNO = 0; (void) _kernel_last_oserror (); (var) = (long) (expr); info (what, (var)); } while (0)
+static void infoln (const char *fmt, long a, long b)
+{
+  char s[300], t[330];
+  snprintf (s, sizeof s, fmt, a, b);
+  snprintf (t, sizeof t, "INFO %s", s);
+  puts (t);
+}
+static void infos (const char *s)
+{
+  char t[330];
+  snprintf (t, sizeof t, "INFO %s", s);
+  puts (t);
+}
+static long h_status (long h)                                              /* OS_Args 254: R0 = the status word of the stream (bit 7 write, bit 6 read) */
+{
+  unsigned st = 0;
+  _kernel_oserror *e = _swix (0x09, _INR (0, 1) | _OUT (0), 254u, (unsigned) h, &st);
+  return e ? -1L : (long) st;
+}
+static void h_close (long h) { if (h > 0) _kernel_osfind (0, (const char *) (size_t) h); }
+static void fresh (const char *name, const char *name2)                    /* NAME holds "probe-data", NAME2 is not there, nothing is locked */
+{
+  set_attr (name, 0x03); set_attr (name2, 0x03);
+  remove (name); remove (name2);
+  put_text (name, "probe-data");
+  (void) _kernel_last_oserror ();
+}
+static void test_stdio_probe (void)
+{
+  const char *name = fsname (0), *name2 = fsname (1);
+  static const char *const fmodes[] = { "r", "r+", "w", "a" };
+  static const int attrs[] = { 0x01, 0x0B };
+  static const int ops[] = { 0x4F, 0xCF, 0x8F };
+  FILE *f;
+  long h, h2, r;
+  char b[200];
+  sect_begin ("probe", 99);
+  puts ("INFO ----- probe: what the file system says (information, not checks) -----");
+  /* rename and remove of files in the states that matter */
+  fresh (name, name2);
+  PROBE ("rename of a plain file", rename (name, name2));
+  PROBE ("rename of it back", rename (name2, name));
+  fresh (name, name2); set_attr (name, 0x0B);
+  PROBE ("rename of a locked file (attr 0x0B)", rename (name, name2));
+  fresh (name, name2); set_attr (name, 0x01);
+  PROBE ("rename of a read only file (attr 0x01)", rename (name, name2));
+  fresh (name, name2); f = fopen (name, "w");
+  PROBE ("rename of a file open for writing", rename (name, name2));
+  if (f) fclose (f);
+  fresh (name, name2); f = fopen (name, "r");
+  PROBE ("rename of a file open for reading", rename (name, name2));
+  if (f) fclose (f);
+  fresh (name, name2); set_attr (name, 0x0B);
+  PROBE ("remove of a locked file", remove (name));
+  fresh (name, name2); set_attr (name, 0x01);
+  PROBE ("remove of a read only file (attr 0x01)", remove (name));
+  fresh (name, name2); f = fopen (name, "w");
+  PROBE ("remove of a file open for writing", remove (name));
+  if (f) fclose (f);
+  fresh (name, name2); f = fopen (name, "r");
+  PROBE ("remove of a file open for reading", remove (name));
+  if (f) fclose (f);
+  /* fopen of read only and locked files, with the library and with OS_Find itself (what the library avoids) */
+  for (unsigned a = 0; a < 2; a++)
+    for (unsigned m = 0; m < 4; m++)
+      {
+        fresh (name, name2); set_attr (name, attrs[a]);
+        snprintf (b, sizeof b, "fopen \"%s\" of a file with attr 0x%02X", fmodes[m], attrs[a]);
+        T_ERRNO = 0; (void) _kernel_last_oserror (); f = fopen (name, fmodes[m]); info (b, f != 0);
+        if (f) fclose (f);
+        infoln ("   its length afterwards: %ld (it was 10)", length_of (name), 0);
+      }
+  for (unsigned a = 0; a < 2; a++)
+    for (unsigned o = 0; o < 3; o++)
+      {
+        fresh (name, name2); set_attr (name, attrs[a]);
+        snprintf (b, sizeof b, "OS_Find &%X of a file with attr 0x%02X", ops[o], attrs[a]);
+        PROBE_V (h, b, _kernel_osfind (ops[o], name));
+        if (h > 0)
+          {
+            _kernel_osgbpb_block gb;
+            infoln ("   OS_Args 254 status: &%lX", h_status (h), 0);
+            gb.dataptr = (void *) "x"; gb.nbytes = 1; gb.fileptr = 0; gb.buf_len = 0; gb.wild_fld = 0;
+            PROBE ("   OS_GBPB 2 (write 1 byte at the pointer)", _kernel_osgbpb (2, (unsigned) h, &gb));
+            h_close (h);
+          }
+        infoln ("   its length afterwards: %ld (it was 10)", length_of (name), 0);
+      }
+  /* two streams on one file */
+  for (unsigned a = 0; a < 3; a++)
+    for (unsigned c = 0; c < 3; c++)
+      {
+        fresh (name, name2);
+        snprintf (b, sizeof b, "OS_Find &%X, then &%X on the same file", ops[a], ops[c]);
+        h = _kernel_osfind (ops[a], name);
+        PROBE_V (h2, b, _kernel_osfind (ops[c], name));
+        h_close (h2); h_close (h);
+      }
+  /* what a stream can do: the pointer beyond the end, the extent, a write through a read only stream */
+  fresh (name, name2);
+  h = _kernel_osfind (0xCF, name);
+  if (h > 0)
+    {
+      infoln ("update stream: OS_Args 254 status &%lX, EXT %ld", h_status (h), _kernel_osargs (2, (unsigned) h, 0));
+      PROBE ("   OS_Args 1 (PTR) to 110, 100 beyond the end", _kernel_osargs (1, (unsigned) h, 110));
+      infoln ("   EXT afterwards: %ld, PTR: %ld", _kernel_osargs (2, (unsigned) h, 0), _kernel_osargs (0, (unsigned) h, 0));
+      PROBE ("   OS_Args 3 (EXT) to 5", _kernel_osargs (3, (unsigned) h, 5));
+      infoln ("   EXT afterwards: %ld, PTR: %ld", _kernel_osargs (2, (unsigned) h, 0), _kernel_osargs (0, (unsigned) h, 0));
+      PROBE ("   OS_Args 255 (ensure)", _kernel_osargs (255, (unsigned) h, 0));
+      h_close (h);
+    }
+  fresh (name, name2);
+  h = _kernel_osfind (0x4F, name);
+  if (h > 0)
+    {
+      _kernel_osgbpb_block gb;
+      infoln ("input stream: OS_Args 254 status &%lX, EXT %ld", h_status (h), _kernel_osargs (2, (unsigned) h, 0));
+      PROBE ("   OS_Args 1 (PTR) to 110, beyond the end", _kernel_osargs (1, (unsigned) h, 110));
+      PROBE ("   OS_Args 1 (PTR) to 10, the end", _kernel_osargs (1, (unsigned) h, 10));
+      PROBE ("   OS_Args 3 (EXT) to 5", _kernel_osargs (3, (unsigned) h, 5));
+      gb.dataptr = (void *) "x"; gb.nbytes = 1; gb.fileptr = 0; gb.buf_len = 0; gb.wild_fld = 0;
+      PROBE ("   OS_GBPB 2 (write)", _kernel_osgbpb (2, (unsigned) h, &gb));
+      h_close (h);
+    }
+  fresh (name, name2);
+  h = _kernel_osfind (0x8F, name);
+  if (h > 0)
+    {
+      infoln ("output stream: OS_Args 254 status &%lX, EXT %ld", h_status (h), _kernel_osargs (2, (unsigned) h, 0));
+      h_close (h);
+    }
+  /* the attributes, and the length of a file that is open */
+  for (unsigned i = 0; i < 6; i++)
+    {
+      static const int set[] = { 0x03, 0x01, 0x0B, 0x00, 0x13, 0x33 };
+      _kernel_osfile_block ob;
+      fresh (name, name2);
+      set_attr (name, set[i]);
+      ob.load = ob.exec = ob.start = ob.end = 0;
+      r = _kernel_osfile (17, name, &ob);
+      snprintf (b, sizeof b, "OS_File 4 sets the attributes 0x%02X: OS_File 17 gives type %ld", set[i], r);
+      infos (b);
+      infoln ("   attributes read back: 0x%lX, length %ld", (long) (unsigned) ob.end, (long) (unsigned) ob.start);
+    }
+  fresh (name, name2);
+  f = fopen (name, "w");
+  if (f)
+    {
+      fputs ("0123456789", f);
+      infoln ("length in the catalogue of a file open for writing, 10 bytes in the buffer: %ld (before fflush)", length_of (name), 0);
+      fflush (f);
+      infoln ("   after fflush: %ld", length_of (name), 0);
+      fclose (f);
+      infoln ("   after fclose: %ld", length_of (name), 0);
+    }
+  /* names: what FileSwitch makes of them */
+  fresh (name, name2);
+  snprintf (b, sizeof b, "%s junk", name);
+  PROBE ("fopen of \"<name> junk\" (a space ends a name?)", fopen (b, "r") != 0);
+  snprintf (b, sizeof b, "%s*", name);
+  PROBE ("fopen of \"<name>*\" (a wild card)", fopen (b, "r") != 0);
+  snprintf (b, sizeof b, "%s.nonesuch", name);
+  PROBE ("fopen of \"<name>.nonesuch\" (a file is not a folder)", fopen (b, "r") != 0);
+  PROBE ("fopen of \"\" (an empty name)", fopen ("", "r") != 0);
+  PROBE ("fopen of \"<Wimp$ScrapDir>.MKf0\" (a variable is expanded?)", fopen ("<Wimp$ScrapDir>.MKf0", "r") != 0);
+  PROBE ("fopen of \"<Nonesuch$Dir>.MKf0\" (a variable that is not set)", fopen ("<Nonesuch$Dir>.MKf0", "r") != 0);
+  remove (name); remove (name2);
+  puts ("INFO ----- end of the probe -----");
+  sect_end ();
+}
+#endif
+
 /* ======================================================================== time (the calendar functions against the host's, in UTC) */
 static void copy_tm (struct tm *d, const struct tm *s)
 {
@@ -587,6 +1287,91 @@ static void test_swix (void)
   rec_i (_swi (TST_SWI | 0x20000, _INR (0, 3) | _OUT (2) | _RETURN (3), 1u, 2u, 5u, 9u, &o[2]));
   rec_u (o[2]);
   case_end ();
+  sect_end ();
+}
+/* the screen and the keyboard streams (the host model and armrun.py keep what is written to the screen, and give the lines that the test pushes to OS_ReadLine) */
+extern struct __FILE __modlib_stdin, __modlib_stdout, __modlib_stderr;
+#if defined (T_HOSTLIB)
+extern void mk_host_screen_start (void);
+extern size_t mk_host_screen_take (char *buf, size_t size);
+extern void mk_host_keys_push (const char *s, int len);
+static void scr_start (void) { mk_host_screen_start (); }
+static size_t scr_take (char *b, size_t n) { return mk_host_screen_take (b, n); }
+static void key_push (const char *s, int len) { mk_host_keys_push (s, len); }
+#else
+#define TST_SCREEN	0x5AB04
+#define TST_KEYS	0x5AB06
+static void scr_start (void) { _swix (TST_SCREEN, _IN (0), 1u); }
+static size_t scr_take (char *b, size_t n) { unsigned len = 0; _swix (TST_SCREEN, _INR (0, 2) | _OUT (0), 2u, b, (unsigned) n, &len); return len; }
+static void key_push (const char *s, int len) { _swix (TST_KEYS, _INR (0, 1), s, (unsigned) len); }
+#endif
+static void test_stdio_streams (void)
+{
+  char b[200], s[20];
+  int n = -1;
+  size_t k;
+  FILE *out = (FILE *) &__modlib_stdout, *err = (FILE *) &__modlib_stderr, *in = (FILE *) &__modlib_stdin, *g;
+  sect_begin ("stdio3", 21);
+  scr_start ();
+  fputs ("ab\n", out); fputc ('x', err); fwrite ("yz", 1, 2, out); fprintf (out, "%d|%s\n", 42, "q");
+  k = scr_take (b, sizeof b - 1); b[k] = 0;
+  check (!t_cmp (b, "ab\n\rxyz42|q\n\r"), "the screen streams: fputs, fputc, fwrite, fprintf on stdout and stderr (a line feed is OS_NewLine: LF CR)");
+#if defined (T_ARM)
+  scr_start ();
+  printf ("p%d", 1); puts ("s"); putchar ('c');
+  k = scr_take (b, sizeof b - 1); b[k] = 0;
+  check (!t_cmp (b, "p1s\n\rc"), "printf, puts and putchar write to the screen");
+  scr_start ();
+  n = putchar (0x10A);
+  k = scr_take (b, sizeof b - 1); b[k] = 0;
+  check (n == 10 && !t_cmp (b, "\n\r"), "putchar converts to unsigned char: 0x10A is a line feed, OS_NewLine, and the value is 10");
+  g = freopen (fsname (0), "w", out);                                                            /* stdout becomes a file: printf, puts and putchar follow it */
+  {
+    int a = printf ("a%d", 1), p = fprintf (out, "b"), c = putchar ('c'), d = puts ("d"), e1, e2, e3;
+    fclose (out);
+    e1 = printf ("x"); e2 = putchar ('y'); e3 = puts ("z");
+    if (__modlib_stdio_end_hook) __modlib_stdio_end_hook (1);                                    /* the end of a program: stdout is the screen again */
+    check (g == out && a == 2 && p == 1 && c == 'c' && d == 0, "freopen (stdout): printf, fprintf, putchar and puts write to the file");
+    check (e1 == -1 && e2 == EOF && e3 == EOF, "stdout closed: printf, putchar and puts fail");
+    check (file_is (fsname (0), "a1bcd\n"), "the file has what the four wrote");
+    remove (fsname (0));
+    scr_start (); printf ("s");
+    k = scr_take (b, sizeof b - 1); b[k] = 0;
+    check (!t_cmp (b, "s"), "after the end of a program stdout is the screen again");
+  }
+#endif
+  check (fgetc (out) == EOF && ferror (out), "fgetc on stdout: EOF and the error flag");
+  clearerr (out);
+  check (fputc ('x', in) == EOF && ferror (in), "fputc on stdin: EOF and the error flag");
+  clearerr (in);
+  key_push ("12 abc", 6); key_push ("second line", 11); key_push ("", 0);
+  check (fscanf (in, "%d %19s", &n, s) == 2 && n == 12 && !t_cmp (s, "abc"), "fscanf (stdin): a line from the keyboard");
+  check (fgets (b, sizeof b, in) && !t_cmp (b, "\n"), "fgets: the rest of the first line is its line feed");
+  check (fgets (b, sizeof b, in) && !t_cmp (b, "second line\n"), "fgets: the second line");
+  check (fgetc (in) == '\n', "an empty line is a line feed");
+  check (fgetc (in) == EOF && feof (in), "Escape (no line left) is the end of the input");
+  check (fgetc (in) == EOF, "the end of the input stays");
+  clearerr (in);
+  check (!feof (in), "clearerr on stdin");
+  check (ftell (in) == -1 && fseek (out, 0, SEEK_SET) == -1, "ftell / fseek on the keyboard and the screen fail");
+  /* a closed standard stream is a bad file; the end of a program sets them up again; the end of the input is not remembered by the next program */
+  T_ERRNO = 0; check (fclose (in) == 0 && fgetc (in) == EOF && ferror (in) && T_ERRNO == EBADF, "fclose (stdin): reading it is a bad file");
+  T_ERRNO = 0; check (fclose (in) == EOF && T_ERRNO == EBADF, "a second fclose of stdin: EOF and EBADF");
+  if (__modlib_stdio_end_hook) __modlib_stdio_end_hook (1);
+  key_push ("again", 5);
+  check (fgetc (in) == 'a' && !ferror (in) && !feof (in), "after the end of a program stdin works again");
+  key_push (0, -1);
+  while (fgetc (in) != EOF) ;
+  check (feof (in), "stdin: the end of the input");
+  if (__modlib_stdio_end_hook) __modlib_stdio_end_hook (1);
+  check (!feof (in), "the end of a program: the end of the input is forgotten");
+  /* stderr becomes a file: the stream is the file's from now on */
+  g = freopen (fsname (0), "w", err);
+  check (g == err && fputs ("to a file", err) >= 0 && fclose (err) == 0, "freopen of stderr to a file");
+  g = fopen (fsname (0), "r");
+  check (g && fgets (b, sizeof b, g) && !t_cmp (b, "to a file"), "the file has what stderr wrote");
+  if (g) fclose (g);
+  remove (fsname (0));
   sect_end ();
 }
 #if defined (T_ARM)
@@ -759,6 +1544,14 @@ int main (int argc, char **argv)
   setenv ("TZ", "UTC", 1);
   tzset ();
 #endif
+#if defined (T_HW)
+  { const char *d = getenv ("Wimp$ScrapDir"); size_t l = d ? t_len (d) : 0; if (l > 150) l = 150; if (d) t_mov (g_fsbase, d, l); g_fsbase[l] = '.'; t_cpy (g_fsbase + l + 1, "MK");
+    if (!d) { g_fail++; puts ("FAIL the system variable Wimp$ScrapDir is not set (run this in a Task window): the stdio files go to the current directory"); t_cpy (g_fsbase, "MK"); }
+    puts ("stdio: the screen streams, to be SEEN: the next two lines come from fputs (stdout) and fprintf (stderr), then a fwrite and a printf");
+    fputs ("  line 1 (fputs to stdout)\n", stdout); fprintf (stderr, "  line 2 (%s to stderr, %d)\n", "fprintf", 42); { static const char l3[] = "  line 3 (fwrite)\n"; fwrite (l3, 1, sizeof l3 - 1, stdout); } printf ("  line 4 (printf %s)\n", "ok"); }
+#else
+  t_cpy (g_fsbase, T_FSDIR);
+#endif
   test_ctype ();
   test_string ();
   test_numbers ();
@@ -766,14 +1559,18 @@ int main (int argc, char **argv)
   test_div ();
   test_sscanf ();
   test_printf ();
+  test_stdio ();
   test_time ();
   test_limits ();
 #if !defined (T_ORACLE)
   test_rand ();
+  test_stdio_misc ();
+  test_stdio_probe ();
 #endif
 #if defined (T_HOSTLIB) || (defined (T_ARM) && !defined (T_HW))
   test_swix ();
   test_clock ();
+  test_stdio_streams ();
 #if defined (T_ARM)
   test_swix_block ();
 #endif

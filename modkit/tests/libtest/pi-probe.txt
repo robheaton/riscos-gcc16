@@ -1,0 +1,94 @@
+INFO ----- probe: what the file system says (information, not checks) -----
+INFO rename of a plain file: ret=0 errno=0
+INFO rename of it back: ret=0 errno=0
+INFO rename of a locked file (attr 0x0B): ret=-1 errno=13 os=&1C8C3 "This item is locked to stop changes being made to it"
+INFO rename of a read only file (attr 0x01): ret=0 errno=0
+INFO rename of a file open for writing: ret=-1 errno=16 os=&1C8C2 "This file is already open"
+INFO rename of a file open for reading: ret=-1 errno=16 os=&1C8C2 "This file is already open"
+INFO remove of a locked file: ret=-1 errno=13 os=&1C8C3 "This item is locked to stop changes being made to it"
+INFO remove of a read only file (attr 0x01): ret=0 errno=0
+INFO remove of a file open for writing: ret=-1 errno=16 os=&1C8C2 "This file is already open"
+INFO remove of a file open for reading: ret=-1 errno=16 os=&1C8C2 "This file is already open"
+INFO fopen "r" of a file with attr 0x01: ret=1 errno=0
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "r+" of a file with attr 0x01: ret=0 errno=13
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "w" of a file with attr 0x01: ret=0 errno=13
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "a" of a file with attr 0x01: ret=0 errno=13
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "r" of a file with attr 0x0B: ret=1 errno=0
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "r+" of a file with attr 0x0B: ret=0 errno=13
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "w" of a file with attr 0x0B: ret=0 errno=13
+INFO    its length afterwards: 10 (it was 10)
+INFO fopen "a" of a file with attr 0x0B: ret=0 errno=13
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &4F of a file with attr 0x01: ret=248 errno=0
+INFO    OS_Args 254 status: &40
+INFO    OS_GBPB 2 (write 1 byte at the pointer): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &CF of a file with attr 0x01: ret=248 errno=0
+INFO    OS_Args 254 status: &40
+INFO    OS_GBPB 2 (write 1 byte at the pointer): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &8F of a file with attr 0x01: ret=248 errno=0
+INFO    OS_Args 254 status: &140
+INFO    OS_GBPB 2 (write 1 byte at the pointer): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &4F of a file with attr 0x0B: ret=248 errno=0
+INFO    OS_Args 254 status: &40
+INFO    OS_GBPB 2 (write 1 byte at the pointer): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &CF of a file with attr 0x0B: ret=248 errno=0
+INFO    OS_Args 254 status: &40
+INFO    OS_GBPB 2 (write 1 byte at the pointer): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &8F of a file with attr 0x0B: ret=248 errno=0
+INFO    OS_Args 254 status: &140
+INFO    OS_GBPB 2 (write 1 byte at the pointer): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    its length afterwards: 10 (it was 10)
+INFO OS_Find &4F, then &4F on the same file: ret=247 errno=0
+INFO OS_Find &4F, then &CF on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &4F, then &8F on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &CF, then &4F on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &CF, then &CF on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &CF, then &8F on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &8F, then &4F on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &8F, then &CF on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO OS_Find &8F, then &8F on the same file: ret=-2 errno=0 os=&1C8C2 "This file is already open"
+INFO update stream: OS_Args 254 status &C0, EXT 10
+INFO    OS_Args 1 (PTR) to 110, 100 beyond the end: ret=110 errno=0
+INFO    EXT afterwards: 110, PTR: 110
+INFO    OS_Args 3 (EXT) to 5: ret=5 errno=0
+INFO    EXT afterwards: 5, PTR: 5
+INFO    OS_Args 255 (ensure): ret=0 errno=0
+INFO input stream: OS_Args 254 status &40, EXT 10
+INFO    OS_Args 1 (PTR) to 110, beyond the end: ret=-2 errno=0 os=&B7 "Outside file"
+INFO    OS_Args 1 (PTR) to 10, the end: ret=10 errno=0
+INFO    OS_Args 3 (EXT) to 5: ret=-2 errno=0 os=&C1 "Not open for update"
+INFO    OS_GBPB 2 (write): ret=-2 errno=0 os=&C1 "Not open for update"
+INFO output stream: OS_Args 254 status &1C0, EXT 0
+INFO OS_File 4 sets the attributes 0x03: OS_File 17 gives type 1
+INFO    attributes read back: 0x3, length 10
+INFO OS_File 4 sets the attributes 0x01: OS_File 17 gives type 1
+INFO    attributes read back: 0x1, length 10
+INFO OS_File 4 sets the attributes 0x0B: OS_File 17 gives type 1
+INFO    attributes read back: 0xB, length 10
+INFO OS_File 4 sets the attributes 0x00: OS_File 17 gives type 1
+INFO    attributes read back: 0x0, length 10
+INFO OS_File 4 sets the attributes 0x13: OS_File 17 gives type 1
+INFO    attributes read back: 0x13, length 10
+INFO OS_File 4 sets the attributes 0x33: OS_File 17 gives type 1
+INFO    attributes read back: 0x33, length 10
+INFO length in the catalogue of a file open for writing, 10 bytes in the buffer: 10 (before fflush)
+INFO    after fflush: 10
+INFO    after fclose: 10
+INFO fopen of "<name> junk" (a space ends a name?): ret=1 errno=0
+INFO fopen of "<name>*" (a wild card): ret=1 errno=0
+INFO fopen of "<name>.nonesuch" (a file is not a folder): ret=0 errno=2 os=&D6 "File 'NVMe::NVMe.$.!Boot.Resources.!Scrap.ScrapDirs.ScrapDir.MKf0.nonesuch' not found"
+INFO fopen of "" (an empty name): ret=0 errno=21 os=&A8 "'' is a directory"
+INFO fopen of "<Wimp$ScrapDir>.MKf0" (a variable is expanded?): ret=1 errno=0
+INFO fopen of "<Nonesuch$Dir>.MKf0" (a variable that is not set): ret=0 errno=22 os=&CC "File name '.MKf0' not recognised"
+INFO ----- end of the probe -----
