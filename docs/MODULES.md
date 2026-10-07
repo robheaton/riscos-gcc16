@@ -23,6 +23,23 @@ arm-riscos-gnueabihf-gcc -mmodule -o MyModule,ffa main.o header.o     # the modu
 A makefile that has `.cmhg.o` and `.cmhg.h` rules with `cmunge -tgcc -32bit -p` and `LDFLAGS = -mmodule` works as it is, apart from the library (below). `module.mk` (below) has it all as make rules.
 How the module is made: the linker writes an ELF file, and `arm-riscos-gnueabihf-modreloc` (a small C program; the driver runs it, `gcc -mmodule` only) replaces it by the flat image with the table of addresses that the module relocates itself with (the reason is under Limits). A partial link (`-r`) is not turned into a module.
 
+## What can be built today, and what cannot
+
+**It works for** small, self-contained C modules that need little from a C library: SWI handlers and decoding tables, `*commands`, service calls, vector, IRQ and callback handlers, OSLib SWI veneers, `malloc` from the RMA and `printf`. Modules of that kind ran on the Pi (a service-call and SWI module, a `TickerV` and callback module, a network module of 800 lines, and the module that the self-test builds, loads and runs).
+
+**What a module may need, and where it stands:**
+
+| A module needs | State today |
+|---|---|
+| **C library** | `libmodkit.a` has about 30 functions: `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`, `strcpy`, `strncpy`, `strcat`, `strcmp`, `strncmp`, `strchr`, `strrchr`, `strstr`, `strtol`, `strtoul`, `atoi`, `abs`, `malloc`, `calloc`, `realloc`, `free` (from the RMA), `printf`, `sprintf`, `snprintf`, `vsnprintf`, `puts` and `putchar` (`printf` has no `%f`). **Not there:** `sscanf`, `getenv`, the `ctype` functions (`toupper`, `isspace` ...), `rand`, `time`, `clock`, `qsort`, `strtok`, `strdup`, `atexit`, and all of the `stdio` file functions (`fopen`, `fgets`, `fprintf` ...). A call that is not there is an undefined symbol at the link. |
+| **CMHG** | The subset listed in the header of `bin/mkmodhdr.py`: title, help and date strings, initialisation and finalisation, service calls, SWI chunk, decoding table and handler, `*commands` (minimum and maximum arguments, GSTrans map, help and syntax text), vectors, IRQ handlers and generic veneers. **Not there** (`cmunge` stops with an error): `international-help-file` and the per-command `international:` flag (the commonest gap), `module-is-runnable`, `event-handler`, `add-syntax`, `configure`, `fs-command`, `library-enter-code` and `library-initialisation-code`. |
+| **Floating point** | `float` and `double` compile, and link if you add `-lgcc` (the soft-float helpers: no instruction of the VFP is used). **Not tested on hardware.** |
+| **C++** | Compiles with `-mmodule -fno-exceptions -fno-rtti`, but nothing runs static constructors, and there is no `operator new` or `delete`: do not use it yet. |
+
+**How much of the OS that is.** The RISC OS Open sources (the BCM2835 subset) have 86 components that build assembler modules, which no C compiler helps with, and 66 that build C modules. Counting **only their C library calls**, 26 of the 66 use nothing that `libmodkit.a` lacks. With the small functions above (`ctype`, `getenv`, `sscanf`, `strtok`, `rand`, `time`, `qsort` and so on) it would be 45, and with `stdio` file I/O 56. 39 of the 66 use a CMHG option that `cmunge` rejects (31 of them the international help file). One of the 66 uses floating point and none uses C++. A real module also has to compile with its own headers (most of that source is written for the Norcroft C compiler), so these figures say what the library and the header generator would allow, not what builds untouched.
+
+**The plan**, in this order and without promises: the small C library functions; the CMHG international help file; `stdio` file I/O over `OS_Find` and `OS_GBPB`; floating point checked on hardware; C++ (static constructors, `new` and `delete`). Bigger or older modules should keep using GCCSDK 4.7.4.
+
 ## What it is
 
 A module is a flat image with a header, loaded into the RMA, called in SVC mode, with no C library. `modkit` supplies what is missing around the compiler:
@@ -118,7 +135,7 @@ These ran on the machine before `-mmodule` and `cmunge` existed, built by `modul
 
 ## Limits
 
-* No C++, no exceptions, no floating point (soft float with no FP library), no `UnixLib` or `SharedCLibrary`: modules run on a small stack, in SVC mode, so keep stack use low and do not call blocking C library functions (there are none).
+* No `UnixLib` or `SharedCLibrary`, no C++ and no exceptions yet, and floating point only through `-lgcc` and untested (see [what can be built today](#what-can-be-built-today-and-what-cannot)): modules run on a small stack, in SVC mode, so keep stack use low and do not call blocking C library functions (there are none).
 * There is no automatic stack checking. `malloc`, `free`, `calloc` and `realloc` in `modlib.c` take their memory from the RMA (`OS_Module` 6 and 7).
 * The header generator implements the subset of CMHG that the examples use; it reports anything else as an error rather than dropping it silently.
 * The relocation is the modkit's own (a self-relocating image made by `modreloc`), not `ld`'s module support (`--ro-module-reloc` of GCCSDK's linker is not in binutils 2.45.1): that is why the driver runs a program (`modreloc`) after the linker, and why the code is ARMv6.
