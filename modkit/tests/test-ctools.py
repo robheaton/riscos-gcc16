@@ -72,13 +72,15 @@ def compare_cmhg(cmhg, label, expect_fail=None):
 
 real = [os.path.join(KIT, "examples", "tickmod", "cmhg", "header"), os.path.join(KIT, "examples", "cmdserv2", "cmhg", "header"),
         os.path.join(SMOKE, "modhello.cmhg")] + sorted(glob.glob(os.path.join(KIT, "..", "modpoc", "*", "*.cmhg")) + glob.glob(os.path.join(KIT, "..", "modpoc", "*.cmhg")))
+real += sorted(glob.glob(os.path.join(HERE, "cmhg", "*.cmhg")))
 for extra in os.environ.get("EXTRA_CMHG", "").split():
     real.append(extra)
 for f in real:
     if os.path.exists(f): compare_cmhg(f, os.path.relpath(f, KIT))
 
 NAMES = ["T", "Tiny", "ModHello", "LongModuleName", "cmdserv3", "A_b", "Abc123", "Exactly8", "Seven77"]
-VERS = ["1.00", "0.02", "3.06-gcc16", "1.5", "1.234", "12.34", "", "v2", "2.0 beta", "0.1"]
+VERS = ["1.00", "0.02", "3.06-gcc16", "1.5", "1.234", "12.34", "", "v2", "2.0 beta", "0.1", "1.2.3", "0.1 extra words", "9.99b", "2.", "10.5 (x)"]
+HELPNAMES = ["{t}", "{t}", "{t}", "My_Module", "Two Words", "Q", "A_Long_Module_Name", "  Spaced   Out  "]
 IDENT = ["handler", "Fn_1", "my_init", "svc", "swi_h", "x"]
 def num(rng, v):
     return rng.choice([str(v), "&%X" % v, "0x%x" % v, "&%x" % v]) if v > 0 or rng.random() < .5 else rng.choice(["0", "&0", "0x0"])
@@ -90,37 +92,43 @@ def gen_cmhg(rng):
     title = rng.choice(NAMES); ver = rng.choice(VERS)
     lines = []
     sep = lambda: rng.choice([": ", ":", " : ", ":\t"])
-    L = lambda k, v: lines.append(k + sep() + v)
+    L = lambda k, v: lines.append(k + sep() + v + (rng.choice(["  ; a comment", "\t;x", " ;"]) if rng.random() < .15 else ""))
+    quote = lambda s: ('"%s"' % s) if rng.random() < .15 else s
     if rng.random() < .3: lines.append("; a comment line")
-    L("title-string", title)
-    L("help-string", (title + " " + ver).strip() if rng.random() < .85 else "something else " + ver)
-    if rng.random() < .8: L("date-string", rng.choice(["27 Sep 2026", "01 Jan 1999", "(c) me"]))
+    L("title-string", quote(title))
+    hname = rng.choice(HELPNAMES).format(t=title)
+    L("help-string", (quote(hname) + " " + ver).strip() if rng.random() < .9 else "something else " + ver)
+    if rng.random() < .8: L("date-string", quote(rng.choice(["27 Sep 2026", "01 Jan 1999", "(c) me"])))
     if rng.random() < .7: L("initialisation-code", rng.choice(IDENT))
     if rng.random() < .7: L("finalisation-code", rng.choice(IDENT))
     if rng.random() < .5:
-        nums = [num(rng, rng.choice([0x04, 0x43, 0x4A, 0x27, 0x4a, 0x100, 0x400C3])) for _ in range(rng.randint(0, 4))]
+        nums = [num(rng, rng.choice([0x04, 0x43, 0x4A, 0x27, 0x4a, 0x100, 0x400C3, 0x44EC1, 0x81040, 0x12345678, 0x1000001, 0xFFFFFFFF])) for _ in range(rng.randint(0, 4))]
         L("service-call-handler", rng.choice(IDENT) + (" " + rng.choice([" ", ", "]).join(nums) if nums else ""))
     if rng.random() < .6:
         cmds = []
         for i in range(rng.randint(1, 4)):
             opts = []
             if rng.random() < .8: opts.append("min-args: " + num(rng, rng.randint(0, 3)))
-            if rng.random() < .8: opts.append("max-args: " + num(rng, rng.randint(0, 300)))
+            if rng.random() < .8: opts.append("max-args: " + num(rng, rng.randint(0, 255)))
             if rng.random() < .3: opts.append("gstrans-map: " + num(rng, rng.randint(0, 255)))
             if rng.random() < .8: opts.append("help-text: " + q(rng))
             if rng.random() < .4: opts.append("invalid-syntax: " + q(rng))
+            for flag in ("international", "add-syntax", "configure", "status", "fs-command"):
+                if rng.random() < .12: opts.append(flag + rng.choice([":", ": ", ":,", " :"]))            # (add-syntax with international is refused by both)
             rng.shuffle(opts)
             nm = rng.choice(["Cmd", "Prefix_Do", "X", "do$it", "a%b"]) + str(i)
             cmds.append(nm + ("(" + rng.choice([",\n          ", ", ", ",", " , "]).join(opts) + ")" if opts or rng.random() < .3 else ""))
         L("command-keyword-table", rng.choice(IDENT) + rng.choice(["\n     ", " ", "\n"]) + rng.choice([",\n     ", ", ", ",\n"]).join(cmds))
     if rng.random() < .35:
-        L("swi-chunk-base-number", num(rng, rng.choice([0x43380, 0x58C80, 0x400C0, 0x0, 0x100])))
-        if rng.random() < .8: L("swi-decoding-table", rng.choice([title, title.upper(), title.lower(), "Other"]) + " " + rng.choice([" ", ", "]).join(rng.sample(["A", "B", "Start", "Stop", "Get_Status"], rng.randint(0, 4))))
+        L("swi-chunk-base-number", num(rng, rng.choice([0x43380, 0x58C80, 0x400C0, 0x40, 0x100])))
+        if rng.random() < .8: L("swi-decoding-table", quote(rng.choice([title, title.upper(), title.lower(), "Other"])) + " " + rng.choice([" ", ", "]).join(quote(x) for x in rng.sample(["A", "B", "Start", "Stop", "Get_Status"], rng.randint(0, 4))))
         L("swi-handler-code", rng.choice(IDENT))
     for kind in ("irq-handlers", "vector-handlers", "generic-veneers"):
         if rng.random() < .3:
-            L(kind, rng.choice([", ", " ", ",\n    "]).join("%s_e%d/%s_h%d" % (kind[:3], i, kind[:3], i) for i in range(rng.randint(1, 3))))
+            ents = [("%s_e%d/%s_h%d" % (kind[:3], i, kind[:3], i)) if rng.random() < .6 else ("%s_e%d" % (kind[:3], i)) for i in range(rng.randint(1, 3))]
+            L(kind, rng.choice([", ", " ", ",\n    "]).join(ents))
     if rng.random() < .25: L("module-is-runnable", rng.choice(["", " "]))
+    if rng.random() < .3: L("international-help-file", q(rng))
     if rng.random() < .3: lines.insert(rng.randint(0, len(lines)), "")
     if rng.random() < .3: lines.insert(rng.randint(0, len(lines)), "   ; indented comment")
     rng.shuffle(lines) if rng.random() < .0 else None
@@ -130,32 +138,112 @@ def gen_cmhg(rng):
 
 rng = random.Random(20261006)
 N = 80 if QUICK else 400
+refused = 0
 for i in range(N):
     text = gen_cmhg(rng)
     p = os.path.join(W, "gen%d.cmhg" % i)
     open(p, "w", newline="").write(text)
     pf = compare_cmhg(p, "generated %d" % i)
-    if pf: pass
-print("cmunge: %d generated files compared" % N)
+    refused += bool(pf)
+print("cmunge: %d generated files compared (%d made a header, %d were refused by both)" % (N, N - refused, refused))
+
+# ---- the same files against the real CMunge (GCCSDK's), when it is there: what the module header says must be the same.  The real one refuses what it does not know and adds the date of the day to a help
+# string that has no date-string, so those files are left out of the comparison.
+REAL_CMUNGE = os.environ.get("REAL_CMUNGE", os.path.expanduser("~/gccsdk/cross/bin/cmunge"))
+if os.path.exists(REAL_CMUNGE):
+    sys.path.insert(0, HERE)
+    import cmhgdiff
+    tcdir = os.path.dirname(TC)
+    compared = skipped = 0
+    why = {}
+    for i in range(N):
+        p = os.path.join(W, "gen%d.cmhg" % i)
+        text = open(p, newline="").read()
+        if "date-string" not in text or re.search(r'^title-string\s*:\s*"', text, re.M):       # no date-string (the real one then adds today's), or a quoted title (kept with its quotes there)
+            skipped += 1; why["no date-string, or a quoted title"] = why.get("no date-string, or a quoted title", 0) + 1; continue
+        # the real one takes only \n as an escape and keeps the letter of any other (\t is "t"): give both the same text
+        p = os.path.join(W, "real%d.cmhg" % i)
+        text = re.sub(r'^service-call-handler.*\n', '', text, flags=re.M)         # (the real one cannot make a service handler without the C library: -znoscl)
+        text = re.sub(r'\\\\', '/', text)                                      # (it drops a doubled backslash, and takes \n in a file name as 10, where CMHG says 13)
+        if "international-help-file" in text: text = text.replace('\\n', 'n')
+        text = re.sub(r'[ \t\r\n]*,[ \t\r\n]*', ', ', text)                        # (and one blank after a comma: the real one is stricter about the lists)
+        text = re.sub(r'(?<=[\w-])[ \t]+:', ':', text)                 # (and no blank before a colon: the real one takes the blank as part of the name)
+        open(p, "w", newline="").write(re.sub(r'\\(\\|"|n)|\\(.)', lambda m: m.group(0) if m.group(1) else m.group(2), text, flags=re.S))
+        d = tempfile.mkdtemp(dir=W)
+        rm = run([os.path.join(BIN, "cmunge"), "-tgcc", "-32bit", "-s", d + "/m.s", "-d", d + "/m.h", p])
+        rr = run([REAL_CMUNGE, "-tgcc", "-32bit", "-znoscl", "-s", d + "/r.s", "-d", d + "/r.h", p])
+        if rm.returncode or rr.returncode:
+            skipped += 1; k = "mine refuses: " + rm.stderr.strip().split("\n")[0][:80] if rm.returncode else "real refuses: " + rr.stderr.strip().split("\n")[0][:80]; why[k] = why.get(k, 0) + 1; continue
+        try:
+            n = sum(1 for l in open(d + "/m.s").read().split("\n") if l.startswith("\t.word\tcmd") and "@ code" in l)
+            a = cmhgdiff.decode(cmhgdiff.flat(d + "/m.s", tcdir, d, "m"), n); b = cmhgdiff.decode(cmhgdiff.flat(d + "/r.s", tcdir, d, "r"), n)
+        except subprocess.CalledProcessError:
+            skipped += 1; continue
+        compared += 1
+        same = True
+        for k in a:
+            if k == "commands":
+                same = same and all(x == y for x, y in zip(a[k], b[k]))
+            elif a[k] != b[k]:
+                same = False
+        check(same, "generated %d: the module header differs from the real CMunge's (%s)" % (i, {k: (a[k], b[k]) for k in a if k != "commands" and a[k] != b[k]} or [(x, y) for x, y in zip(a["commands"], b["commands"]) if x != y][:1]))
+    print("cmunge: %d generated files against the real CMunge (%d left out)" % (compared, skipped))
+    for k, v in sorted(why.items(), key=lambda kv: -kv[1]): print("    %4d  %s" % (v, k))
+else:
+    print("cmunge: the real CMunge (%s) is not there: not compared" % REAL_CMUNGE)
 
 print("cmunge: files that must be refused")
 BAD = {
-    "unknown keyword": "title-string: T\nhelp-string: T 1\nfrobnicate: x\n",
-    "no title": "help-string: T 1\n",
+    "unknown keyword": "title-string: T\nhelp-string: T 1.00\nfrobnicate: x\n",
+    "no title": "help-string: T 1.00\n",
     "no help": "title-string: T\n",
-    "bad escape": 'title-string: T\nhelp-string: T 1\ncommand-keyword-table: h\n  C(help-text: "bad \\q")\n',
-    "unterminated string": 'title-string: T\nhelp-string: T 1\ncommand-keyword-table: h\n  C(help-text: "abc)\n',
-    "empty command table": "title-string: T\nhelp-string: T 1\ncommand-keyword-table: h\n",
-    "unsupported command option": "title-string: T\nhelp-string: T 1\ncommand-keyword-table: h\n  C(international: x)\n",
-    "veneer without slash": "title-string: T\nhelp-string: T 1\nirq-handlers: entry\n",
-    "swi prefix differs": "title-string: T\nhelp-string: T 1\nswi-chunk-base-number: 0x100\nswi-decoding-table: Other A B\nswi-handler-code: h\n",
-    "indented first line": "  title-string: T\nhelp-string: T 1\n",
-    "not a key line": "title-string: T\nhelp-string: T 1\nthis is not a keyword line\n",
-    "number expected": "title-string: T\nhelp-string: T 1\ncommand-keyword-table: h\n  C(min-args: x)\n",
+    "bad escape": 'title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(help-text: "bad \\q")\n',
+    "unterminated string": 'title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(help-text: "abc)\n',
+    "empty command table": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n",
+    "min-args over 255": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(min-args: 256)\n",
+    "max-args over 255": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(max-args: 0x100)\n",
+    "gstrans-map over 255": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(gstrans-map: 256)\n",
+    "unsupported command option": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(international: x)\n",
+    "help: is refused (as CMunge does)": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(help:)\n",
+    "add-syntax and international": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(add-syntax:, international:, help-text: \"a\", invalid-syntax: \"b\")\n",
+    "international-help-file needs a string": "title-string: T\nhelp-string: T 1.00\ninternational-help-file: Resources:Messages\n",
+    "swi chunk without a handler": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100\n",
+    "swi handler without a chunk": "title-string: T\nhelp-string: T 1.00\nswi-handler-code: h\n",
+    "swi decoding table without a chunk": "title-string: T\nhelp-string: T 1.00\nswi-decoding-table: T A B\n",
+    "swi chunk 0": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0\nswi-handler-code: h\n",
+    "swi chunk not a multiple of 64": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100c1\nswi-handler-code: h\n",
+    "swi chunk with the X bit": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x20040\nswi-handler-code: h\n",
+    "indented first line": "  title-string: T\nhelp-string: T 1.00\n",
+    "not a key line": "title-string: T\nhelp-string: T 1.00\nthis is not a keyword line\n",
+    "number expected": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(min-args: x)\n",
 }
+# what each refusal must say (so that a file is not refused for another reason than the one under test)
+WHY = {"unknown keyword": "frobnicate", "no title": "title-string", "no help": "help-string", "bad escape": "escape", "unterminated string": "string", "empty command table": "no commands",
+       "min-args over 255": "min-args", "max-args over 255": "max-args", "gstrans-map over 255": "gstrans", "unsupported command option": "is not supported",
+       "help: is refused (as CMunge does)": "help", "add-syntax and international": "mutually exclusive", "international-help-file needs a string": "a string was expected",
+       "swi chunk without a handler": "needs a swi-handler-code", "swi handler without a chunk": "needs a swi-chunk-base-number",
+       "swi decoding table without a chunk": "needs a swi-chunk-base-number", "swi chunk 0": "not a SWI chunk", "swi chunk not a multiple of 64": "not a SWI chunk", "swi chunk with the X bit": "X bit",
+       "indented first line": "", "not a key line": "", "number expected": "a number was expected"}
 for name, text in BAD.items():
     p = os.path.join(W, "bad.cmhg"); open(p, "w").write(text)
     pf = compare_cmhg(p, "refused: " + name, expect_fail=True)
+    if name in WHY:
+        for tool, r in (("Python", py_mkmodhdr(p, os.path.join(W, "b.s"), os.path.join(W, "b.h"))), ("C", c_cmunge(p, os.path.join(W, "b.s"), os.path.join(W, "b.h")))):
+            check(WHY[name] in r.stderr, "refused: %s: the message of the %s tool does not say '%s': %s" % (name, tool, WHY[name], r.stderr.strip()[-120:]))
+    else:
+        check(False, "refused: %s: no expected message in WHY" % name)
+
+print("cmunge: no temporary file is left in TMPDIR (or the working folder) by -p, with an error or without")
+td = tempfile.mkdtemp(dir=W)
+for what, text in (("an error", "title-string: T\nhelp-string: T 1.00\nfrobnicate: x\n"), ("no error", "title-string: T\nhelp-string: T 1.00\n")):
+    src = os.path.join(W, "tmp.cmhg"); open(src, "w").write(text)
+    for tmpdir in (td, None):
+        e = dict(env, TMPDIR=td) if tmpdir else {k: v for k, v in env.items() if k != "TMPDIR"}
+        r = subprocess.run([os.path.join(BIN, "cmunge"), "-tgcc", "-p", "-s", os.path.join(td, "o.s"), "-d", os.path.join(td, "o.h"), src], capture_output=True, text=True, env=e, cwd=td)
+        left = sorted(set(os.listdir(td)) - {"o.s", "o.h"})
+        check(not left and (r.returncode != 0) == (what == "an error"), "temporary files after %s (%s): %s (rc %d)" % (what, "TMPDIR" if tmpdir else "no TMPDIR", left, r.returncode))
+        for f in ("o.s", "o.h"):
+            if os.path.exists(os.path.join(td, f)): os.remove(os.path.join(td, f))
 
 print("cmunge: -p with -D / -U / -I, -o, and the options that are refused")
 pp = os.path.join(W, "pp.cmhg")
@@ -167,10 +255,20 @@ for defs in ([], ["-DBIG"], ["-D", "BIG=1"], ["-UBIG"], ["-DBIG", "-UBIG"]):
         r = run(cmd + ["-tgcc", "-32bit", "-p"] + defs + ["-s", d + "/o.s", "-d", d + "/o.h", "-o", d + "/o.o", pp])
         out[tool] = (r.returncode, open(d + "/o.s", "rb").read() if os.path.exists(d + "/o.s") else None, open(d + "/o.h", "rb").read() if os.path.exists(d + "/o.h") else None, os.path.exists(d + "/o.o") and os.path.getsize(d + "/o.o") > 100)
     check(out["py"] == out["c"] and out["c"][0] == 0, "-p %s: %s" % (defs, "different" if out["py"] != out["c"] else "failed"))
-for opt in (["-zbase"], ["-zoslib"], ["-tnorcroft"], ["-26bit"], ["-x", "h"], ["-apcs", "3"], ["-bogus"], ["-depend", "x"]):
+for opt in (["-zbase"], ["-zoslib"], ["-tnorcroft"], ["-26bit"], ["-x", "h"], ["-apcs", "26"], ["-apcs", "3/reent"], ["-apcs", "3/26bit"], ["-apcs", "3/bogus"], ["-apcs"], ["-bogus"], ["-depend", "x"]):
     rp = run([os.path.join(KIT, "bin", "cmunge")] + opt + ["-d", os.path.join(W, "x.h"), real[0]])
     rc = run([os.path.join(BIN, "cmunge")] + opt + ["-d", os.path.join(W, "x.h"), real[0]])
     check(rp.returncode != 0 and rc.returncode != 0, "cmunge %s is refused by both (py %d, c %d)" % (" ".join(opt), rp.returncode, rc.returncode))
+
+for opt in (["-apcs", "3"], ["-apcs", "3/nofpregargs"], ["-apcs", "3/32bit/fpe3/nonreent/swst"], ["-apcs", "32/nofp"]):             # accepted, and without effect on the output
+    outs = []
+    for cmd in ([sys.executable, os.path.join(KIT, "bin", "cmunge")], [os.path.join(BIN, "cmunge")]):
+        d = tempfile.mkdtemp(dir=W)
+        r = run(cmd + ["-tgcc", "-32bit"] + opt + ["-s", d + "/o.s", "-d", d + "/o.h", real[0]])
+        outs.append((r.returncode, open(d + "/o.s", "rb").read() if os.path.exists(d + "/o.s") else None))
+    base = tempfile.mkdtemp(dir=W)
+    run([os.path.join(BIN, "cmunge"), "-tgcc", "-32bit", "-s", base + "/o.s", "-d", base + "/o.h", real[0]])
+    check(outs[0][0] == 0 and outs[1][0] == 0 and outs[0][1] == outs[1][1] == open(base + "/o.s", "rb").read(), "cmunge %s is accepted by both and changes nothing" % " ".join(opt))
 
 # ================================================================ modreloc
 print("modreloc")

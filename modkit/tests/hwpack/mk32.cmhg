@@ -1,0 +1,24 @@
+; MK32: the features of cmunge that the simulations cannot prove: international help, add-syntax, a SWI prefix that is not the title, a generic veneer called by the real kernel, a module that is also a program
+; (pack/module32 of the work area; the simulation is tests/sim-mk32.py)
+title-string:           MK32
+help-string:            MK32 0.32
+date-string:            07 Oct 2026
+
+initialisation-code:    mk_init
+finalisation-code:      mk_final
+module-is-runnable:
+international-help-file: "MK32:Messages"
+
+swi-chunk-base-number:  0xC0A00
+swi-decoding-table:     MKTest Add Sub Name Fail
+swi-handler-code:       mk_swi
+
+generic-veneers:        mk_gv/mk_gv_handler, mk_after/mk_after_handler
+
+command-keyword-table:  mk_command
+  MK32_Plain(min-args: 0, max-args: 2, help-text: "*MK32_Plain does nothing.\n", invalid-syntax: "Syntax: *MK32_Plain [a] [b]"),
+  MK32_Tokens(min-args: 0, max-args: 1, international:, help-text: "HELPTOK", invalid-syntax: "SYNTOK"),
+  MK32_Joined(min-args: 0, max-args: 3, add-syntax:, help-text: "*MK32_Joined takes up to three words.\n", invalid-syntax: "Syntax: *MK32_Joined [<a> [<b> [<c>]]]"),
+  MK32_Try(min-args: 1, max-args: 255, help-text: "*MK32_Try <command> runs the command and prints the error that it gives.\n", invalid-syntax: "Syntax: *MK32_Try <command>"),
+  MK32_SelfTest(min-args: 0, max-args: 0, help-text: "*MK32_SelfTest checks the SWIs, the generic veneer and the environment in SVC mode.\n", invalid-syntax: "Syntax: *MK32_SelfTest"),
+  MK32_After(min-args: 1, max-args: 1, help-text: "*MK32_After <cs> calls the generic veneer mk_after every <cs> centiseconds for one second (OS_CallEvery).\n", invalid-syntax: "Syntax: *MK32_After <cs>")

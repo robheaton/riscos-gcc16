@@ -35,3 +35,7 @@ u32 __aeabi_uidiv (u32 n, u32 d) { return udivmod (n, d, 0); }
 uqr __aeabi_uidivmod (u32 n, u32 d) { uqr x; x.q = udivmod (n, d, &x.r); return x; }
 s32 __aeabi_idiv (s32 n, s32 d) { return __divsi3 (n, d); }
 sqr __aeabi_idivmod (s32 n, s32 d) { sqr x; x.q = __divsi3 (n, d); x.r = __modsi3 (n, d); return x; }
+
+/* division by zero does not trap in a module.  The hooks that libgcc's own division functions call (the 64 bit ones, which libgcc supplies, divide by zero through these) give the result they were handed. */
+int __aeabi_idiv0 (int r) { return r; }
+long long __aeabi_ldiv0 (long long r) { return r; }

@@ -7,7 +7,8 @@ The command line of GCCSDK's CMunge 0.xx (what its makefiles use: cmunge -tgcc -
   -o FILE   the object: the generated assembler source assembled for ARMv6 (arm-riscos-gnueabihf-gcc, the one next to this script or on PATH; CMUNGE_CC overrides it)
   -s FILE   the generated assembler source (kept)          -d FILE   the C header (Module_Title, CMD_<name>, ... and the prototypes of your handlers)
   -p, -px   run the C preprocessor over the file first (-D, -U and -I go to it); the included files are processed as part of the text in both modes
-Accepted and without effect, because the model has nothing to switch: -tgcc, -32bit, -znoscl, -throwback, -cmhg.  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs, -zbase, -zerrors,
+Accepted and without effect, because the model has nothing to switch: -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of
+anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zbase, -zerrors,
 -zoslib, -blank, -x<type>, -depend) is refused with a message instead of being ignored: a module that needs it would be built wrong.
 What of the CMHG language is supported: bin/mkmodhdr.py.  The RISC OS numbers come from the RISC OS Open sources: set RISCOS_SOURCES to a checkout (see modkit/README.md)."""
 import os, shutil, subprocess, sys, tempfile
@@ -34,6 +35,23 @@ def find_cc():
     die("no arm-riscos-gnueabihf-gcc: put it on PATH or set CMUNGE_CC")
 
 
+APCS_HARMLESS = {"32bit", "nofp", "fp", "fpe2", "fpe3", "fpregargs", "nofpregargs", "swst", "noswst", "nonreent"}
+
+
+def check_apcs(spec):
+    """-apcs 3/nofpregargs and the like: accepted and ignored when the flags only choose a calling convention that the model has one of anyway; APCS-26 and reentrant (PIC) modules are refused"""
+    toks = spec.split("/")
+    if toks[0] not in ("3", "32"):
+        die("-apcs %s: only APCS-32 (3/...) is supported" % spec)
+    for tok in toks[1:]:
+        if tok == "26bit":
+            die("-apcs %s: 26 bit code is not supported by the modkit version of cmunge" % spec)
+        if tok in ("reent", "reentrant", "pic"):
+            die("-apcs %s: reentrant (position independent) modules are not supported: the module relocates itself" % spec)
+        if tok not in APCS_HARMLESS:
+            die("-apcs %s: the flag %s is not known to the modkit version of cmunge" % (spec, tok))
+
+
 def main(argv):
     out_o = out_s = out_h = infile = None
     pre = False
@@ -43,9 +61,14 @@ def main(argv):
         a = argv[i]
         if a in NOOP:
             pass
-        elif a in ("-o", "-s", "-d") or a in ("-apcs", "-depend"):
-            if a in ("-apcs", "-depend"):
-                die("%s is not supported (modkit has one calling standard and no AMU dependency files)" % a)
+        elif a == "-apcs":
+            i += 1
+            if i >= len(argv):
+                die("-apcs needs a specification such as 3/nofpregargs")
+            check_apcs(argv[i])
+        elif a == "-depend":
+            die("%s is not supported (modkit has no AMU dependency files)" % a)
+        elif a in ("-o", "-s", "-d"):
             i += 1
             if i >= len(argv):
                 die("%s needs a file name" % a)
@@ -82,10 +105,10 @@ def main(argv):
         if pre:
             src = os.path.join(tmp, os.path.basename(infile))
             # assembler-with-cpp: the preprocessor does not choke on the apostrophes of the ';' comments
-            r = subprocess.run([find_cc(), "-E", "-P", "-x", "assembler-with-cpp"] + cpp + [infile], capture_output=True, text=True)
+            r = subprocess.run([find_cc(), "-E", "-P", "-x", "assembler-with-cpp"] + cpp + [infile], capture_output=True)
             if r.returncode:
-                sys.stderr.write(r.stderr); die("the preprocessor failed on %s" % infile)
-            open(src, "w").write(r.stdout)
+                sys.stderr.write(r.stderr.decode("latin-1")); die("the preprocessor failed on %s" % infile)
+            open(src, "wb").write(r.stdout)                                  # bytes: the files are RISC OS text (Latin-1), not UTF-8
         asm = out_s or os.path.join(tmp, "module.s")
         cmd = [sys.executable, os.path.join(HERE, "mkmodhdr.py"), "-s", asm]
         if out_h:

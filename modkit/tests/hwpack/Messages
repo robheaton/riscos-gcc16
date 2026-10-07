@@ -1,0 +1,5 @@
+# Messages file of MK32 (the hardware test of modkit): the tokens of the international help.
+# The value of a help or syntax token ends with a NUL (CHR$ 0) before the line end: *Help reads it in place with OS_PrettyPrint, which stops only at a NUL, and the text of a syntax error is copied up to
+# the NUL.  tests/hwpack/Messages is the plain text; pack/make-pack33.py adds the NULs.
+HELPTOK:*MK32_Tokens shows a help text that is looked up in the Messages file.
+SYNTOK:Syntax: *MK32_Tokens [<text>]

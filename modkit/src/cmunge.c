@@ -6,7 +6,8 @@ Reads a CMHG file and writes
   -s  the module header and the veneers as GNU assembler source        -d  the C header (Module_Title, CMD_<name>, the prototypes of your handlers)
   -o  the object: the assembler source assembled for ARMv6 by the compiler (CMUNGE_CC, else the cross compiler next to this program or on PATH; on RISC OS: gcc)
   -p, -px  run the C preprocessor over the file first (-D, -U and -I go to it)
-Accepted and without effect (the model has nothing to switch): -tgcc, -32bit, -znoscl, -throwback, -cmhg.  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs, -zbase, -zerrors,
+Accepted and without effect (the model has nothing to switch): -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of anyway
+(nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zbase, -zerrors,
 -zoslib, -blank, -x<type>, -depend) is refused with a message, not ignored: a module that needs it would be built wrong.
 
 The CMHG language that is supported (anything else is an error, nothing is dropped silently):
@@ -14,10 +15,16 @@ The CMHG language that is supported (anything else is an error, nothing is dropp
   initialisation-code: FN          _kernel_oserror *FN (const char *tail, int podule_base, void *pw)
   finalisation-code: FN            _kernel_oserror *FN (int fatal, int podule_base, void *pw)
   service-call-handler: FN [N ...] void FN (int service_number, _kernel_swi_regs *r, void *pw);  with service numbers the kernel only calls it for those; to claim a call the handler sets r->r[1] = 0
-  command-keyword-table: FN        name (min-args: n, max-args: m, gstrans-map: bits, help-text: "...", invalid-syntax: "...")   -  _kernel_oserror *FN (const char *arg_string, int argc, int number, void *pw)
+  command-keyword-table: FN        name (min-args: n, max-args: m, gstrans-map: bits, help-text: "...", invalid-syntax: "...", and the flags below)   -  _kernel_oserror *FN (const char *arg_string, int argc, int number, void *pw)
+                                   flags of a command (no value): international: (help-text and invalid-syntax are tokens of the Messages file), add-syntax: (the syntax text follows the help text: *Help
+                                   shows both), configure: / status: (a *Configure / *Status command), fs-command: (a command of this filing system module).  (help: is refused, as CMunge refuses it)
+  international-help-file: "NAME"  the Messages file (as MessageTrans names it, e.g. "Resources:$.Resources.Foo.Messages"; adjacent strings are joined) that the international: texts come from; header word 11,
+                                   and #define Module_MessagesFile in the C header
   swi-chunk-base-number: N, swi-decoding-table: PREFIX NAME ..., swi-handler-code: FN     _kernel_oserror *FN (int swi_offset, _kernel_swi_regs *r, void *pw)
   irq-handlers:, vector-handlers:, generic-veneers: ENTRY/FN, ...     int FN (_kernel_swi_regs *r, void *pw)
-  module-is-runnable:              ignored with a warning (there is no start code in this model)
+  module-is-runnable:              the module has a start entry: *RMRun Module args (OS_Module Enter) calls it in USER mode; it takes the top of the application memory (OS_GetEnv) as its stack and calls
+                                   int main (int argc, char **argv) - argv[0] is the title, the arguments are the words of the command tail ("..." groups) - and ends the program with its result (libmodkit's
+                                   __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
 The generated code relocates the image once, in its initialisation (modreloc appends the table of address words; see modkit/README.md). */
 #include <ctype.h>
 #include <stdarg.h>
@@ -31,7 +38,8 @@ The generated code relocates the image once, in its initialisation (modreloc app
 typedef struct
 {
   char *name;
-  unsigned min, max, gstrans, flags;
+  unsigned min, max, gstrans;
+  int fs_command, status_cmd, international, add_syntax;      /* the flags of the information word: bits 31, 30 (status / configure), 28; add-syntax joins the two texts */
   unsigned char *help; size_t helplen; int has_help;
   unsigned char *syntax; size_t synlen; int has_syntax;
 } Cmd;
@@ -46,6 +54,7 @@ typedef struct
   unsigned swi_chunk; char *swi_prefix; char **swi_names; int nswi; char *swi_handler;
   Veneer *ven; int nven;
   int runnable;
+  unsigned char *mfile; size_t mfilelen;                    /* international-help-file: the name of the Messages file */
 } Module;
 
 static const char *srcname;                  /* the CMHG file, for messages */
@@ -110,13 +119,86 @@ static unsigned parse_int (const char *s)
 /* ---------------------------------------------------------------- the CMHG parser */
 typedef struct { char *key; char *rest; } Line;
 
+/* a ';' that is not inside a string starts a comment that runs to the end of the line (the line end stays) */
+static char *strip_comments (const char *text)
+{
+  Buf o;
+  const char *p = text;
+  int inq = 0;
+  buf_init (&o);
+  while (*p)
+    {
+      char c = *p;
+      if (inq)
+        {
+          buf_addc (&o, c);
+          if (c == '\\' && p[1]) { buf_addc (&o, p[1]); p += 2; continue; }
+          if (c == '"' || c == '\n') inq = 0;
+        }
+      else if (c == '"') { inq = 1; buf_addc (&o, c); }
+      else if (c == ';')
+        {
+          while (*p && *p != '\n') p++;
+          continue;
+        }
+      else buf_addc (&o, c);
+      p++;
+    }
+  return o.s;
+}
+
+/* the depth of the parentheses that are open at the end of S (not counting the ones inside strings) and its last character that is not white space */
+static void depth_and_last (const char *s, int *depth, int *last)
+{
+  int inq = 0;
+  *depth = 0; *last = 0;
+  while (*s)
+    {
+      char c = *s;
+      if (inq)
+        {
+          if (c == '\\') { s++; if (*s) s++; continue; }
+          if (c == '"') inq = 0;
+        }
+      else if (c == '"') { inq = 1; *last = c; }
+      else
+        {
+          if (c == '(') (*depth)++; else if (c == ')') (*depth)--;
+          if (!is_space ((unsigned char) c)) *last = c;
+        }
+      s++;
+    }
+}
+
+/* the text is the name of a handler and nothing else: [ws] name [ws] */
+static int handler_only (const char *s)
+{
+  while (is_space ((unsigned char) *s)) s++;
+  if (!(is_alpha ((unsigned char) *s) || *s == '_')) return 0;
+  while (is_word ((unsigned char) *s)) s++;
+  while (is_space ((unsigned char) *s)) s++;
+  return *s == 0;
+}
+
+/* the line starts with  key:  (a letter, letters, digits, _ and -, blanks, a colon) */
+static int directive_line (const char *s)
+{
+  if (!is_alpha ((unsigned char) *s)) return 0;
+  s++;
+  while (is_word ((unsigned char) *s) || *s == '-') s++;
+  while (is_space ((unsigned char) *s)) s++;
+  return *s == ':';
+}
+
+/* [key (lower case), the text after the colon]: a line goes on in the next one when the next one starts with white space, when it ends in a comma or has a parenthesis open, and - for the command table -
+   when it holds the name of the handler and nothing else (the entries then follow, at the start of the line or not) */
 static Line *logical_lines (const char *text, int *nlines)
 {
+  char *clean = strip_comments (text);
   Line *out = NULL;
   int n = 0;
-  Buf *cur = NULL;
   Buf *bufs = NULL;
-  const char *p = text;
+  const char *p = clean;
   for (;;)
     {
       const char *nl = strchr (p, '\n');
@@ -127,14 +209,22 @@ static Line *logical_lines (const char *text, int *nlines)
       line = xstrndup (p, len);
       l = line;
       while (*l && is_space ((unsigned char) *l)) l++;
-      if (*l && *l != ';')
+      if (*l)
         {
-          if ((line[0] == ' ' || line[0] == '\t') && cur)
+          int more = 0;
+          if (n > 0)
             {
-              buf_addc (cur, '\n');
-              buf_adds (cur, line);
+              int depth, last;
+              depth_and_last (bufs[n - 1].s, &depth, &last);
+              more = depth > 0 || last == ',' || line[0] == ' ' || line[0] == '\t';
+              if (!more && strcmp (out[n - 1].key, "command-keyword-table") == 0 && handler_only (bufs[n - 1].s) && !directive_line (line)) more = 1;
+              if (more)
+                {
+                  buf_addc (&bufs[n - 1], '\n');
+                  buf_adds (&bufs[n - 1], line);
+                }
             }
-          else
+          if (!more)
             {
               size_t k = 0, j;
               if (!is_alpha ((unsigned char) line[0])) cmhg_error ("cannot parse the line: '%s'", line);
@@ -152,7 +242,6 @@ static Line *logical_lines (const char *text, int *nlines)
               buf_init (&bufs[n]);
               buf_adds (&bufs[n], line + j);
               n++;
-              cur = &bufs[n - 1];
             }
         }
       free (line);
@@ -161,8 +250,37 @@ static Line *logical_lines (const char *text, int *nlines)
     }
   { int i; for (i = 0; i < n; i++) out[i].rest = bufs[i].s; }
   free (bufs);
+  free (clean);
   *nlines = n;
   return out;
+}
+
+/* the CMHG of the RISC OS build has names in quotes (a macro gives "RTC"): the quotes of the first word, or of the whole value, are taken away */
+static char *unquote_first (const char *s)
+{
+  char *t = strip (s);
+  if (t[0] == '"')
+    {
+      char *j = strchr (t + 1, '"');
+      if (j)
+        {
+          Buf b;
+          buf_init (&b);
+          buf_addn (&b, t + 1, (size_t) (j - t - 1));
+          buf_adds (&b, j + 1);
+          free (t);
+          return b.s;
+        }
+    }
+  return t;
+}
+/* Python's  s.strip ('"') */
+static char *strip_quotes (char *s)
+{
+  size_t a = 0, b = strlen (s);
+  while (a < b && s[a] == '"') a++;
+  while (b > a && s[b - 1] == '"') b--;
+  return xstrndup (s + a, b - a);
 }
 
 static unsigned char escape_char (char e)
@@ -251,7 +369,7 @@ static void parse_command_table (const char *rest, Module *m)
       c = &m->cmds[n++];
       memset (c, 0, sizeof *c);
       c->name = xstrndup (rest + pos, k - pos);
-      c->min = 0; c->max = 255;
+      c->min = 0; c->max = 0;
       pos = k;
       while (pos < len && is_space ((unsigned char) rest[pos])) pos++;
       if (pos < len && rest[pos] == '(')
@@ -295,6 +413,10 @@ static void parse_command_table (const char *rest, Module *m)
                   else c->gstrans = parse_int (num);
                   free (num);
                 }
+              else if (strcmp (key, "international") == 0) c->international = 1;
+              else if (strcmp (key, "add-syntax") == 0) c->add_syntax = 1;
+              else if (strcmp (key, "configure") == 0 || strcmp (key, "status") == 0) c->status_cmd = 1;
+              else if (strcmp (key, "fs-command") == 0) c->fs_command = 1;
               else if (strcmp (key, "help-text") == 0)
                 {
                   c->help = parse_string_literals (rest, &pos, &c->helplen);
@@ -308,6 +430,10 @@ static void parse_command_table (const char *rest, Module *m)
               else cmhg_error ("command option '%s' is not supported", key);
               free (key);
             }
+          if (c->min > 255) cmhg_error ("min-args: must be between 0 and 255 in command %s", c->name);
+          if (c->max > 255) cmhg_error ("max-args: must be between 0 and 255 in command %s", c->name);
+          if (c->gstrans > 255) cmhg_error ("gstrans-map: may only describe 8 bits in command %s", c->name);
+          if (c->add_syntax && c->international) cmhg_error ("add-syntax: and international: are mutually exclusive in command %s", c->name);
         }
     }
   if (!n) cmhg_error ("the command-keyword-table has no commands");
@@ -332,9 +458,9 @@ static void parse_cmhg (const char *text, Module *m)
     {
       const char *key = lines[i].key;
       char *r = strip (lines[i].rest);
-      if (strcmp (key, "title-string") == 0) m->title = r;
-      else if (strcmp (key, "help-string") == 0) m->help = r;
-      else if (strcmp (key, "date-string") == 0) m->date = r;
+      if (strcmp (key, "title-string") == 0) m->title = unquote_first (r);
+      else if (strcmp (key, "help-string") == 0) m->help = unquote_first (r);
+      else if (strcmp (key, "date-string") == 0) m->date = unquote_first (r);
       else if (strcmp (key, "initialisation-code") == 0) m->init = r;
       else if (strcmp (key, "finalisation-code") == 0) m->final = r;
       else if (strcmp (key, "service-call-handler") == 0)
@@ -350,15 +476,20 @@ static void parse_cmhg (const char *text, Module *m)
             }
         }
       else if (strcmp (key, "command-keyword-table") == 0) parse_command_table (lines[i].rest, m);
-      else if (strcmp (key, "swi-chunk-base-number") == 0) m->swi_chunk = parse_int (r);
+      else if (strcmp (key, "swi-chunk-base-number") == 0)
+        {
+          m->swi_chunk = parse_int (r);
+          if (m->swi_chunk == 0 || (m->swi_chunk & 0x3f)) cmhg_error ("swi-chunk-base-number: 0x%08x is not a SWI chunk (a multiple of 64, not 0)", m->swi_chunk);
+          if (m->swi_chunk & 0x20000) cmhg_error ("swi-chunk-base-number: 0x%08x has the X bit set (&20000)", m->swi_chunk);
+        }
       else if (strcmp (key, "swi-decoding-table") == 0)
         {
           int np, k;
           char **w = split_words (r, 1, &np);
           if (np < 1) cmhg_error ("swi-decoding-table: needs the prefix");
-          m->swi_prefix = w[0];
+          m->swi_prefix = strip_quotes (w[0]);
           m->swi_names = np > 1 ? xmalloc (sizeof (char *) * (size_t) (np - 1)) : NULL;
-          for (k = 1; k < np; k++) m->swi_names[k - 1] = w[k];
+          for (k = 1; k < np; k++) m->swi_names[k - 1] = strip_quotes (w[k]);
           m->nswi = np - 1;
         }
       else if (strcmp (key, "swi-handler-code") == 0) m->swi_handler = r;
@@ -366,23 +497,37 @@ static void parse_cmhg (const char *text, Module *m)
         {
           int np, k;
           char **w = split_words (r, 1, &np);
+          if (strchr (r, '(')) cmhg_error ("%s: handler options such as private-word: and carry-capable: are not supported", key);
           for (k = 0; k < np; k++)
             {
               char *slash = strchr (w[k], '/');
-              if (!slash) cmhg_error ("%s: ENTRY/HANDLER was expected, got '%s'", key, w[k]);
-              *slash = 0;
-              add_veneer (m, key, w[k], slash + 1);
+              if (slash) { *slash = 0; add_veneer (m, key, w[k], slash + 1); }
+              else
+                {
+                  Buf hb;                                                     /* CMunge: the handler of NAME is NAME_handler */
+                  buf_init (&hb);
+                  buf_adds (&hb, w[k]);
+                  buf_adds (&hb, "_handler");
+                  add_veneer (m, key, w[k], hb.s);
+                  free (hb.s);
+                }
             }
         }
-      else if (strcmp (key, "module-is-runnable") == 0)
+      else if (strcmp (key, "module-is-runnable") == 0) m->runnable = 1;
+      else if (strcmp (key, "international-help-file") == 0)
         {
-          m->runnable = 1;
-          fprintf (stderr, "%s: warning: module-is-runnable: ignored (this model has no start code)\n", progname);
+          size_t pos = 0;
+          m->mfile = parse_string_literals (lines[i].rest, &pos, &m->mfilelen);
         }
       else cmhg_error ("%s: is not supported", key);
     }
   if (!m->title || !*m->title) cmhg_error ("title-string: is missing");
   if (!m->help || !*m->help) cmhg_error ("help-string: is missing");
+  /* the SWIs of a module: a chunk, a handler and a decoding table go together (CMunge: a prefix of the module's title when there is no table) */
+  if (m->swi_handler && !m->swi_chunk) cmhg_error ("swi-handler-code: needs a swi-chunk-base-number:");
+  if (m->swi_chunk && !m->swi_handler) cmhg_error ("swi-chunk-base-number: needs a swi-handler-code:");
+  if (m->swi_prefix && !m->swi_chunk) cmhg_error ("swi-decoding-table: needs a swi-chunk-base-number:");
+  if (m->swi_handler && !m->swi_prefix) m->swi_prefix = xstrdup (m->title);
 }
 
 /* ---------------------------------------------------------------- the generators */
@@ -438,11 +583,73 @@ static char *asm_bytes (const unsigned char *b, size_t n)
   return out.s;
 }
 
-static const char *version_of (const Module *m)       /* the part of the help string after the title (the whole string when it does not start with it) */
+/* CMunge's DateStamp: the help-string is a name (the words up to the first one that starts with a digit), a version (digits, a dot, digits and what follows up to a blank) and a rest.  The version number
+   is the digits of the version before and after the dot read as one number (1.23 is 123, 1.5 is 15). */
+typedef struct { char *name, *version, *rest; unsigned vnum; } Help;
+static void split_help (const char *help_string, Help *h)
 {
-  size_t tl = strlen (m->title);
-  if (strncmp (m->help, m->title, tl) == 0) return m->help + tl;
-  return m->help;
+  const char *s = help_string;
+  size_t n, pos = 0, j, i;
+  Buf name, digits;
+  while (*s && is_space ((unsigned char) *s)) s++;
+  n = strlen (s);
+  buf_init (&name); buf_init (&digits);
+  for (;;)
+    {
+      int more;
+      j = pos;
+      while (j < n && !is_space ((unsigned char) s[j])) j++;
+      buf_addn (&name, s + pos, j - pos);
+      pos = j;
+      while (pos < n && is_space ((unsigned char) s[pos])) pos++;
+      more = pos < n && !(s[pos] >= '0' && s[pos] <= '9');
+      if (more) buf_addc (&name, ' '); else break;
+    }
+  if (pos >= n || !(s[pos] >= '0' && s[pos] <= '9')) cmhg_error ("Malformed help-string found: %s", help_string);
+  j = pos;
+  while (j < n && s[j] >= '0' && s[j] <= '9') buf_addc (&digits, s[j++]);
+  if (j >= n || s[j] != '.') cmhg_error ("Malformed help-string found: %s", help_string);
+  j++;
+  while (j < n && s[j] >= '0' && s[j] <= '9') buf_addc (&digits, s[j++]);
+  while (j < n && !is_space ((unsigned char) s[j])) j++;
+  h->version = xstrndup (s + pos, j - pos);
+  pos = j;
+  while (pos < n && is_space ((unsigned char) s[pos])) pos++;
+  h->rest = xstrdup (s + pos);
+  h->name = name.s;
+  h->vnum = 0;
+  for (i = 0; i < digits.len; i++) h->vnum = h->vnum * 10 + (unsigned) (digits.s[i] - '0');
+  free (digits.s);
+}
+
+/* the help line of the module: the name, one or two tabs (to column 16), the version, the date in brackets, the rest; underscores are blanks */
+static char *help_line (const Module *m)
+{
+  Help h;
+  Buf b;
+  char *c;
+  split_help (m->help, &h);
+  buf_init (&b);
+  buf_adds (&b, h.name);
+  buf_adds (&b, ((strlen (h.name) + 8) & ~(size_t) 7) >= 16 ? "\t" : "\t\t");
+  buf_adds (&b, h.version);
+  if (m->date && *m->date) { buf_adds (&b, " ("); buf_adds (&b, m->date); buf_adds (&b, ")"); }
+  if (*h.rest) { buf_addc (&b, ' '); buf_adds (&b, h.rest); }
+  for (c = b.s; *c; c++) if (*c == '_') *c = ' ';
+  free (h.name); free (h.version); free (h.rest);
+  return b.s;
+}
+
+/* the part of I that one ARM immediate (8 bits at an even position) can hold, from the lowest set bit up: CMunge's representable () */
+static unsigned representable (unsigned i)
+{
+  unsigned mask = 255;
+  while (((i & mask) & ~(mask << 2)) == 0)
+    {
+      mask = (mask << 2) | (mask >> 30);
+      if (mask == 255) break;                                              /* I is 0: every window is empty */
+    }
+  return i & mask;
 }
 
 static int cmp_unsigned (const void *a, const void *b)
@@ -454,64 +661,76 @@ static int cmp_unsigned (const void *a, const void *b)
 static char *generate_asm (const Module *m, const char *src)
 {
   Out o;
-  char *ver, *helpline, *hb;
-  size_t tl = strlen (m->title);
+  char *helpline, *hb;
   int has_svc = m->service != NULL, has_swi = m->swi_handler != NULL, i, k;
   int ncmds = m->ncmds;
   unsigned *nums = NULL;
   int nn = 0;
-  Buf hl;
+  int share = 0;                                          /* the decoding table of the SWIs is the title string when the SWI prefix is the title (as it was) */
 
-  ver = strip (version_of (m));
-  buf_init (&hl);
-  buf_adds (&hl, m->title);
-  buf_adds (&hl, tl < 8 ? "\t\t" : "\t");
-  buf_adds (&hl, strncmp (m->help, m->title, tl) == 0 ? ver : m->help);
-  if (m->date && *m->date) { buf_adds (&hl, " ("); buf_adds (&hl, m->date); buf_adds (&hl, ")"); }
-  helpline = hl.s;
-  /* (Python: ver = help[len (title):].strip () if help starts with the title else help (unstripped)) */
+  helpline = help_line (m);
+  if (has_swi && m->swi_prefix && strlen (m->swi_prefix) == strlen (m->title))
+    {
+      share = 1;
+      for (k = 0; m->swi_prefix[k]; k++) if (tolower ((unsigned char) m->swi_prefix[k]) != tolower ((unsigned char) m->title[k])) share = 0;
+    }
 
   out_init (&o);
   A (&o, "@ Generated by mkmodhdr.py from %s.  The module header and the veneers of the module; see modkit/README.md.  DO NOT EDIT.", base_name (src));
   A (&o, "\t.syntax\tunified\n\t.arm");
   A (&o, "\t.equ\tXOS_SynchroniseCodeAreas, %s", hx (0x2006E));
+  if (m->runnable) A (&o, "\t.equ\tOS_GetEnv, 0x10");
   A (&o, "\t.section\t\".text.header\",\"ax\"\n\t.global\t_start\n_start:");
-  A (&o, "\t.word\t0\t\t\t\t@ start code (none)");
-  A (&o, "\t.word\tinit - _start\n\t.word\tfinal - _start");
+  A (&o, "\t.word\t%s", m->runnable ? "start - _start\t\t\t@ start code (module-is-runnable)" : "0\t\t\t\t@ start code (none)");
+  A (&o, "\t.word\tinit - _start\n\t.word\t%s", m->final ? "final - _start" : "0\t\t\t\t@ finalisation (none)");
   A (&o, "\t.word\t%s", has_svc ? "service - _start\t\t@ service call handler" : "0\t\t\t\t@ service call handler (none)");
   A (&o, "\t.word\ttitle - _start\n\t.word\thelp - _start");
   A (&o, "\t.word\t%s", ncmds ? "cmdtab - _start" : "0");
   A (&o, "\t.word\t%s\t\t\t@ SWI chunk base", hx (has_swi ? m->swi_chunk : 0));
   A (&o, "\t.word\t%s", has_swi ? "swi_entry - _start" : "0");
-  A (&o, "\t.word\t%s", has_swi && m->swi_prefix ? "title - _start\t\t@ the decoding table shares the title string" : "0");
-  A (&o, "\t.word\t0\t\t\t\t@ SWI decoding code\n\t.word\t0\t\t\t\t@ messages file\n\t.word\tflags - _start");
+  A (&o, "\t.word\t%s", share ? "title - _start\t\t@ the decoding table shares the title string" : has_swi && m->swi_prefix ? "swi_table - _start" : "0");
+  A (&o, "\t.word\t0\t\t\t\t@ SWI decoding code\n\t.word\t%s\n\t.word\tflags - _start", m->mfile ? "msgfile - _start\t\t@ messages file (international-help-file)" : "0\t\t\t\t@ messages file");
   A (&o, "title:\n\t.asciz\t\"%s\"", m->title);
-  if (has_swi && m->swi_prefix)
+  if (share)
     {
-      const char *p = m->swi_prefix, *t = m->title;
-      int same = strlen (p) == strlen (t);
-      for (k = 0; same && p[k]; k++) if (tolower ((unsigned char) p[k]) != tolower ((unsigned char) t[k])) same = 0;
-      if (!same) cmhg_error ("this model shares the title string with the SWI decoding table: the SWI prefix (%s) must be the title (%s)", m->swi_prefix, m->title);
       for (i = 0; i < m->nswi; i++) A (&o, "\t.asciz\t\"%s\"", m->swi_names[i]);
       A (&o, "\t.byte\t0\t\t\t\t@ end of the SWI table");
     }
   hb = asm_bytes ((const unsigned char *) helpline, strlen (helpline));
   A (&o, "help:\n%s\n\t.byte\t0\n\t.align\t2", hb);
   free (hb);
+  if (m->mfile)
+    {
+      char *s = asm_bytes (m->mfile, m->mfilelen);
+      A (&o, "msgfile:\n%s\n\t.byte\t0", s);
+      free (s);
+    }
+  if (has_swi && m->swi_prefix && !share)
+    {
+      A (&o, "swi_table:\n\t.asciz\t\"%s\"", m->swi_prefix);
+      for (i = 0; i < m->nswi; i++) A (&o, "\t.asciz\t\"%s\"", m->swi_names[i]);
+      A (&o, "\t.byte\t0\t\t\t\t@ end of the SWI table");
+    }
   /* command table */
   if (ncmds)
     {
       for (i = 0; i < ncmds; i++)
         {
           const Cmd *c = &m->cmds[i];
-          if (c->has_help) { char *s = asm_bytes (c->help, c->helplen); A (&o, "ht%d:\n%s\n\t.byte\t0", i, s); free (s); }
+          if (c->has_help)
+            {
+              char *s = asm_bytes (c->help, c->helplen);
+              if (c->add_syntax && c->has_syntax) A (&o, "ht%d:\n%s", i, s);                    /* the syntax text follows at once: *Help shows both, the error only the syntax */
+              else A (&o, "ht%d:\n%s\n\t.byte\t0", i, s);
+              free (s);
+            }
           if (c->has_syntax) { char *s = asm_bytes (c->syntax, c->synlen); A (&o, "is%d:\n%s\n\t.byte\t0", i, s); free (s); }
         }
       A (&o, "\t.align\t2\ncmdtab:");
       for (i = 0; i < ncmds; i++)
         {
           const Cmd *c = &m->cmds[i];
-          unsigned info = c->min | (c->gstrans << 8) | ((c->max < 255 ? c->max : 255) << 16) | (c->flags << 24);
+          unsigned info = c->min | (c->gstrans << 8) | (c->max << 16) | ((unsigned) c->fs_command << 31) | ((unsigned) c->status_cmd << 30) | ((unsigned) c->international << 28);
           char buf[64];
           A (&o, "\t.asciz\t\"%s\"\n\t.align\t2", c->name);
           A (&o, "\t.word\tcmd%d - _start\t\t@ code", i);
@@ -534,9 +753,18 @@ static char *generate_asm (const Module *m, const char *src)
   A (&o, "rdone:\tmov\tr0, #1\n\tmov\tr1, r4\n\tldr\tr2, =__image_end\n\tsub\tr2, r2, #1\n\tswi\tXOS_SynchroniseCodeAreas\nrelocated:");
   if (m->init) A (&o, "\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone", m->init);
   else A (&o, "\tmov\tr0, #0\n\tb\tdone");
-  A (&o, "\nfinal:\n\tstmfd\tsp!, {r4-r11, lr}");
-  if (m->final) A (&o, "\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone", m->final);
-  else A (&o, "\tmov\tr0, #0\n\tb\tdone");
+  if (m->final)
+    {
+      A (&o, "\nfinal:\n\tstmfd\tsp!, {r4-r11, lr}");
+      A (&o, "\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone", m->final);
+    }
+  if (m->runnable)
+    {
+      A (&o, "%s", "");
+      A (&o, "@ ---- module-is-runnable: entered in USER mode by *RMRun / OS_Module Enter with r0 = the command tail and r12 = the private word; the stack is the top of the application memory (OS_GetEnv).\n"
+             "@ __modlib_start (tail, title) of libmodkit builds argc / argv, calls main and ends the program with its result (OS_Exit): it does not come back.\n"
+             "\t.balign\t4\nstart:\n\tmov\tr4, r0\n\tswi\tOS_GetEnv\n\tbic\tsp, r1, #7\n\tmov\tr0, r4\n\tadrl\tr1, title\n\tbl\t__modlib_start");
+    }
   /* commands */
   if (ncmds)
     {
@@ -566,14 +794,32 @@ static char *generate_asm (const Module *m, const char *src)
       if (nn)
         {
           Buf t;
+          int big = 0, first = 1;
+          for (i = 0; i < nn; i++) if (representable (nums[i]) != nums[i]) big = 1;       /* a number that one ARM immediate cannot hold is built in lr (as CMunge does) */
           buf_init (&t);
           buf_adds (&t, "\t");
+#define LINE() do { if (!first) buf_adds (&t, "\n\t"); first = 0; } while (0)
+          if (big) { LINE (); buf_adds (&t, "str\tlr, [sp, #-4]!"); }
           for (i = 0; i < nn; i++)
             {
-              if (i) buf_adds (&t, "\n\t");
-              buf_printf (&t, "%s\tr1, #%s", i == 0 ? "teq" : "teqne", hx (nums[i]));
+              unsigned part = representable (nums[i]);
+              if (part == nums[i]) { LINE (); buf_printf (&t, "%s\tr1, #%s", i == 0 ? "teq" : "teqne", hx (nums[i])); }
+              else
+                {
+                  unsigned left = nums[i] & ~part;
+                  LINE (); buf_printf (&t, "mov\tlr, #%s", hx (part));
+                  while (left)
+                    {
+                      part = representable (left);
+                      LINE (); buf_printf (&t, "orr\tlr, lr, #%s", hx (part));
+                      left &= ~part;
+                    }
+                  LINE (); buf_adds (&t, i == 0 ? "teq\tr1, lr" : "teqne\tr1, lr");
+                }
             }
-          buf_adds (&t, "\n\tmovne\tpc, lr");
+          if (big) { LINE (); buf_adds (&t, "ldmfdne\tsp!, {pc}"); LINE (); buf_adds (&t, "ldr\tlr, [sp], #4"); }
+          else { LINE (); buf_adds (&t, "movne\tpc, lr"); }
+#undef LINE
           A (&o, "%s", t.s);
           free (t.s);
         }
@@ -592,41 +838,28 @@ static char *generate_asm (const Module *m, const char *src)
       A (&o, "%s", "");
       A (&o, "\t.global\t%s\n%s:\t\t\t\t\t\t@ %s: r12 = private word; for a vector lr = the pass-on address and the kernel stacked the claim address", v->entry, v->entry, v->kind);
       A (&o, "\tstmfd\tsp!, {r0-r11, lr}\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7");
-      A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr", v->handler);
+      if (strcmp (v->kind, "generic-veneers") == 0)
+        /* as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value */
+        A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tcmp\tr0, #0\n\tstrne\tr0, [sp]\t\t\t@ the error block goes back into r0\n\torrne\tr6, r6, #0x10000000\t\t@ and V is set\n\tmsr\tcpsr_f, r6\n\tldmfd\tsp!, {r0-r11, pc}", v->handler);
+      else
+        A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr", v->handler);
     }
   A (&o, "%s", "");
   A (&o, "done:\t\t\t\t\t\t@ r0 = 0 (V clear) or an error pointer (V set)\n\tcmp\tr0, #0\n\tldmfdeq\tsp!, {r4-r11, pc}\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\n\tldmfd\tsp!, {r4-r11, pc}");
   buf_addc (&o.b, '\n');
-  free (ver); free (helpline); free (nums);
+  free (helpline); free (nums);
   return o.b.s;
 }
 
 static char *generate_h (const Module *m, const char *src)
 {
   Out o;
-  char *ver;
-  unsigned vnum = 0;
+  Help h;
   int i;
-  size_t tl = strlen (m->title);
   Buf guard;
   const char *p;
 
-  ver = strncmp (m->help, m->title, tl) == 0 ? strip (m->help + tl) : xstrdup ("");
-  {
-    /* re.match (r"(\d+)\.(\d+)", ver): the leading digits, a dot, digits */
-    const char *q = ver;
-    size_t a = 0, b;
-    while (isdigit ((unsigned char) q[a])) a++;
-    if (a && q[a] == '.' && isdigit ((unsigned char) q[a + 1]))
-      {
-        b = 0;
-        while (isdigit ((unsigned char) q[a + 1 + b])) b++;
-        {
-          unsigned major = (unsigned) strtoul (q, NULL, 10), minor = (unsigned) strtoul (q + a + 1, NULL, 10);
-          vnum = b == 2 ? major * 100 + minor : major * 100 + minor * 10;
-        }
-      }
-  }
+  split_help (m->help, &h);
   buf_init (&guard);
   buf_adds (&guard, "_MODKIT_");
   for (p = m->title; *p; p++) buf_addc (&guard, is_word ((unsigned char) *p) ? *p : '_');
@@ -634,7 +867,17 @@ static char *generate_h (const Module *m, const char *src)
   out_init (&o);
   A (&o, "/* Generated by mkmodhdr.py from %s.  DO NOT EDIT. */", base_name (src));
   A (&o, "#ifndef %s\n#define %s\n\n#include \"kernel.h\"\n", guard.s, guard.s);
-  A (&o, "#define Module_Title\t\t\"%s\"\n#define Module_Help\t\t\"%s\"\n#define Module_VersionString\t\"%s\"\n#define Module_VersionNumber\t%u\n#ifndef Module_Date\n#define Module_Date\t\t\"%s\"\n#endif\n", m->title, m->title, ver, vnum, m->date ? m->date : "");
+  A (&o, "#define Module_Title\t\t\"%s\"\n#define Module_Help\t\t\"%s\"\n#define Module_VersionString\t\"%u.%02u\"\n#define Module_VersionNumber\t%u\n#ifndef Module_Date\n#define Module_Date\t\t\"%s\"\n#endif\n", m->title, h.name, h.vnum / 100, h.vnum % 100, h.vnum, m->date ? m->date : "");
+  if (m->mfile)
+    {
+      /* the name as a C string (the quotes and backslashes of the CMHG string are escaped again) */
+      Buf q;
+      size_t k;
+      buf_init (&q);
+      for (k = 0; k < m->mfilelen; k++) { unsigned char c = m->mfile[k]; if (c == '"' || c == '\\') buf_addc (&q, '\\'); buf_addc (&q, (char) c); }
+      A (&o, "#define Module_MessagesFile\t\"%s\"\n", q.s);
+      free (q.s);
+    }
   A (&o, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n");
   if (m->init) A (&o, "_kernel_oserror *%s (const char *tail, int podule_base, void *pw);", m->init);
   if (m->final) A (&o, "_kernel_oserror *%s (int fatal, int podule_base, void *pw);", m->final);
@@ -653,11 +896,12 @@ static char *generate_h (const Module *m, const char *src)
       A (&o, "#define Module_SWIChunk\t\t%s", hx (m->swi_chunk));
       for (i = 0; i < m->nswi; i++) A (&o, "#define %s_%s\t\t(%s)", m->swi_prefix, m->swi_names[i], hx (m->swi_chunk + (unsigned) i));
     }
-  for (i = 0; i < m->nven; i++) A (&o, "extern void %s (void);\nint %s (_kernel_swi_regs *r, void *pw);", m->ven[i].entry, m->ven[i].handler);
+  for (i = 0; i < m->nven; i++)
+    A (&o, "extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);", m->ven[i].entry, strcmp (m->ven[i].kind, "generic-veneers") == 0 ? "_kernel_oserror *" : "int", m->ven[i].handler);        /* (CMunge: a generic handler returns an error) */
   if (m->nven) A (&o, "\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)");
   A (&o, "\n#ifdef __cplusplus\n}\n#endif\n#endif");
   buf_addc (&o.b, '\n');
-  free (ver); free (guard.s);
+  free (h.name); free (h.version); free (h.rest); free (guard.s);
   return o.b.s;
 }
 
@@ -666,7 +910,7 @@ static void usage (FILE *f)
 {
   fputs ("usage: cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] FILE.cmhg\n"
          "  -o FILE  the object   -s FILE  the assembler source   -d FILE  the C header   -p  run the C preprocessor first\n"
-         "  accepted without effect: -tgcc -32bit -znoscl -throwback -cmhg.  Refused: -tnorcroft -tlcc -26bit -apcs -zbase -zerrors -zoslib -blank -x<type> -depend\n", f);
+         "  accepted without effect: -tgcc -32bit -znoscl -throwback -cmhg -apcs 3/<flags>.  Refused: -tnorcroft -tlcc -26bit -apcs 26|reent -zbase -zerrors -zoslib -blank -x<type> -depend\n", f);
 }
 
 static const char *argv0dir;
@@ -721,6 +965,15 @@ static void run (const Buf *cmd, const char *what)
   if (rc != 0) die ("%s failed", what);
 }
 
+/* the temporary files (the preprocessed CMHG file, the assembler file for -o): removed when the program ends, by die () as well, so that an error does not leave them behind */
+static char *temps[2];
+static int ntemps;
+
+static void remove_temps (void)
+{
+  while (ntemps > 0) remove (temps[--ntemps]);
+}
+
 static char *temp_name (const char *tag)
 {
   const char *dir = getenv ("TMPDIR");
@@ -728,8 +981,45 @@ static char *temp_name (const char *tag)
   static unsigned counter;
   unsigned long pid = (unsigned long) getpid ();
   buf_init (&b);
+#if defined (__linux__)
+  buf_printf (&b, "%s/cmunge%lu%s%u", dir && *dir ? dir : "/tmp", pid, tag, counter++);
+#else
   buf_printf (&b, "%s/cmunge%lu%s%u", dir && *dir ? dir : ".", pid, tag, counter++);
+#endif
+  if (ntemps == 0) atexit (remove_temps);
+  if (ntemps < 2) temps[ntemps++] = b.s;
   return b.s;
+}
+
+/* CMunge's  -apcs 3/nofpregargs  and the like say how the generated code calls C: APCS-32, with or without floating point registers for arguments, with or without stack checking.  A module of this model calls its
+   C functions one way (AAPCS, soft float) and has no stack checking, so the flags that only choose between those are accepted and ignored; what changes the model (APCS-26, a reentrant / PIC module) is refused. */
+static void check_apcs (const char *spec)
+{
+  static const char *const harmless[] = { "32bit", "nofp", "fp", "fpe2", "fpe3", "fpregargs", "nofpregargs", "swst", "noswst", "nonreent", NULL };
+  const char *p = spec;
+  int first = 1;
+  while (*p)
+    {
+      char tok[32];
+      size_t n = strcspn (p, "/");
+      int k, ok = 0;
+      if (n >= sizeof tok) die ("-apcs %s: too long a flag", spec);
+      memcpy (tok, p, n); tok[n] = 0;
+      if (first)
+        {
+          if (strcmp (tok, "3") && strcmp (tok, "32")) die ("-apcs %s: only APCS-32 (3/...) is supported", spec);
+        }
+      else
+        {
+          if (!strcmp (tok, "26bit")) die ("-apcs %s: 26 bit code is not supported by the modkit version of cmunge", spec);
+          if (!strcmp (tok, "reent") || !strcmp (tok, "reentrant") || !strcmp (tok, "pic")) die ("-apcs %s: reentrant (position independent) modules are not supported: the module relocates itself", spec);
+          for (k = 0; harmless[k]; k++) if (!strcmp (tok, harmless[k])) ok = 1;
+          if (!ok) die ("-apcs %s: the flag %s is not known to the modkit version of cmunge", spec, tok);
+        }
+      first = 0;
+      p += n;
+      if (*p == '/') p++;
+    }
 }
 
 int main (int argc, char **argv)
@@ -767,7 +1057,12 @@ int main (int argc, char **argv)
           if (++i >= argc) die ("%s needs a file name", a);
           if (a[1] == 'o') out_o = argv[i]; else if (a[1] == 's') out_s = argv[i]; else out_h = argv[i];
         }
-      else if (!strcmp (a, "-apcs") || !strcmp (a, "-depend")) die ("%s is not supported (modkit has one calling standard and no AMU dependency files)", a);
+      else if (!strcmp (a, "-apcs"))
+        {
+          if (++i >= argc) die ("-apcs needs a specification such as 3/nofpregargs");
+          check_apcs (argv[i]);
+        }
+      else if (!strcmp (a, "-depend")) die ("%s is not supported (modkit has no AMU dependency files)", a);
       else if (!strcmp (a, "-p") || !strcmp (a, "-px")) pre = 1;
       else if ((a[1] == 'D' || a[1] == 'U' || a[1] == 'I') && a[0] == '-' && a[2]) cpp[ncpp++] = (char *) a;
       else if (!strcmp (a, "-D") || !strcmp (a, "-U") || !strcmp (a, "-I"))
@@ -825,7 +1120,5 @@ int main (int argc, char **argv)
       add_arg (&cmd, "-march=armv6"); add_arg (&cmd, "-x"); add_arg (&cmd, "assembler"); add_arg (&cmd, "-c"); add_arg (&cmd, asmfile); add_arg (&cmd, "-o"); add_arg (&cmd, out_o);
       run (&cmd, "the assembler");
     }
-  if (ppfile) remove (ppfile);
-  if (asmfile && asmfile != out_s) remove (asmfile);
   return 0;
 }

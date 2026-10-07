@@ -210,7 +210,7 @@ class Cpu:
                 self.r[rd] = (h - 0x10000 if h & 0x8000 else h) & M
             return
         if top == 0 and (w & 0x0FBF0FFF) == 0x010F0000:                       # MRS Rd, CPSR (the mode is always SVC32: the module runs there)
-            self.r[(w >> 12) & 15] = (self.n << 31) | (self.z << 30) | (self.c << 29) | (self.v << 28) | self.cpsr_ctl
+            self.r[(w >> 12) & 15] = (self.n << 31) | (self.z << 30) | (self.c << 29) | (self.v << 28) | (self.cpsr_ctl & ~0x1F) | self.mode
             return
         if top in (0, 1):
             op = (w >> 21) & 15; s = (w >> 20) & 1; rn = (w >> 16) & 15; rd = (w >> 12) & 15
@@ -291,7 +291,7 @@ class Cpu:
             raise Fault("instruction not modelled: %08x at %08x" % (w, pc))
     def msr(self, w, val):
         if (w >> 19) & 1: self.n = (val >> 31) & 1; self.z = (val >> 30) & 1; self.c = (val >> 29) & 1; self.v = (val >> 28) & 1
-        if (w >> 16) & 1:                                                    # the control field: the mode (and with it the banked r13 / r14) and the I / F bits
+        if (w >> 16) & 1 and self.mode != 0x10:                              # the control field: the mode (and with it the banked r13 / r14) and the I / F bits; USER mode cannot write it (the write is ignored)
             self.set_mode(val & 0x1F); self.cpsr_ctl = val & 0xFF
     def run(self, start, stop):
         """run from START until the pc is STOP (an address, or a collection of addresses)"""

@@ -28,7 +28,7 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 | Shared libraries, `dlopen`, threads (`pthread`, `std::thread`, `std::async`), thread-local storage | yes | yes |
 | Tuning for ARMv7 and Cortex-A72 (`-mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard`) | yes | yes |
 | UnixLib 5.0 rebuilt with GCC 16, plus a series of fixes (fix level 15, [list](docs/RUNTIME.md)) | the runtime packages | the runtime packages |
-| Experimental: build relocatable **modules** with `gcc -mmodule` and `cmunge`, the way GCCSDK 4.7.4 did. **For small, self-contained C modules only, for now**: the C library is about 30 functions (no file I/O, `sscanf`, `getenv` or `ctype`), no C++, floating point untested, and `cmunge` knows only part of CMHG. [What can and cannot be built](docs/MODULES.md#what-can-be-built-today-and-what-cannot); for anything bigger GCCSDK 4.7.4 remains the way | yes | yes |
+| Experimental: build relocatable **modules** with `gcc -mmodule` and `cmunge`, the way GCCSDK 4.7.4 did. **For small and medium C modules, for now**: a C library of about 130 functions of its own (strings, `ctype`, `stdlib`, `time`, `printf`, `sscanf`, `_swix` ...; the repository is ahead of 16.2.0-14, which has 30), no file I/O, no C++, floating point untested, and `cmunge` knows most of CMHG (international help, `module-is-runnable` ...). [What can and cannot be built](docs/MODULES.md#what-can-be-built-today-and-what-cannot); for anything bigger GCCSDK 4.7.4 remains the way | yes | yes |
 | Optional: a **fixed SharedUnixLibrary** module, for programs whose `vfork` children can fail to `exec` (it replaces a system module: [read this first](docs/SHAREDULIB-FIX.md)) | the package `SharedULibFix` | not needed |
 
 Not included: OpenMP, the sanitizers, wide-character iostreams (`std::wcout`), `std::stacktrace`, `REAL(16)` in Fortran, a debugger. The full list, with
@@ -118,7 +118,7 @@ The test programs are in [tests/](tests/) and are described in [docs/TESTING.md]
 | [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) | what does not work, and workarounds |
 | [docs/BUILDING.md](docs/BUILDING.md) | building everything from source |
 | [docs/TESTING.md](docs/TESTING.md) | running the tests |
-| [docs/MODULES.md](docs/MODULES.md) | modkit: building relocatable modules (experimental, for small C modules): what works, what does not yet, and the plan |
+| [docs/MODULES.md](docs/MODULES.md) | modkit: building relocatable modules (experimental): what works, the C library of the kit, what does not yet, and the plan |
 | [docs/SHAREDULIB-FIX.md](docs/SHAREDULIB-FIX.md) | the optional fixed SharedUnixLibrary module: what it fixes, how to install it and go back |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | the bugs found in UnixLib, SharedUnixLibrary, ARMEABISupport and RISC OS, with patches |
 | [docs/HISTORY.md](docs/HISTORY.md) | how the port was made |

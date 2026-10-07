@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""run-arm.py [SCALE] - the C library of modkit as ARM code: libtest.c is built with the cross compiler (gcc -mmodule, libmodkit.a of the tool chain TC), run on the A32 interpreter (armrun.py), and its sections
+are compared with the ones of the host build against glibc (run-host.sh, run first with the same SCALE).  TC = the tool chain (default: the work area's tc-dev, else ~/gccsdk-next/env-f).  SCALE 1 takes about
+70 seconds on the interpreter.  The sections that only check answers worked out in the test (limits, rand, clock, arm, swixblock) show their FAIL lines instead of a comparison."""
+import os, re, subprocess, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+scale = sys.argv[1] if len(sys.argv) > 1 else "1"
+TC = os.environ.get("TC") or next(p for p in (os.path.expanduser("~/gccsdk-next/tc-dev/riscos-gcc16-cross-16.2.0-14-x86_64-linux"), os.path.expanduser("~/gccsdk-next/env-f")) if os.path.exists(p))
+CC = os.path.join(TC, "bin", "arm-riscos-gnueabihf-gcc")
+B = os.path.join(HERE, "build")
+os.makedirs(B, exist_ok=True)
+subprocess.run([os.path.join(HERE, "run-host.sh"), scale], check=True, stdout=subprocess.DEVNULL)
+subprocess.run([CC, "-mmodule", "-O2", "-std=gnu99", "-Wall", "-Wno-unused-function", "-Wno-infinite-recursion", "-DT_ARM", "-DSCALE=" + scale, "-c", os.path.join(HERE, "libtest.c"), "-o", os.path.join(B, "libtest-arm.o")], check=True)
+r = subprocess.run([CC, "-mmodule", "-o", os.path.join(B, "libtest-arm.elf"), os.path.join(B, "libtest-arm.o")], capture_output=True, text=True)
+if r.returncode:
+    sys.exit(r.stderr)
+run = subprocess.run([sys.executable, os.path.join(HERE, "armrun.py"), os.path.join(B, "libtest-arm.elf"), "--steps", "20000000000"], capture_output=True, text=True)
+open(os.path.join(B, "arm.out"), "w").write(run.stdout)
+print(run.stderr.strip())
+SELF = {"limits", "rand", "clock", "arm", "swixblock", "heap"}
+def sections(text, only=None):
+    d = {}
+    for l in text.split("\n"):
+        m = re.match(r"SECTION (\w+) n=(\d+) hash=(\w+)", l)
+        if m and (only is None or m.group(1) in only): d[m.group(1)] = (m.group(2), m.group(3))
+    return d
+oracle = sections(open(os.path.join(B, "oracle.out")).read())
+host = sections(open(os.path.join(B, "hostlib.out")).read())
+arm = sections(run.stdout)
+bad = 0
+for name, v in oracle.items():
+    if name in SELF: continue
+    ok = arm.get(name) == v
+    bad += not ok
+    print("%-8s glibc %s  ARM %s  %s" % (name, v, arm.get(name), "same" if ok else "DIFFERENT"))
+for name in ("swix",):
+    ok = arm.get(name) == host.get(name)
+    bad += not ok
+    print("%-8s host-lib %s  ARM %s  %s" % (name, host.get(name), arm.get(name), "same" if ok else "DIFFERENT"))
+fails = [l for l in run.stdout.split("\n") if l.startswith("FAIL")]
+for l in fails: print(l)
+tot = re.search(r"TOTAL fail=(\d+)", run.stdout)
+print("self-checks: %s failed" % (tot.group(1) if tot else "?"))
+sys.exit(1 if bad or fails or not tot else 0)

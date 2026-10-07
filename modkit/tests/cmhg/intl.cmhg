@@ -1,0 +1,20 @@
+; every command option of CMHG that modkit's cmunge supports, with an international help file
+title-string:           IntlTest
+help-string:            IntlTest 1.23
+date-string:            07 Oct 2026
+
+initialisation-code:    intl_init
+finalisation-code:      intl_final
+
+international-help-file:"Resources:$.Resources." "IntlTest" ".Messages"
+
+command-keyword-table:  intl_command
+  Plain(min-args: 0, max-args: 2, help-text: "*Plain does nothing.\n", invalid-syntax: "Syntax: *Plain [a] [b]"),
+  Tokens(min-args: 1, max-args: 1, gstrans-map: 1, international:, help-text: "TokensHelp", invalid-syntax: "TokensSyntax"),
+  Joined(min-args: 1, max-args: 255, gstrans-map: 0x05, add-syntax:, help-text: "*Joined takes words\n", invalid-syntax: "Syntax: *Joined <word> ..."),
+  Conf(min-args: 0, max-args: 1, configure:, help-text: "*Configure Conf", invalid-syntax: "Syntax: *Configure Conf <n>"),
+  Stat(min-args: 0, max-args: 0, status:, international:, help-text: "StatHelp", invalid-syntax: "StatSyntax"),
+  FsCmd(min-args: 0, max-args: 0, fs-command:, help-text: "*FsCmd ...\n"),
+  OnlyHelp(min-args: 0, max-args: 0, help-text: "Only a help text"),
+  OnlySyntax(min-args: 0, max-args: 1, invalid-syntax: "Syntax: *OnlySyntax"),
+  Bare(min-args: 0, max-args: 255)

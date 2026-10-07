@@ -1,0 +1,7 @@
+; LibTest: the library test (libtest.c, T_ARM + T_HW) as a module that runs as a program: *RMRun LibTest
+title-string:           LibTest
+help-string:            LibTest 1.00
+date-string:            07 Oct 2026
+
+initialisation-code:    lt_init
+module-is-runnable:

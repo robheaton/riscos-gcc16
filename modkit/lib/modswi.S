@@ -16,3 +16,23 @@ __modlib_xswi:
 	movvc	r0, #0				@ no error: 0; V set: r0 is the error block already
 	ldmfd	sp!, {r1, r4-r11, pc}
 	.size	__modlib_xswi, . - __modlib_xswi
+
+@ __modlib_xswif (swi_number_with_X_bit, unsigned regs[10], unsigned *flags): as __modlib_xswi, and the flags of the SWI's exit (N Z C V: the top four bits of the PSR) are stored in *FLAGS when that is not 0.
+	.global	__modlib_xswif
+	.type	__modlib_xswif, %function
+__modlib_xswif:
+	stmfd	sp!, {r1, r2, r4-r11, lr}	@ r1 = REGS and r2 = FLAGS are kept on the stack
+	mov	r10, r0
+	ldmia	r1, {r0-r9}
+	swi	XOS_CallASWI
+	mrs	r11, cpsr			@ the flags of the SWI (reading the PSR changes none)
+	ldr	r12, [sp]
+	stmia	r12, {r0-r9}
+	ldr	r12, [sp, #4]
+	cmp	r12, #0
+	andne	r10, r11, #0xF0000000
+	strne	r10, [r12]
+	tst	r11, #0x10000000		@ V: an error, r0 is the error block already
+	moveq	r0, #0				@ no error: 0
+	ldmfd	sp!, {r1, r2, r4-r11, pc}
+	.size	__modlib_xswif, . - __modlib_xswif

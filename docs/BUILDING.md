@@ -89,7 +89,7 @@ $R/install-unixlib-sysroot.sh ~/gccsdk-next/env-f ~/gccsdk-next/unixlib/build   
 $R/install-modkit.sh ~/gccsdk-next/env-f                                 # gcc -mmodule and cmunge: libmodkit.a, module.ld, the headers and scripts of modkit (see MODULES.md)
 ```
 
-`install-modkit.sh` builds `libmodkit.a` with the compiler of step 4 (`-mmodule`) and puts it, the linker script, the headers and the scripts into the tool chain; it is part of the tarball of step 8.
+`install-modkit.sh` builds `libmodkit-core.a` (one object per source of `modkit/lib`) with the compiler of step 4 (`-mmodule`), writes `libmodkit.a` as a linker script that names it and `libgcc.a`, and puts them, the linker script, the headers and the scripts into the tool chain; it is part of the tarball of step 8.
 
 `build-unixlib.sh` refuses to build with a compiler that does not have stack probing on by default, and a patch that does not apply is a hard error. `check-libunixlib.sh` looks for the code of every fix in the built library.
 (`libunixlib.a` is built too, for `-static`; the SharedUnixLibrary module is built separately by `build-sul.sh`.)

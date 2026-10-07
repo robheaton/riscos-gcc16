@@ -1,0 +1,11 @@
+; RunMe: a module that can also be run as a program: *RMRun RunMe a "b c" d   (tests/sim-runnable.py runs it on the interpreter, the pack on the machine)
+title-string:           RunMe
+help-string:            RunMe 0.10
+date-string:            07 Oct 2026
+
+initialisation-code:    runme_init
+finalisation-code:      runme_final
+module-is-runnable:
+command-keyword-table:  runme_command
+  RunMeHello(min-args: 0, max-args: 0, help-text: "*RunMeHello says hello\n", invalid-syntax: "Syntax: *RunMeHello"),
+  RunMeExit(min-args: 0, max-args: 1, help-text: "*RunMeExit [n] calls exit (n): in a module that is not running as a program this is an error\n", invalid-syntax: "Syntax: *RunMeExit [n]")

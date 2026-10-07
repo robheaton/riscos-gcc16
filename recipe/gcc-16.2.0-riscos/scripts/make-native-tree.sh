@@ -82,7 +82,7 @@ if [ $FORTRAN = 1 ]; then
 fi
 L=$E/$T/lib
 cp "$L/crt0.o" "$L/gcrt0.o" "$L/libgcc_s.so" "$L/libgcc_s_asneeded.so" "$R/$T/lib/"
-cp "$L/libmodkit.a" "$L/module.ld" "$R/$T/lib/"                # modkit: what gcc -mmodule links (the linker script and the library)
+cp "$L/libmodkit.a" "$L/libmodkit-core.a" "$L/module.ld" "$R/$T/lib/"                # modkit: what gcc -mmodule links (the linker script and the library)
 mkdir -p "$R/lib/gcc/$T/$V/include-modkit"; cp "$E/lib/gcc/$T/$V/include-modkit/"*.h "$R/lib/gcc/$T/$V/include-modkit/"
 cp "$L/libgcc_s.so.1" "$R/$T/lib/"; $ST --strip-unneeded "$R/$T/lib/libgcc_s.so.1"
 cp "$L/libunixlib.so.5.0.0" "$R/$T/lib/libunixlib.so"

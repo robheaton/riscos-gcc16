@@ -1,0 +1,14 @@
+; VeneerTest: generic veneers, a SWI prefix that is not the title, service numbers that are no ARM immediate, a messages file name, nothing else
+title-string:           VeneerTest
+help-string:            VeneerTest 1.00
+date-string:            07 Oct 2026
+
+initialisation-code:    vt_init
+
+service-call-handler:   vt_service 0x44ec1, 0x81040, 0x400c3, 0x1000001, 0x12345678, 0xFFFFFFFF, 0x27
+
+swi-chunk-base-number:  0x58C80
+swi-decoding-table:     VT Alpha Beta Gamma
+swi-handler-code:       vt_swi
+
+generic-veneers:        gv_a/gv_a_handler gv_b

@@ -23,7 +23,12 @@ MODCFLAGS = -mmodule -O2 -std=gnu99 -Wall -isystem $(MODKIT)include -I$(OSLIB) -
 CMUNGE   ?= $(if $(wildcard $(BIN)/cmunge),$(BIN)/cmunge,python3 $(MODKIT)bin/cmunge)
 MKOSLIB  ?= $(if $(wildcard $(BIN)/arm-riscos-gnueabihf-mkoslib),$(BIN)/arm-riscos-gnueabihf-mkoslib,python3 $(MODKIT)bin/mkoslib.py)
 MODRELOC ?= $(if $(wildcard $(BIN)/arm-riscos-gnueabihf-modreloc),$(BIN)/arm-riscos-gnueabihf-modreloc,python3 $(MODKIT)bin/modreloc.py)
-OBJS      = $(patsubst %,$(BUILD)/%.o,$(notdir $(SRCS))) $(BUILD)/header.o $(BUILD)/modlib.o $(BUILD)/divmod.o $(BUILD)/modswi.o $(BUILD)/oslibv.o
+OBJS      = $(patsubst %,$(BUILD)/%.o,$(notdir $(SRCS))) $(BUILD)/header.o $(BUILD)/oslibv.o
+# the C library of the kit, built here from the kit's own sources (so that a change of the kit counts at once): one object per source, in an archive that is linked after the module's objects.  The driver
+# links the installed libmodkit.a (the same library and then libgcc) after that, for what is still missing.
+LIBSRCS   = $(wildcard $(MODKIT)lib/*.c) $(wildcard $(MODKIT)lib/*.S)
+LIBOBJS   = $(patsubst $(MODKIT)lib/%,$(BUILD)/lib/%.o,$(LIBSRCS))
+LOCALLIB  = $(BUILD)/libmodkit-local.a
 
 all: $(MODULE),ffa
 
@@ -36,14 +41,18 @@ $(BUILD)/header.s $(BUILD)/header.h &: $(CMHG) | $(BUILD)
 $(BUILD)/header.o: $(BUILD)/header.s
 	$(CC) -mmodule -c $< -o $@
 
-$(BUILD)/modlib.o: $(MODKIT)lib/modlib.c | $(BUILD)
+$(BUILD)/lib: | $(BUILD)
+	mkdir -p $@
+
+$(BUILD)/lib/%.c.o: $(MODKIT)lib/%.c | $(BUILD)/lib
 	$(CC) $(MODCFLAGS) -c $< -o $@
 
-$(BUILD)/divmod.o: $(MODKIT)lib/divmod.c | $(BUILD)
-	$(CC) $(MODCFLAGS) -c $< -o $@
-
-$(BUILD)/modswi.o: $(MODKIT)lib/modswi.S | $(BUILD)
+$(BUILD)/lib/%.S.o: $(MODKIT)lib/%.S | $(BUILD)/lib
 	$(CC) -march=armv6 -c $< -o $@
+
+$(LOCALLIB): $(LIBOBJS)
+	rm -f $@
+	$(AR) rcs $@ $^
 
 # the OSLib veneers: every OSLib X-function that the sources use (the undefined symbols of their objects), plus the ones named in OSLIB_FUNCS (for a function that only a library of yours calls)
 SRC_OBJS  = $(patsubst %,$(BUILD)/%.o,$(notdir $(SRCS)))
@@ -60,9 +69,9 @@ $$(BUILD)/$(notdir $(1)).o: $(1) $$(BUILD)/header.h | $$(BUILD)
 endef
 $(foreach s,$(SRCS),$(eval $(call COMPILE,$(s))))
 
-# the driver adds the linker script of the tool chain (module.ld) and links libmodkit.a after the objects; the three library objects above come first, so the kit's own sources win
-$(BUILD)/$(MODULE).elf: $(OBJS)
-	$(CC) -mmodule -o $@ $(OBJS) 2>&1 | grep -v "RWX permissions\|dynamic-undefined-weak" || true
+# the driver adds the linker script of the tool chain (module.ld) and links libmodkit.a (and libgcc) after the objects; the kit's own library comes first, so the kit's own sources win
+$(BUILD)/$(MODULE).elf: $(OBJS) $(LOCALLIB)
+	$(CC) -mmodule -o $@ $(OBJS) $(LOCALLIB)
 
 $(MODULE),ffa: $(BUILD)/$(MODULE).elf
 	$(MODRELOC) $< $@
