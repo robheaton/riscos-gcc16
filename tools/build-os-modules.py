@@ -17,7 +17,7 @@ Needs perl (for the OS's Hdr2H), a C compiler is not needed.  The steps are thos
   2. libraries: the C and assembler sources of the libraries that the modules link (AsmUtils, callx, SyncLib, DebugLib and the libraries it uses, the TCP/IP libraries with socklib's veneers made by the
      OS's Perl script, tboxlib ...) are built into archives
   3. per module: a link farm (c/x -> x.c, h/x -> x.h, cmhg/x -> x.cmhg; the neighbours of the component's folders are links as well), cmunge -p on the CMHG file, gcc -mmodule -std=c99 -c on every C file
-     of OBJS, asasm on every assembler file (its AREA names become .text.NAME / .data.NAME / .bss.NAME so that the module linker script takes them), the resource object (what resgen makes), the OSLib
+     of OBJS, asasm on every assembler file (its AREA names become .text.NAME / .data.NAME / .bss.NAME so that the module linker script takes them), the resource object (what resgen makes: the module's Messages with its CmdHelp appended, as the OS build's CModule rules do, unless CMDHELP=None), the OSLib
      veneers (mkoslib --from-objects), then the link with the libraries: the driver runs modreloc and the result is the module image
 The environment is that of the Raspberry Pi build (MACHINE=RPi, USERIF=Raspberry ...).  The Norcroft keywords __packed, __value_in_regs and __va_list are made harmless by a header (norcroft.h) that is
 included first; nothing else of the sources is changed.  The results say, for each module, what stops it (the last column of report.txt)."""
@@ -51,7 +51,7 @@ def read(p):
 
 # ---------------------------------------------------------------- Makefiles
 class Make:
-    """enough of GNU make's variables for the Makefiles of the OS components: =, :=, ?=, += and ${X} / $(X); conditionals are ignored (every assignment counts)"""
+    """enough of GNU make's variables for the Makefiles of the OS components: =, :=, ?=, += and ${X} / $(X); ifeq / ifneq / ifdef / ifndef / else / endif are evaluated with the variables set so far"""
 
     def __init__(self, preset):
         self.v = dict(preset)
@@ -66,10 +66,52 @@ class Make:
             s = re.sub(r"\$\{([A-Za-z_]\w*):[^}]*\}", lambda m: self.expand(self.v.get(m.group(1), ""), depth + 1), s)
         return s
 
+    def cond(self, kind, args):
+        """the condition of ifeq / ifneq / ifdef / ifndef (the forms the OS Makefiles use: ifeq (a,b)  ifeq "a" "b"  ifdef NAME); a form that is not understood counts as true"""
+        args = args.strip()
+        if kind in ("ifdef", "ifndef"):
+            defined = bool(self.expand(self.v.get(args, "")).strip())
+            return defined if kind == "ifdef" else not defined
+        m = re.match(r"^\((.*),(.*)\)\s*$", args)
+        if m:
+            a, b = m.group(1), m.group(2)
+        else:
+            m = re.match(r"""^(["'])(.*?)\1\s*(["'])(.*?)\3\s*$""", args)
+            if not m:
+                return True
+            a, b = m.group(2), m.group(4)
+        a, b = (self.expand(x).strip().strip("\"'").strip() for x in (a, b))
+        return (a == b) if kind == "ifeq" else (a != b)
+
     def parse(self, text):
         text = text.replace("\\\r\n", " ").replace("\\\n", " ")
+        stack = []                                   # one [parent is active, a branch was taken, this branch is active] per open conditional
         for line in text.split("\n"):
             if line[:1] in ("\t", "#") or not line.strip():
+                continue
+            st = line.strip()
+            m = re.match(r"^(ifeq|ifneq|ifdef|ifndef)\b\s*(.*)$", st)
+            if m:
+                parent = all(x[2] for x in stack)
+                c = self.cond(m.group(1), m.group(2)) if parent else False
+                stack.append([parent, c, c])
+                continue
+            if re.match(r"^else\b", st):
+                if stack:
+                    top = stack[-1]
+                    rest = st[4:].strip()
+                    if not top[0] or top[1]:
+                        top[2] = False
+                    else:
+                        m2 = re.match(r"^(ifeq|ifneq|ifdef|ifndef)\b\s*(.*)$", rest)
+                        c = self.cond(m2.group(1), m2.group(2)) if m2 else True
+                        top[1] = top[2] = c
+                continue
+            if re.match(r"^endif\b", st):
+                if stack:
+                    stack.pop()
+                continue
+            if not all(x[2] for x in stack):
                 continue
             m = re.match(r"^\s*([A-Za-z_]\w*)\s*(:=|\?=|\+=|=)[ \t]*(.*)$", line)
             if not m:
@@ -276,6 +318,10 @@ def make_resources(d, mk, target):
             p = os.path.join(rd, sub, nm) if sub else os.path.join(rd, nm)
             if os.path.isfile(p):
                 data = open(p, "rb").read()
+                if nm == "Messages" and mk.get("CMDHELP") != "None":                 # CModule: FAppend ${RESFSDIR}.Messages LocalRes:Messages LocalRes:CmdHelp (the help and syntax tokens of the *commands)
+                    ch = os.path.join(os.path.dirname(p), "CmdHelp")
+                    if os.path.isfile(ch):
+                        data += open(ch, "rb").read()
                 name = (rpath + "." + target + "." + nm).encode() + b"\0"
                 name += b"\0" * (-len(name) % 4)
                 body = data + b"\0" * (-len(data) % 4)

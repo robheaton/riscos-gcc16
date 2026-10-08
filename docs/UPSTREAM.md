@@ -41,7 +41,7 @@ If you maintain UnixLib, SharedUnixLibrary or ARMEABISupport and would like thes
 
 ## For RISC OS Open Ltd
 
-The survey of the OS's own C modules ([OS-MODULES.md](OS-MODULES.md)) found one bug in the OS sources. It belongs to RISC OS Open, not to the GCCSDK list, so it is not in the bundle above. It has **not been reported yet**: RISC OS Open's bug tracker (https://www.riscosopen.org/tracker/) needs an account, and the GitLab project of the module (`RiscOS/Sources/Programmer/Squash`) shows no issue tracker. The text below is ready to paste.
+The survey of the OS's own C modules ([OS-MODULES.md](OS-MODULES.md)) found one bug in the OS sources. It belongs to RISC OS Open, not to the GCCSDK list, so it is not in the bundle above. It was **reported to RISC OS Open by the author on 8 October 2026** (their bug tracker, https://www.riscosopen.org/tracker/, needs an account; the GitLab project of the module, `RiscOS/Sources/Programmer/Squash`, shows no issue tracker). The text that was sent follows.
 
 > **Squash: `Squash_Compress` with an input of length 0 runs away in the fast compressor**
 >

@@ -120,7 +120,7 @@ The test programs are in [tests/](tests/) and are described in [docs/TESTING.md]
 | [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) | what does not work, and workarounds |
 | [docs/BUILDING.md](docs/BUILDING.md) | building everything from source |
 | [docs/TESTING.md](docs/TESTING.md) | running the tests |
-| [docs/OS-MODULES.md](docs/OS-MODULES.md) | the C modules of the RISC OS Open sources built with the kit (after 16.2.0-15): 28 of 66 build and link, and what stops the others |
+| [docs/OS-MODULES.md](docs/OS-MODULES.md) | the C modules of the RISC OS Open sources built with the kit (after 16.2.0-15): 29 of 66 build and link, what stops the others, and three of them run on a Raspberry Pi in place of the ROM's, with the same results |
 | [docs/MODULES.md](docs/MODULES.md) | modkit: building relocatable modules (experimental): what works, the C library of the kit, what does not yet, and the plan |
 | [docs/SHAREDULIB-FIX.md](docs/SHAREDULIB-FIX.md) | the optional fixed SharedUnixLibrary module: what it fixes, how to install it and go back |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | the bugs found in UnixLib, SharedUnixLibrary, ARMEABISupport and RISC OS, with patches |

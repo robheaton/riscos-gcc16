@@ -205,6 +205,27 @@ static void info (FILE *f)
   if (!_swix (OS_Module, _IN (0) | _OUTR (2, 3), 5, &max, &fr)) fprintf (f, "# RMA: largest free block %u, free %u\n", max, fr);
 }
 
+
+/* the messages file of a module, as MessageTrans sees it: a module that registers a file of its own (a build that is not the ROM's) can shadow the ROM's file of the same name with another one: its size shows it */
+static void modmsg (const char *name)
+{
+  unsigned mod = 0, inst = 0, base = 0, ws = 0, post = 0, flags = 0, r1 = 0, size = 0, valid = 0;
+  const _kernel_oserror *e = _swix (OS_Module, _INR (0, 1) | _OUTR (1, 5), 18, name, &mod, &inst, &base, &ws, &post);
+  const uint32_t *h;
+  const char *file;
+  if (e) { emit ("modmsg.%s module error=%s", name, enum_ (e)); return; }
+  e = _swix (OS_ValidateAddress, _INR (0, 1) | _OUT (_FLAGS), base, base + 0x40, &valid);
+  if (e || (valid & _C)) { emit ("modmsg.%s header cannot be read", name); return; }
+  h = (const uint32_t *) base;
+  if (!h[11] || (h[11] & 3)) { emit ("modmsg.%s no messages file in the header (word %u)", name, (unsigned) h[11]); return; }
+  file = (const char *) base + h[11];
+  e = _swix (0x61500, _IN (1) | _OUTR (0, 2), file, &flags, &r1, &size);
+  emit ("modmsg.%s file='%.60s' fileinfo error=%s direct-access=%u", name, file, enum_ (e), flags & 1);
+  /* the size is not compared: a ROM build tokenises the messages files (a dictionary, see Sources/Internat/Messages) and a RAM build keeps the plain text, so the same
+     text can have two sizes (MimeMap: 217 in the ROM of the test machine, 390 as the plain file); what is compared is what the lookups give (the *Help lines, the errors) */
+  emit ("# modmsg.%s size=%u (MessageTrans_FileInfo: the size of the file in ResourceFS + 4; not compared)", name, size);
+}
+
 static void swi_names (void)
 {
   static const struct { const char *name; unsigned num; } t[] = {
@@ -1120,6 +1141,7 @@ static int cmd_run (int argc, char **argv)
   emit ("# RomCmp run %s%s", tag, quick ? " (quick)" : "");
   info (out);
   swi_names ();
+  modmsg ("MimeMap"); modmsg ("Squash"); modmsg ("DrawFile");
   if (do_squash) squash_suite ();
   if (do_mime)
     {
@@ -1204,6 +1226,90 @@ static int cmd_summary (const char *file)                                 /* the
   printf ("RomCmp summary of %s: %u lines, %u FAIL lines, %s\n", path, lines, nfail, line_checks ? line_checks : "NO '# checks=' LINE: the run did not finish");
   free (t);
   return nfail || !line_checks ? 1 : 0;
+}
+
+
+/* RomCmp mt <module>: what the kernel does for *Help of a command of a module with international help, step by step, from user mode (a diagnostic: DiagMt37 runs it for the ROM module and for the GCC build):
+   the file name in the header (Module_MsgFile), the token of the first command, MessageTrans_FileInfo, then OpenFile / Lookup / CloseFile in four ways */
+#define MT_FILEINFO 0x61500
+#define MT_OPENFILE 0x61501
+#define MT_LOOKUP   0x61502
+#define MT_CLOSE    0x61504
+
+static void mt_lookup (const char *what, unsigned desc, const char *token)
+{
+  unsigned r1 = 0, r2 = 0, r3 = 0;
+  char b[80];
+  unsigned k;
+  const _kernel_oserror *e = _swix (MT_LOOKUP, _INR (0, 7) | _OUTR (1, 3), desc, token, 0, 0, 0, 0, 0, 0, &r1, &r2, &r3);
+  if (e) { printf ("    lookup %-34s -> %s\n", what, etext (e)); return; }
+  for (k = 0; k < sizeof b - 1 && ((const unsigned char *) r2)[k] >= 32; k++) b[k] = (char) ((const unsigned char *) r2)[k];
+  b[k] = 0;
+  printf ("    lookup %-34s -> found '%.60s'%s\n", what, b, k == sizeof b - 1 ? "..." : "");
+}
+
+static void mt_try (const char *label, uint32_t *desc, const char *name, const char *token_in_module, const char *token_copy)
+{
+  unsigned r0 = 0;
+  const _kernel_oserror *e;
+  printf ("  %s\n", label);
+  e = _swix (MT_OPENFILE, _INR (0, 2) | _OUT (0), desc, name, 0, &r0);
+  printf ("    OpenFile(desc &%X, name &%X, 0) -> %s; r0 = &%X%s; descriptor after: %08X %08X %08X %08X\n", (unsigned) (uintptr_t) desc, (unsigned) (uintptr_t) name, e ? etext (e) : "no error", r0,
+          r0 == (unsigned) (uintptr_t) desc ? " (the same block)" : "", (unsigned) desc[0], (unsigned) desc[1], (unsigned) desc[2], (unsigned) desc[3]);
+  if (e) return;
+  mt_lookup ("token in the module", r0, token_in_module);
+  mt_lookup ("token in our own memory", r0, token_copy);
+  e = _swix (MT_CLOSE, _IN (0), r0);
+  printf ("    CloseFile -> %s\n", e ? etext (e) : "no error");
+}
+
+static int cmd_mt (const char *modname)
+{
+  unsigned mod = 0, inst = 0, base = 0, ws = 0, post = 0, flags = 0, size = 0, r1 = 0, valid = 0;
+  const _kernel_oserror *e = _swix (OS_Module, _INR (0, 1) | _OUTR (1, 5), 18, modname, &mod, &inst, &base, &ws, &post);
+  const uint32_t *h;
+  const unsigned char *t;
+  const char *msgfile, *name, *help_tok, *syn_tok;
+  char *name_copy, *tok_copy;
+  uint32_t desc_stack[8];
+  uint32_t *desc_heap;
+  if (e) { printf ("mt: %s\n", etext (e)); return 1; }
+  e = _swix (OS_ValidateAddress, _INR (0, 1) | _OUT (_FLAGS), base - 4, base + 0x100, &valid);
+  if (e || (valid & _C)) { printf ("mt: the header of %s at &%X cannot be read\n", modname, base); return 1; }
+  h = (const uint32_t *) base;
+  printf ("mt: module %s at &%X, the word before it (the size of the block) is &%X\n", modname, base, (unsigned) h[-1]);
+  printf ("    header: start &%X init &%X final &%X service &%X title &%X help &%X commands &%X swi chunk &%X swi code &%X swi names &%X decoder &%X msgfile &%X flags &%X\n", (unsigned) h[0], (unsigned) h[1],
+          (unsigned) h[2], (unsigned) h[3], (unsigned) h[4], (unsigned) h[5], (unsigned) h[6], (unsigned) h[7], (unsigned) h[8], (unsigned) h[9], (unsigned) h[10], (unsigned) h[11], (unsigned) h[12]);
+  if (!h[11] || !h[6]) { printf ("mt: no messages file or no commands in this header\n"); return 1; }
+  msgfile = (const char *) base + h[11];
+  printf ("    messages file name at &%X: '%.80s'\n", (unsigned) (uintptr_t) msgfile, msgfile);
+  t = (const unsigned char *) base + h[6];
+  name = (const char *) t;
+  t += ((strlen (name) + 1 + 3) & ~3u);
+  {
+    const uint32_t *ent = (const uint32_t *) t;
+    unsigned info = ent[1];
+    help_tok = (const char *) base + ent[3];
+    syn_tok = (const char *) base + ent[2];
+    printf ("    first command '%s': info word &%X, syntax token at &%X '%.40s', help token at &%X '%.40s'\n", name, info, (unsigned) (uintptr_t) syn_tok, syn_tok, (unsigned) (uintptr_t) help_tok, help_tok);
+  }
+  e = _swix (MT_FILEINFO, _IN (1) | _OUTR (0, 2), msgfile, &flags, &r1, &size);
+  printf ("    MessageTrans_FileInfo -> %s; flags &%X (bit 0: direct access), size %u\n", e ? etext (e) : "no error", flags, size);
+  name_copy = malloc (strlen (msgfile) + 8);
+  tok_copy = malloc (strlen (help_tok) + 8);
+  desc_heap = malloc (64);
+  if (!name_copy || !tok_copy || !desc_heap) { printf ("mt: no memory\n"); return 1; }
+  strcpy (name_copy, msgfile);
+  strcpy (tok_copy, help_tok);
+  memset (desc_heap, 0, 64);
+  memset (desc_stack, 0, sizeof desc_stack);
+  mt_try ("1. descriptor in the RMA (zeroed), name and token in the module (what the kernel passes, but for the stack descriptor)", desc_heap, msgfile, help_tok, tok_copy);
+  mt_try ("2. descriptor on the stack (zeroed), name and token in the module", desc_stack, msgfile, help_tok, tok_copy);
+  mt_try ("3. descriptor on the stack again, NOT cleared (it holds what 2 left in it: the way the kernel's stack descriptor does from one *Help to the next)", desc_stack, msgfile, help_tok, tok_copy);
+  memset (desc_heap, 0, 64);
+  mt_try ("4. descriptor in the RMA (zeroed), name in our memory, token in the module", desc_heap, name_copy, help_tok, tok_copy);
+  free (name_copy); free (tok_copy); free (desc_heap);
+  return 0;
 }
 
 static unsigned word_at (const unsigned char *d, size_t off) { return d[off] | d[off + 1] << 8 | d[off + 2] << 16 | (unsigned) d[off + 3] << 24; }
@@ -1296,10 +1402,11 @@ int main (int argc, char **argv)
   if (argc == 4 && !strcmp (argv[1], "diff")) return cmd_diff (argv[2], argv[3]);
   if (argc == 4 && !strcmp (argv[1], "need")) return cmd_need (argv[2], argv[3]);
   if (argc == 3 && !strcmp (argv[1], "summary")) return cmd_summary (argv[2]);
+  if (argc == 3 && !strcmp (argv[1], "mt")) return cmd_mt (argv[2]);
   if (argc >= 3 && !strcmp (argv[1], "try")) return cmd_try (argc, argv);
   if (argc == 3 && (!strcmp (argv[1], "savevar") || !strcmp (argv[1], "restorevar"))) return cmd_var (argv[1], argv[2]);
   if (argc == 2 && !strcmp (argv[1], "info")) { info (stdout); return 0; }
   puts ("usage: RMRun RomCmp run <tag> <result file> [squash] [mime <TestMap> <SysMap>] [draw] [render] [quick]");
-  puts ("       RMRun RomCmp diff <A> <B> | summary <file> | need <module> <title> | try <command> | info | savevar <name> | restorevar <name>");
+  puts ("       RMRun RomCmp diff <A> <B> | summary <file> | mt <module> | need <module> <title> | try <command> | info | savevar <name> | restorevar <name>");
   return 2;
 }
