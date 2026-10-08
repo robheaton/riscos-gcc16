@@ -930,7 +930,7 @@ static char *generate_asm (const Module *m, const char *src)
       A (&o, "%s", "");
       for (i = 0; i < ncmds; i++) A (&o, "cmd%d:\n\tmov\tr2, #%d\n\tb\tcmd_common", i, i);
       A (&o, "cmd_common:\t\t\t\t\t@ r0 = argument string, r1 = number of parameters, r2 = the number of the command, r12 = private word\n\tstmfd\tsp!, {r4-r11, lr}\n\tmov\tr3, r12\n\tmov\tr5, r0\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4", m->cmd_handler);
-      A (&o, "\tcmp\tr0, #0\n\tbeq\tcmd_ok\n\tcmp\tr0, r5\t\t\t\t@ the handler gave back the argument string: help_PRINT_BUFFER\n\tbeq\tcmd_ok\n\tcmn\tr0, #1\n\tbeq\tcmd_ok\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\t\t\t@ V set: an error, r0 = the error block\n\tldmfd\tsp!, {r4-r11, pc}\ncmd_ok:\tmov\tr0, #0\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r4-r11, pc}");
+      A (&o, "\tcmp\tr0, #0\n\tbeq\tcmd_ok\n\tcmp\tr0, r5\t\t\t\t@ the handler gave back the argument string: help_PRINT_BUFFER\n\tbeq\tcmd_ok\n\tcmn\tr0, #1\t\t\t\t@ configure_BAD_OPTION (-1): V set with r0 = 0, as CMunge's veneer returns it\n\tmoveq\tr0, #0\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\t\t\t@ V set: an error, r0 = the error block\n\tldmfd\tsp!, {r4-r11, pc}\ncmd_ok:\tmov\tr0, #0\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r4-r11, pc}");
     }
   /* service calls */
   if (has_svc)
@@ -988,7 +988,7 @@ static char *generate_asm (const Module *m, const char *src)
   if (has_swi)
     {
       A (&o, "%s", "");
-      A (&o, "swi_entry:\t\t\t\t\t@ r11 = SWI number - chunk base, r0 - r9 = the SWI's registers, r12 = private word\n\tstmfd\tsp!, {r0-r9, lr}\n\tmov\tr0, r11\n\tmov\tr1, sp\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tswi_err\n\tldmfd\tsp!, {r0-r9, pc}\nswi_err:\n\tadd\tsp, sp, #4\n\tldmfd\tsp!, {r1-r9, lr}\n\tmsr\tcpsr_f, #0x10000000\n\tmov\tpc, lr", m->swi_handler);
+      A (&o, "swi_entry:\t\t\t\t\t@ r11 = SWI number - chunk base, r0 - r9 = the SWI's registers, r12 = private word\n\tstmfd\tsp!, {r0-r9, lr}\n\tmov\tr0, r11\n\tmov\tr1, sp\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tswi_err\n\tldmfd\tsp!, {r0-r9, pc}\nswi_err:\n\tadd\tsp, sp, #4\n\tcmn\tr0, #1\t\t\t\t\t@ error_BAD_SWI (-1)?\n\tbeq\tswi_bad\nswi_err2:\n\tldmfd\tsp!, {r1-r9, lr}\n\tmsr\tcpsr_f, #0x10000000\n\tmov\tpc, lr\nswi_bad:\t\t\t\t\t\t@ the error of the system for a SWI that is not in the module, made as CMunge's veneer makes it: SWI value out of range for module <title>\n\tadr\tr0, swi_bad_block\n\tmov\tr1, #0\n\tmov\tr2, #0\n\tadrl\tr4, title\n\tswi\t0x61506\t\t\t\t\t@ XMessageTrans_ErrorLookup: r0 -> the error, V set\n\tb\tswi_err2\nswi_bad_block:\n\t.word\t0x1e6\n\t.asciz\t\"BadSWI\"\n\t.balign\t4", m->swi_handler);
     }
   /* vector / IRQ / generic veneers */
   for (i = 0; i < m->nven; i++)

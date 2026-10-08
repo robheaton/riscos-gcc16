@@ -73,6 +73,25 @@ err = struct.unpack("<I", bytes(cpu.rd8(regs[0] + i) for i in range(4)))[0]
 check(v == 1 and err == 0x1235 and k.read_cstr(regs[0] + 4) == "VeneerTest SWI error" and regs[3] == 33, "VT_Beta: V set, r0 -> error &%X %r, r3 = %d (the handler's change comes back)" % (err, k.read_cstr(regs[0] + 4), regs[3]))
 regs, v = k.swi(0x58C82, {0: 5, 1: 6, 2: 7})
 check(v == 0 and regs[:3] == [5, 6, 7], "VT_Gamma changes nothing")
+for off in (3, 17, 63):                                                  # the handler returns error_BAD_SWI: the veneer makes the system's error of a SWI that the module does not have
+    regs, v = k.swi(0x58C80 + off, {0: 5, 1: 6, 2: 7})
+    err = cpu.rd32(regs[0]) if v and 0x1000 < regs[0] < 0x10000000 else None
+    check(v == 1 and err == 0x1E6 and k.read_cstr(regs[0] + 4) == "SWI value out of range for module VeneerTest", "SWI offset %d: V set, r0 -> error &%s %r (error_BAD_SWI is not passed on as r0 = -1)" % (off, "%X" % err if err is not None else "?", k.read_cstr(regs[0] + 4) if err is not None else "r0 = %#x" % regs[0]))
+print()
+
+print("the command handler: how the veneer gives back what the handler returned")
+cmds = {c[0]: c for c in mod.commands}
+def run_command(name):
+    regs, v = k.call(mod.base + cmds[name][1], {0: k.put_string(""), 1: 0, 12: mod.pw, 13: k.sp0})
+    return regs[0], v
+r0, v = run_command("VT_Ok")
+check(v == 0 and r0 == 0, "NULL: V clear, r0 = 0")
+r0, v = run_command("VT_Err")
+check(v == 1 and 0x1000 < r0 < 0x10000000 and k.read_cstr(r0 + 4) == "VeneerTest SWI error", "an error block: V set, r0 -> it")
+r0, v = run_command("VT_Neg")
+check(v == 1 and r0 == 0, "configure_BAD_OPTION (-1): V set and r0 = 0 (the answer that *Configure takes for 'Bad option'), not r0 = -1 and not success (r0 = %#x, V %d)" % (r0, v))
+r0, v = run_command("VT_Num")
+check(v == 1 and r0 == 1, "configure_NUMBER_NEEDED (1): V set and r0 = 1 (r0 = %#x, V %d)" % (r0, v))
 print()
 
 print("the service handler: the numbers of the list, one by one, and the ones next to them")

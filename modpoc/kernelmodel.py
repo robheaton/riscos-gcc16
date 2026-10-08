@@ -124,6 +124,10 @@ class Kernel:
             elif cpu.r[0] == 7: self.freed.append(cpu.r[2]); cpu.v = 0
             else: raise Fault("OS_Module %d not modelled" % cpu.r[0])
         elif n == 0x6E: self.sync.append((cpu.r[0], cpu.r[1], cpu.r[2])); cpu.v = 0      # OS_SynchroniseCodeAreas
+        elif n == 0x41506:                                   # MessageTrans_ErrorLookup: only the token BadSWI of the system messages (r1 = 0), with the module title in r4: what the SWI veneer of cmunge asks for
+            num = cpu.rd32(cpu.r[0]); tok = self.read_cstr(cpu.r[0] + 4)
+            if cpu.r[1] != 0 or tok != "BadSWI" or cpu.r[2] != 0: raise Fault("MessageTrans_ErrorLookup %r with r1 = %#x r2 = %#x not modelled" % (tok, cpu.r[1], cpu.r[2]))
+            cpu.r[0] = self.error_block(num, "SWI value out of range for module " + self.read_cstr(cpu.r[4])); cpu.v = 1
         elif n == 0x39: self.swi_number_from_string(cpu)
         elif n == 0x05: self.os_cli(cpu)
         elif n == 0x6F:                                      # OS_CallASWI: the SWI number is in r10

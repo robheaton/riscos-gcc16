@@ -16,3 +16,10 @@ generic-veneers:        gv_a/gv_a_handler gv_b
 ; event handlers: ev_a (with its handler named) takes the events 19 and (0x6) only, ev_b (the default handler name) takes every event; the numbers may be written as the OS headers write them
 event-handler:          ev_a/ev_a_handler 19 (0x6)
 event-handler:          ev_b
+
+; commands: what the veneer does with the four kinds of return value (nothing, an error block, configure_BAD_OPTION = -1, configure_NUMBER_NEEDED = 1)
+command-keyword-table: vt_command
+  VT_Ok(min-args: 0, max-args: 0, help-text: "*VT_Ok does nothing\n", invalid-syntax: "Syntax: *VT_Ok"),
+  VT_Err(min-args: 0, max-args: 0, help-text: "*VT_Err gives an error\n", invalid-syntax: "Syntax: *VT_Err"),
+  VT_Neg(min-args: 0, max-args: 0, help-text: "*VT_Neg returns configure_BAD_OPTION\n", invalid-syntax: "Syntax: *VT_Neg"),
+  VT_Num(min-args: 0, max-args: 0, help-text: "*VT_Num returns configure_NUMBER_NEEDED\n", invalid-syntax: "Syntax: *VT_Num")

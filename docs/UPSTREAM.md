@@ -38,3 +38,30 @@ Everything the reports claim is re-checked by [`docs/upstream/verify/run-verify.
 and the machine code of the changed functions behaves on an ARM interpreter. The last runs: 245 checks in the author's work area and 244 in a fresh copy of this repository built as described in [BUILDING.md](BUILDING.md) (the last one compares a build of the fixed SharedUnixLibrary module, made by `build-sul.sh`; it is skipped when that build is absent), 0 failed. It needs a GCCSDK svn checkout, the cross compiler (BUILDING.md step 4) and the UnixLib build (step 5): see the script's header.
 
 If you maintain UnixLib, SharedUnixLibrary or ARMEABISupport and would like these as proper mails, merge requests or in another form, please open an [issue](https://github.com/robheaton/riscos-gcc16/issues).
+
+## For RISC OS Open Ltd
+
+The survey of the OS's own C modules ([OS-MODULES.md](OS-MODULES.md)) found one bug in the OS sources. It belongs to RISC OS Open, not to the GCCSDK list, so it is not in the bundle above. It has **not been reported yet**: RISC OS Open's bug tracker (https://www.riscosopen.org/tracker/) needs an account, and the GitLab project of the module (`RiscOS/Sources/Programmer/Squash`) shows no issue tracker. The text below is ready to paste.
+
+> **Squash: `Squash_Compress` with an input of length 0 runs away in the fast compressor**
+>
+> *Component:* Programmer/Squash, module `Squash` 0.31 (11 Feb 2023); the same code is in the ROM module, so far as the source goes (not run on a RISC OS machine: see below).
+>
+> *What happens:* `SWI Squash_Compress` with `R0 = 0` (no flag bits), `R3 = 0` (no input) and an output buffer of at least 3 bytes goes to the fast compressor. `c/compress`, `Squash_swi`: `fast = (r->r[0] & (SquashContinue | SquashMoreInput)) == 0 && 3 + r->r[3]*3/2 <= r->r[5]` is true for `r3 = 0`, so `compress_store_ass (input, output, 0, workspace)` is called. In `s/comp_ass` the routine reads the first input byte and subtracts 1 from the length *before* the main loop looks at it:
+>
+> ```
+>         LDRB    previous, [input], #1                   ; First byte
+>         SUB     input_length, input_length, #1
+>         ...
+> main_loop
+>         SUBS    input_length, input_length, #1
+>         BCC     finished
+> ```
+>
+> With a length of 0 the first `SUB` gives &FFFFFFFF, the `SUBS` that follows gives &FFFFFFFE with the carry set, and the loop goes on for about four billion bytes: it reads the input far beyond the caller's buffer and writes compressed output far beyond the output buffer.
+>
+> *How it was found:* the module was built with GCC and run on an ARM interpreter (the C and assembler of the sources, nothing changed); the call with an empty input never returned. The restartable code (`R0` bit 1 set, then a call with `R0 = 1`, `R3 = 0`) handles an empty input: it gives no output at all (not even the three header bytes, which `Squash_Decompress` would then refuse as corrupt). It was **not** run on a RISC OS machine, because the failure overwrites memory.
+>
+> *A fix:* add `&& r->r[3] > 0` to the condition for the fast case in `Squash_swi` (an empty input then takes the restartable code); or test the length before the first `SUB` in `compress_store_ass`. The documentation (`Doc/interface`) does not say what an empty input should give.
+>
+> *An aside, not a bug:* for an input long enough to fill the code table (24000 bytes of mixed data) the fast code and the restartable code give different streams (19169 and 17078 bytes). Both decompress to the input, and `gzip -dc` accepts both (the format is that of `compress -b 12`).

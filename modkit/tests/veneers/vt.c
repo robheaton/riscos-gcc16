@@ -38,6 +38,19 @@ void vt_service (int service, _kernel_swi_regs *r, void *pw)
   if (service == 0x27) r->r[1] = 0;
 }
 
+/* *VT_Ok: no error; *VT_Err: an error block; *VT_Neg: configure_BAD_OPTION (-1); *VT_Num: configure_NUMBER_NEEDED (1) */
+_kernel_oserror *vt_command (const char *arg_string, int argc, int number, void *pw)
+{
+  (void) arg_string; (void) argc; (void) pw;
+  switch (number)
+    {
+    case 1: return &swi_error;
+    case 2: return configure_BAD_OPTION;
+    case 3: return configure_NUMBER_NEEDED;
+    default: return 0;
+    }
+}
+
 /* SWI VT_Alpha: r0 = r0 + r1, r1 = r0 - r1, r2 = the number; VT_Beta: an error; VT_Gamma: nothing; any other: the BadSWI error of the kernel */
 _kernel_oserror *vt_swi (int number, _kernel_swi_regs *r, void *pw)
 {
@@ -47,7 +60,7 @@ _kernel_oserror *vt_swi (int number, _kernel_swi_regs *r, void *pw)
     case 0: { int a = r->r[0], b = r->r[1]; r->r[0] = a + b; r->r[1] = a - b; r->r[2] = number; return 0; }
     case 1: r->r[3] = 33; return &swi_error;
     case 2: return 0;
-    default: return 0;
+    default: return error_BAD_SWI;
     }
 }
 

@@ -1,0 +1,13 @@
+# RomCmp test mapping file (pack romcmp37).  The first match that is not a wild card wins; the lines are in the order the module reads them.
+# MIME type               RISC OS      Hex    Extensions...
+text/plain                Text         fff    .txt   .text
+text/html                 HTML         faf    .html  .htm
+image/jpeg                JPEG         c85    .jpg   .jpeg  .jpe
+image/png                 PNG          b60    .png
+application/zip           ZIP          a91    .zip
+# a name that no machine knows: the hex column is used
+application/x-romcmp-test Wibble       abc    .wib   .wibble
+text/*                    Text         fff
+# any other MIME type that has a file type of its own is not here: a file type that nothing above has gets this one
+application/riscos        *            *
+*/*                       data         ffd

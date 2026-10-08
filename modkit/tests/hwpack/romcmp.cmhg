@@ -1,0 +1,8 @@
+; RomCmp: runs the same tests against the ROM modules Squash, MimeMap and DrawFile and against their builds from the RISC OS Open sources made with GCC 16 and the module kit: *RMRun RomCmp run ...
+; (pack/romcmp37 of the work area; tests/sim-romcmp.py runs the same program on the interpreter against the GCC builds)
+title-string:           RomCmp
+help-string:            RomCmp 1.00
+date-string:            08 Oct 2026
+
+initialisation-code:    rc_init
+module-is-runnable:
