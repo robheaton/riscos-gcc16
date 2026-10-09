@@ -63,6 +63,10 @@ def copyright_runtime(name, version, what, licence_line, source_line, note):
 
 def copyright_gcc16(version):
     """RiscPkg/Copyright of Gcc16."""
+    apache = ""
+    if int(version.split("-")[-1]) >= 16:        # modkit/include/swisnums.h came with 16.2.0-16
+        apache = ("\nThe module kit's header swis.h includes swisnums.h, the names and numbers of the SWIs of the OS (macros only), made from the assembler headers of the RISC OS Open sources, which are under the\n"
+                  "Apache License 2.0 (Copyright Castle Technology Ltd, RISC OS Open Ltd and others): the licence text is in docs/Apache-2.0 of this package.\n")
     return """The native GCC 16.2.0 tool chain for RISC OS (Gcc16 %s): GCC 16.2.0, binutils 2.45.1 and GNU make 4.4.1 (GNU General Public License, version 3 or later), with the GCCSDK port
 changes for arm-riscos-gnueabihf forward-ported to these versions.  UnixLib is not part of this package (see SharedLibs-C-armeabihf); the headers and libraries in
 arm-riscos-gnueabihf/ come from UnixLib 5.0 (GCCSDK, revised BSD licence for most files) and the libstdc++ and libgcc of GCC 16.2.0 (with the GCC Runtime Library Exception).
@@ -70,5 +74,5 @@ The icon sprites are those of GCCSDK's own gcc package.
 
 Sources: GCC 16.2.0, binutils 2.45.1 and make 4.4.1 from the GNU project (https://ftp.gnu.org/gnu/), with the patches, new files and build scripts of %s
 (recipe/gcc-16.2.0-riscos, recipe/binutils-2.45.1-riscos, recipe/make-4.4.1-riscos); docs/ReadMe has the instructions for use.
-%s
-""" % (version, REPO, REPORT)
+%s%s
+""" % (version, REPO, apache, REPORT)

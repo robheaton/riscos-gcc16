@@ -13,7 +13,7 @@ Patches and new files that become part of another project's source keep **that p
 | `recipe/make-4.4.1-riscos/patches` | GNU make: GPL-3.0-or-later |
 | `recipe/gcc-16.2.0-riscos/patches-unixlib` | UnixLib: the revised BSD licence for most files, some files under the GNU Library General Public Licence (LGPL 2) or other BSD-style notices: the licence of the file each patch changes. UnixLib's own statement is in [licenses/UnixLib-COPYING.txt](licenses/UnixLib-COPYING.txt); the LGPL text is in [licenses/LGPL-2.0.txt](licenses/LGPL-2.0.txt) |
 | `docs/upstream/patches`, `docs/upstream/src` | the same rule: UnixLib (BSD/LGPL), SharedUnixLibrary and ARMEABISupport (GCCSDK's licences) |
-| `modkit/include/swisnums.h` (after 16.2.0-15) | the names and numbers of the SWIs, made by `modkit/bin/mkswis.py` from the assembler headers of the RISC OS Open sources, which are under the **Apache License 2.0** (Castle Technology Ltd, RISC OS Open Ltd and others; the notice is in the file's first lines; Apache-2.0 material may be included in a GPL-3.0-or-later work). It holds macros only |
+| `modkit/include/swisnums.h` (new in 16.2.0-16) | the names and numbers of the SWIs, made by `modkit/bin/mkswis.py` from the assembler headers of the RISC OS Open sources, which are under the **Apache License 2.0** ([text](licenses/Apache-2.0.txt); Castle Technology Ltd, RISC OS Open Ltd and others; the notice is in the file's first lines, and the text is in the `licenses/` folder of the Linux tarball and as `docs/Apache-2.0` in the `Gcc16` package (the file `Apache-2/0` of the folder `docs` on RISC OS, where a dot in a name is a directory separator); Apache-2.0 material may be included in a GPL-3.0-or-later work). It holds macros only |
 | everything else (scripts, `tools/`, `tests/`, `modkit/`, `modpoc/`, `docs/`) | GPL-3.0-or-later |
 
 ## The binaries on the releases page
@@ -23,6 +23,7 @@ Patches and new files that become part of another project's source keep **that p
 | GCC (`gcc`, `g++`, `gfortran`, `cc1`, `cc1plus`, `f951`, `lto1` ...), binutils, GNU make | GPL-3.0-or-later |
 | libstdc++, libgfortran, libgcc | GPL-3.0-or-later **with the GCC Runtime Library Exception**, so programs you build may be licensed as you like |
 | UnixLib (`libunixlib`, `libm`), the loader `ld-riscos`, `libdl` | UnixLib's licence: the revised BSD licence for most files, LGPL for some |
+| `swisnums.h` among the module kit's headers (in `Gcc16` and in the Linux tarball) | Apache License 2.0 (text: `docs/Apache-2.0` in `Gcc16`, shown as `Apache-2/0` on RISC OS; `licenses/Apache-2.0.txt` in the tarball); the rest of the kit: GPL-3.0-or-later |
 | `libgcc_s.so.1` in the C runtime package | GPL-3.0-or-later with the GCC Runtime Library Exception (GCC 10.2.0's, from GCCSDK) |
 | the icon sprites in `!GCC16` | GCCSDK's, from its own `gcc` package |
 | the module `SharedULib` in `SharedULibFix` | UnixLib's licence (the revised BSD licence for most files, LGPL for some): it is `sul.s` of UnixLib with three patches |

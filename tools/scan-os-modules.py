@@ -161,7 +161,7 @@ def inline_from_headers(inc):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--sources", default=os.environ.get("RISCOS_SOURCES"))
-    ap.add_argument("--lib", default=os.path.join(HOME, "gccsdk-next/env-f/arm-riscos-gnueabihf/lib/libmodkit.a"))
+    ap.add_argument("--lib", default=os.path.join(HOME, "gccsdk-next/env-f/arm-riscos-gnueabihf/lib/libmodkit-core.a"))
     ap.add_argument("--nm", default=os.path.join(HOME, "gccsdk-next/env-f/bin/arm-riscos-gnueabihf-nm"))
     ap.add_argument("--include", default=os.path.join(HOME, "gccsdk-next/modkit/include"), help="modkit's headers (static inline functions count as present)")
     ap.add_argument("--json"); ap.add_argument("--detail", action="store_true"); ap.add_argument("--missing", action="store_true")

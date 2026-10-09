@@ -9,8 +9,8 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-15-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-15-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-16-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-16-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 

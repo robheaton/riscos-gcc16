@@ -227,7 +227,13 @@ MODLIB_15 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a i
              "  getenv, atexit ...), time, setjmp and locale functions, stdio (printf and sscanf, and files: fopen, fgets, fprintf ... with stdin, stdout and stderr), _swi, _swix and the _kernel_* calls, and the OS calls\n"
              "  through the veneers.  Not there: floating point in printf and scanf, math.h, signal and system.  Floating point has not been run on hardware, and C++ does not work yet.  New in 16.2.0-15 too: cmunge takes\n"
              "  international-help-file: and the international:, add-syntax:, configure:, status: and fs-command: options, and module-is-runnable: is a real start entry (*RMRun Module a b c calls main in user mode).")
-MODULES = MODULES.replace("%%MODLIB%%", MODLIB_15 if int(REL) >= 15 else MODLIB_14)
+MODLIB_16 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a is a small C library of its own, about 165 functions (16.2.0-15 had about 150, 16.2.0-14 had 30): the string, ctype, stdlib (malloc from the RMA,\n"
+             "  qsort, rand, getenv, atexit ...), time, setjmp, locale, inttypes and signal functions, stdio (printf and sscanf, and files: fopen, fgets, fprintf ... with stdin, stdout and stderr), _swi, _swix and the\n"
+             "  _kernel_* calls (also the interrupt, processor mode and RMA calls), and the OS calls through the veneers; <swis.h> has the numbers of the 951 SWIs of the OS.  Not there: floating point in printf and scanf,\n"
+             "  math.h and system.  Floating point has not been run on hardware, and C++ does not work yet.  New in 16.2.0-16: a SWI handler that returns error_BAD_SWI gives the system's error (SWI value out of range for\n"
+             "  module X; 16.2.0-14 and 16.2.0-15 gave V set with R0 = -1) and a command that returns configure_BAD_OPTION gives V set (it was taken for success); cmunge takes event-handler:, expressions in numbers and the\n"
+             "  names that the OS's CMHG files use; modreloc refuses a module with a section outside the image (it used to leave the section out without a word).")
+MODULES = MODULES.replace("%%MODLIB%%", MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
 if int(REL) >= 15:                                                    # the words that were true of the small kit of 16.2.0-14 only (REL 14 stays byte for byte as it was released)
     for old, new_ in (
         ("as with GCCSDK 4.7.4, without a C library\n", "as with GCCSDK 4.7.4, without UnixLib or the Shared C Library\n"),
@@ -277,6 +283,8 @@ add_file(APP + "!Boot", boot.encode(), 0xFEB)
 add_file(APP + "!Run", run.encode(), 0xFEB)
 add_file(APP + "!Help", helpf.encode(), 0xFEB)
 add_file(APP + "docs/ReadMe", readme.encode(), 0xFFF)
+if int(REL) >= 16:                                                    # swisnums.h (Apache-2.0 material, made from the RISC OS Open sources) is part of the module kit from 16.2.0-16 on
+    add_file(APP + "docs/Apache-2.0", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "licenses", "Apache-2.0.txt"), "rb").read(), 0xFFF)
 if os.path.exists(GCCSDK_ZIP):
     g = zipfile.ZipFile(GCCSDK_ZIP)
     for n in ("!Sprites", "!Sprites22"):
