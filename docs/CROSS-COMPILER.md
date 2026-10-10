@@ -9,8 +9,8 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-16-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-16-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-17-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-17-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 
@@ -109,7 +109,7 @@ Set `THROWBACK_DEBUG` to any value to be told why nothing arrives. This path was
 
 ## RISC OS modules (`-mmodule`, `cmunge`)
 
-Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 285 functions, `stdio` files and floating point among them; 30 in 16.2.0-14), for small and medium C modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
+Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 275 functions, `stdio` files and floating point among them; 30 in 16.2.0-14), for small and medium C and C++ modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
 
 ```bash
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg          # the CMHG file: header, veneers, C header
@@ -117,7 +117,7 @@ arm-riscos-gnueabihf-gcc -mmodule -O2 -c main.c -o main.o           # ARMv6, sof
 arm-riscos-gnueabihf-gcc -mmodule -o MyModule,ffa main.o header.o   # module linker script and libmodkit.a, then modreloc: the flat image that RMLoad takes
 ```
 
-What it is, what `libmodkit.a` has and the limits: [MODULES.md](MODULES.md). C++ modules (since the work after 16.2.0-16) are built with the make rules of `share/riscos-modkit/module.mk`, which put the kit's `include-cxx` folder before libstdc++'s headers (`g++ -mmodule` alone does not): [C++ in modules](MODULES.md#c-in-modules). `cmunge`, `modreloc` and `mkoslib` (the OSLib veneers, in place of `-lOSLib32`) are small C programs (no Python); the native compiler on RISC OS has the same ones. The example makefiles are in `modkit/` of this repository.
+What it is, what `libmodkit.a` has and the limits: [MODULES.md](MODULES.md). C++ modules (since 16.2.0-17) are built with the make rules of `share/riscos-modkit/module.mk`, which put the kit's `include-cxx` folder before libstdc++'s headers (`g++ -mmodule` alone does not): [C++ in modules](MODULES.md#c-in-modules). `cmunge`, `modreloc` and `mkoslib` (the OSLib veneers, in place of `-lOSLib32`) are small C programs (no Python); the native compiler on RISC OS has the same ones. The example makefiles are in `modkit/` of this repository.
 
 ## Using it from a build system
 

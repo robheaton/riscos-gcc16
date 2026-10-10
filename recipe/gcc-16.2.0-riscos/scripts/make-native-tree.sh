@@ -83,8 +83,8 @@ fi
 L=$E/$T/lib
 cp "$L/crt0.o" "$L/gcrt0.o" "$L/libgcc_s.so" "$L/libgcc_s_asneeded.so" "$R/$T/lib/"
 cp "$L/libmodkit.a" "$L/libmodkit-core.a" "$L/module.ld" "$R/$T/lib/"                # modkit: what gcc -mmodule links (the linker script and the library)
-[ -f "$L/libstdcxx-mod.a" ] && cp "$L/libstdcxx-mod.a" "$L/libstdcxx-mod.txt" "$R/$T/lib/"    # (the kit after 16.2.0-16) the members of libstdc++ that a C++ module can use; libmodkit.a names it
-[ -f "$L/libgcc-mod.a" ] && cp "$L/libgcc-mod.a" "$L/libgcc-mod.txt" "$R/$T/lib/"    # (the kit after 16.2.0-16) the libgcc of a module: libmodkit.a names it; an earlier install-modkit.sh made none
+cp "$L/libstdcxx-mod.a" "$L/libstdcxx-mod.txt" "$R/$T/lib/"    # (the kit of 16.2.0-17) the members of libstdc++ that a C++ module can use; libmodkit.a names it
+cp "$L/libgcc-mod.a" "$L/libgcc-mod.txt" "$R/$T/lib/"    # (the kit of 16.2.0-17) the libgcc of a module: libmodkit.a names it; an earlier install-modkit.sh made none
 mkdir -p "$R/lib/gcc/$T/$V/include-modkit"; cp "$E/lib/gcc/$T/$V/include-modkit/"*.h "$R/lib/gcc/$T/$V/include-modkit/"
 cp "$L/libgcc_s.so.1" "$R/$T/lib/"; $ST --strip-unneeded "$R/$T/lib/libgcc_s.so.1"
 cp "$L/libunixlib.so.5.0.0" "$R/$T/lib/libunixlib.so"

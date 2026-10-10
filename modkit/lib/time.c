@@ -1,5 +1,6 @@
 /* time.c - time () and clock () read the RISC OS clock (OS_Word 14 and OS_ReadMonotonicTime).  time_t is a long: seconds from 1 Jan 1970 - the clock, which counts centiseconds from 1 Jan 1900, is converted in
    16 bit steps (no 64 bit division) and clamps at the limits of the type. */
+#define __MODLIB_WANT_TIMESPEC 1
 #include <stddef.h>
 #include <limits.h>
 #include <time.h>

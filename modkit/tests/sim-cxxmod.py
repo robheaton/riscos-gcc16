@@ -50,7 +50,7 @@ print("built CxxMod,ffa with module.mk: %d bytes" % len(data))
 print("the linked image: no VFP, NEON or ARMv7 only instruction, no undefined symbol, the arrays of the constructors")
 elf = os.path.join(W, "build", "CxxMod.elf")
 bad = []
-dis = subprocess.run([OBJDUMP, "-d", elf], capture_output=True, text=True).stdout
+dis = subprocess.run([OBJDUMP, "-d", "-m", "armv8-a", elf], capture_output=True, text=True).stdout
 for line in dis.split("\n"):
     parts = line.split("\t")
     if len(parts) >= 3 and parts[2].split() and re.match(r"(v[a-z]|movw|movt|rbit|ubfx|sbfx|bfi|bfc|udiv|sdiv|dmb|dsb|isb)", parts[2].split()[0]): bad.append(parts[2].strip())

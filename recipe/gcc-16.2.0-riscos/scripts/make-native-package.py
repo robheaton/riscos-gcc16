@@ -233,7 +233,14 @@ MODLIB_16 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a i
              "  math.h and system.  Floating point has not been run on hardware, and C++ does not work yet.  New in 16.2.0-16: a SWI handler that returns error_BAD_SWI gives the system's error (SWI value out of range for\n"
              "  module X; 16.2.0-14 and 16.2.0-15 gave V set with R0 = -1) and a command that returns configure_BAD_OPTION gives V set (it was taken for success); cmunge takes event-handler:, expressions in numbers and the\n"
              "  names that the OS's CMHG files use; modreloc refuses a module with a section outside the image (it used to leave the section out without a word).")
-MODULES = MODULES.replace("%%MODLIB%%", MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
+MODLIB_17 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a is a small C library of its own, about 275 functions (16.2.0-16 had about 165, 16.2.0-14 had 30): the string, ctype, stdlib (malloc from the RMA,\n"
+             "  qsort, rand, getenv, atexit, strtod ...), time, setjmp, locale, inttypes and signal functions, stdio (printf and sscanf with floating point, and files: fopen, fgets, fprintf, tmpfile ... with stdin, stdout\n"
+             "  and stderr), math.h (98 functions), _swi, _swix and the _kernel_* calls (also the interrupt, processor mode and RMA calls), and the OS calls through the veneers; <swis.h> has the numbers of the 951 SWIs\n"
+             "  of the OS.  Not there: system, fenv.h, erf and the gamma functions.  New in 16.2.0-17: floating point (printf and scanf %f %e %g %a and strtod are exact, as glibc's; math.h), C++ in modules (CMHG\n"
+             "  module-is-c-plus-plus: runs the static constructors and destructors; new and delete; std::string, vector, map, set, list, unordered_map ... from libstdc++'s headers and libstdcxx-mod.a; no exceptions,\n"
+             "  RTTI, streams or threads; built with the cross compiler: the C++ headers are not in this package), and a correction of a fault of 16.2.0-14 to -16: libgcc code that needs the VFP or ARMv7 could be\n"
+             "  linked into a module (libmodkit.a now names libgcc-mod.a, which has only code for an ARMv6 CPU).")
+MODULES = MODULES.replace("%%MODLIB%%", MODLIB_17 if int(REL) >= 17 else MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
 if int(REL) >= 15:                                                    # the words that were true of the small kit of 16.2.0-14 only (REL 14 stays byte for byte as it was released)
     for old, new_ in (
         ("as with GCCSDK 4.7.4, without a C library\n", "as with GCCSDK 4.7.4, without UnixLib or the Shared C Library\n"),
@@ -243,6 +250,10 @@ if int(REL) >= 15:                                                    # the word
     ):
         assert MODULES.count(old) == 1, old[:60]
         MODULES = MODULES.replace(old, new_, 1)
+if int(REL) >= 17:                                                    # libmodkit.a names two more libraries from 16.2.0-17 on
+    old17 = "names libmodkit-core.a, the library, and libgcc; module.ld"
+    assert MODULES.count(old17) == 1
+    MODULES = MODULES.replace(old17, "names libmodkit-core.a (the library), libgcc-mod.a and libstdcxx-mod.a; module.ld", 1)
 TB_LAST_OLD = "  Throwback needs the desktop: it does nothing outside it.  Not done yet: the assembler and the linker (their messages do not go to the editor).\n"
 TB_LAST_13 = ("  Throwback needs the desktop: it does nothing outside it.  The assembler and the linker send theirs too (new in 16.2.0-13): -mthrowback makes the driver add --throwback to as and ld, and\n"
               "  as --throwback  and  ld --throwback  work on their own (an error of the linker with a source file and a line, an error of the assembler in its source).  A file name that starts with a\n"

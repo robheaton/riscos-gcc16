@@ -39,7 +39,7 @@ S = {}
 def snip(name, inc, body, expect="ok", pre="", flags=""): S[name] = (inc, pre, body, expect, flags)
 
 # ---- headers that need no library code
-snip("new", "#include <new>", "char buf[16]; int *p = new (buf) int (x); int *q = new (std::nothrow) int (5); int r = *p + *q; delete q; return r;")
+snip("new", "#include <new>", "char buf[16]; int *p = new (buf) int (x); int *q = new (std::nothrow) int (x); sink = (int) (long) q; int r = *p; delete q; return r;")
 snip("array", "#include <array>", "std::array<int, 4> a = {{x, 1, 2, 3}}; return (int) a.size () + a[(unsigned) x & 3] + a.at (2);")
 snip("algorithm", "#include <algorithm>", "int a[8] = {5, 3, 8, 1, 9, 2, 7, x}; std::sort (a, a + 8); std::reverse (a, a + 8); int *p = std::find (a, a + 8, 7); std::stable_sort (a, a + 8); return *p + std::min (a[0], a[1]) + std::max (a[2], a[3]) + (int) (std::lower_bound (a, a + 8, 4) - a);")
 snip("vector", "#include <vector>", "std::vector<int> v; for (int i = 0; i < x; i++) v.push_back (i * 3); v.resize (20); v.insert (v.begin () + 2, 99); v.erase (v.begin ()); int t = 0; for (int e : v) t += e; return t + (int) v.size ();")

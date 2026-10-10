@@ -48,7 +48,7 @@ for lib, m in pulled:
     subprocess.run([os.path.join(BIN, "arm-riscos-gnueabihf-ar"), "x", os.path.join(TC, "arm-riscos-gnueabihf", "lib", lib), m], cwd=W + "/x", check=True)
 bad = []
 for f in [W + "/x/" + m for _, m in pulled] + [W + "/fpsvc.o", W + "/h.o"]:
-    dis = subprocess.run([OBJDUMP, "-d", f], capture_output=True, text=True).stdout
+    dis = subprocess.run([OBJDUMP, "-d", "-m", "armv8-a", f], capture_output=True, text=True).stdout
     for line in dis.split("\n"):
         parts = line.split("\t")
         if len(parts) >= 3 and parts[2].split() and re.match(r"(v[a-z]|movw|movt|rbit|ubfx|sbfx|bfi|bfc|udiv|sdiv|dmb|dsb|isb)", parts[2].split()[0]): bad.append((os.path.basename(f), parts[2].strip()))

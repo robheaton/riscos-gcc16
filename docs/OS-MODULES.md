@@ -29,23 +29,23 @@ The only help the sources get is a header (`norcroft.h`) that makes the Norcroft
 
 | Module | Bytes | What it is |
 |---|---:|---|
-| `Audio/SoundCtrl` | 15,228 | the sound mixer's control module |
+| `Audio/SoundCtrl` | 26,476 | the sound mixer's control module |
 | `HWSupport/CD/CDFSSoftSCSI` | 17,676 | the software SCSI driver of the CD file system |
-| `HWSupport/GPIO` | 9,500 | GPIO devices on the HAL |
+| `HWSupport/GPIO` | 14,644 | GPIO devices on the HAL |
 | `HWSupport/PortMan` | 9,832 | the port manager |
-| `HWSupport/RTC` | 9,600 | the real time clock device |
-| `HWSupport/SD/SDIODriver/Test/FakeCardInt` | 23,120 | a test module of the SD driver |
-| `Networking/AUN/Access/Freeway` | 26,092 | Freeway, the service directory |
-| `Networking/AUN/Net` | 42,676 | the Net module (Econet over IP) |
-| `Networking/DHCP` | 31,484 | the DHCP client |
-| `Networking/MimeMap` | 22,412 | the MIME map |
-| `Networking/Omni/Protocols/OmniLanManFS` | 139,808 | the LanManager file system |
-| `Programmer/Squash` | 12,416 | compression (with its assembler) |
+| `HWSupport/RTC` | 14,744 | the real time clock device |
+| `HWSupport/SD/SDIODriver/Test/FakeCardInt` | 34,408 | a test module of the SD driver |
+| `Networking/AUN/Access/Freeway` | 31,236 | Freeway, the service directory |
+| `Networking/AUN/Net` | 49,240 | the Net module (Econet over IP) |
+| `Networking/DHCP` | 36,628 | the DHCP client |
+| `Networking/MimeMap` | 27,592 | the MIME map |
+| `Networking/Omni/Protocols/OmniLanManFS` | 152,520 | the LanManager file system |
+| `Programmer/Squash` | 17,560 | compression (with its assembler) |
 | `Toolbox/Toolbox`, and `ColourDbox`, `ColourMenu`, `DCS`, `FileInfo`, `FontDbox`, `FontMenu`, `IconBar`, `Menu`, `PrintDbox`, `ProgInfo`, `SaveAs`, `Scale` | 16,092 - 27,392 each | the Toolbox and the 12 object modules that use the Toolbox library |
-| `Video/Render/DrawFile` | 37,624 | Draw file rendering |
-| `Video/UserI/BootFX` | 19,904 | the boot bar |
-| `Video/UserI/ScrModes` | 48,644 | screen modes and the monitor files |
-| `Video/UserI/ScrSaver` | 5,748 | the screen saver service |
+| `Video/Render/DrawFile` | 48,872 | Draw file rendering |
+| `Video/UserI/BootFX` | 31,152 | the boot bar |
+| `Video/UserI/ScrModes` | 53,824 | screen modes and the monitor files |
+| `Video/UserI/ScrSaver` | 10,892 | the screen saver service |
 
 Together 745,000 bytes. Each is a module image with the header words, the command table, the SWI chunk and the names that its CMHG file says, and a relocation table that `tools/modinfo.py` checks (the table ends the file; every word it lists holds an address inside the image).
 
@@ -64,7 +64,7 @@ Together 745,000 bytes. Each is a module image with the header words, the comman
 | 2 | a constant that the exported headers do not have | SDFS, ToolAction |
 | 1 | SyncLib's assembler, where `asasm` rejects an objasm macro rule | EtherGENET |
 | 1 | the VFP assembler of VFPSupport (`asasm` has no VFP syntax) | VFPSupport |
-| (1) | floating point (`math.h`), already counted in the first row (the kit has `math.h` since the work after 16.2.0-16, and the scan counts 66 of 66 now; MakePSFont's other obstacles are unchanged) | MakePSFont |
+| (1) | floating point (`math.h`), already counted in the first row (the kit has `math.h` since 16.2.0-17, and the scan counts 66 of 66 now; MakePSFont's other obstacles are unchanged) | MakePSFont |
 | 1 each | headers that are not in the sources (libpng, VideoCore, the Linux SDIO headers), `uchar.h` (included by a test of the Shared C Library), an include path of the RISC OS folder layout (AbortTrap), a RISC OS dotted include name (Window), an assembler header that is not found (BCMVideo: BCM2835Reg; Debugger: ExcDump, with `excdump.h`), code that the Makefile builds another way (`longcmd`), and SDCMOS, which has no object to build | CompressPNG, VCHIQ, FakeLibInt, `atomic`, AbortTrap, Window, BCMVideo, Debugger, `longcmd`, SDCMOS |
 
 So of the 37: **5** are stopped by CMHG features that the kit leaves out on purpose; **13** by source that only the Norcroft tools read (inline assembler, run-time symbols of the Shared C Library, C that GCC 16 rejects, the VFP assembler, include paths of the RISC OS folder layout); **15** by libraries, headers and constants of the OS that this program does not provide (the USB stack's headers, the Wimp C library, libpng, the VideoCore and SDIO headers, SyncLib's assembler, two constants that the exported headers lack ...); **2** are limits of the kit's own `mkoslib` (Picker and BootCmds: see [below](#what-the-survey-changed-in-the-kit)); one needs `uchar.h`, which only a test of the Shared C Library includes; and `SDCMOS` has nothing in its Makefile to build.
@@ -115,7 +115,7 @@ Run on a Raspberry Pi Compute Module 4 with RISC OS 5.30 (the resource files in 
 | the GCC builds removed (`RMKill`, which runs their finalisation), the ROM modules started again, the program run once more | **545 checks, 0 failed**, and the result file is the first one again |
 | `RunDraw37`: DrawFile paints 13 cases made from 8 Draw files (rectangles, a stroked path, a dashed line, a Bezier, a group, a tagged object, text in the system font, a sprite; some of them scaled or turned, with bounding boxes, or with the suppress flag) into a sprite of 32 bits per pixel, ROM and GCC build | **28 checks, 0 failed** for each; the number of pixels painted, their bounding box and the checksum of all the pixels are the same in all 13 cases |
 
-That is **the same behaviour on everything the program tried, for these three**: 72 KB of module code, compiled and linked by GCC 16 and the kit, in the places of the Norcroft-built modules of the ROM. The three files are the ones that the Linux tarball of 16.2.0-16 makes: `tools/build-os-modules.py` with the unpacked tarball as `--tc` gives all three byte for byte (12,416, 22,412 and 37,624 bytes), so what ran on the machine is what the tools of the release produce. It is a sample, and the three were chosen to be checkable (a function of its input, a table read from a file, a renderer with a pixel checksum). It was not so on the first run: [what the machine found](#what-the-machine-found).
+That is **the same behaviour on everything the program tried, for these three**: 72 KB of module code, compiled and linked by GCC 16 and the kit, in the places of the Norcroft-built modules of the ROM. The three files are the ones that the Linux tarball of 16.2.0-16 made: `tools/build-os-modules.py` with the unpacked tarball as `--tc` gave all three byte for byte (12,416, 22,412 and 37,624 bytes), so what ran on the machine was what the tools of that release produced. The kit of 16.2.0-17 makes larger files (17,560, 27,592 and 48,872 bytes: `printf` has the floating point conversions now; a module that wants none defines `__modlib_fmtdouble` and `__modlib_strtofp` and gets the old sizes); those were not run on the machine, but the tests of the library and of the modules that were run there cover the code they share. It is a sample, and the three were chosen to be checkable (a function of its input, a table read from a file, a renderer with a pixel checksum). It was not so on the first run: [what the machine found](#what-the-machine-found).
 
 <a id="what-it-found"></a>
 ## What it found
@@ -136,4 +136,4 @@ Two differences, neither of them a fault of the compiler or of the kit, and the 
 
 ## What it does not show
 
-That a module built with GCC works in general: three were compared with the ROM's, on one machine, and the other 26 were not run on a machine. That the OS can be built this way: the ROM is built from these same sources with the Norcroft tools, and 37 of the 66 do not build here. That the kit is complete: it is a C library of about 285 functions for freestanding modules (floating point included since the work after 16.2.0-16), and the table above says which parts of the OS need more than that (the Wimp C library, the Shared C Library's start-up).
+That a module built with GCC works in general: three were compared with the ROM's, on one machine, and the other 26 were not run on a machine. That the OS can be built this way: the ROM is built from these same sources with the Norcroft tools, and 37 of the 66 do not build here. That the kit is complete: it is a C library of about 275 functions for freestanding modules (floating point included since 16.2.0-17), and the table above says which parts of the OS need more than that (the Wimp C library, the Shared C Library's start-up).

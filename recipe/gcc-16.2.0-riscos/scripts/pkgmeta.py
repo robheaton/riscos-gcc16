@@ -67,6 +67,9 @@ def copyright_gcc16(version):
     if int(version.split("-")[-1]) >= 16:        # modkit/include/swisnums.h came with 16.2.0-16
         apache = ("\nThe module kit's header swis.h includes swisnums.h, the names and numbers of the SWIs of the OS (macros only), made from the assembler headers of the RISC OS Open sources, which are under the\n"
                   "Apache License 2.0 (Copyright Castle Technology Ltd, RISC OS Open Ltd and others): the licence text is in docs/Apache-2.0 of this package.\n")
+    if int(version.split("-")[-1]) >= 17:        # the maths functions of the module kit are Sun's fdlibm
+        apache += ("\nMany maths functions of the module kit's library (libmodkit-core.a) are Sun Microsystems' fdlibm 5.3 (GNU Classpath's copy): Copyright (C) 1993 by Sun Microsystems, Inc.  Permission to use, copy, modify,\n"
+                   "and distribute this software is freely granted, provided that this notice is preserved.  libgcc-mod.a and libstdcxx-mod.a are parts of libgcc and libstdc++ (GPL version 3 with the GCC Runtime Library Exception).\n")
     return """The native GCC 16.2.0 tool chain for RISC OS (Gcc16 %s): GCC 16.2.0, binutils 2.45.1 and GNU make 4.4.1 (GNU General Public License, version 3 or later), with the GCCSDK port
 changes for arm-riscos-gnueabihf forward-ported to these versions.  UnixLib is not part of this package (see SharedLibs-C-armeabihf); the headers and libraries in
 arm-riscos-gnueabihf/ come from UnixLib 5.0 (GCCSDK, revised BSD licence for most files) and the libstdc++ and libgcc of GCC 16.2.0 (with the GCC Runtime Library Exception).

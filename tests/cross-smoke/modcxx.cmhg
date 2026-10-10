@@ -1,0 +1,7 @@
+; modcxx: a module written in C++ for cross-smoke.sh (std::string, std::map, std::unordered_map, virtual functions, new and delete); module-is-c-plus-plus: runs the static constructors and destructors
+title-string:           ModCxx
+help-string:            ModCxx 0.01
+date-string:            10 Oct 2026
+module-is-c-plus-plus:
+initialisation-code:    modcxx_init
+finalisation-code:      modcxx_final

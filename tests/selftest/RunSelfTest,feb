@@ -1,4 +1,4 @@
-| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-16 on SharedLibs-C-armeabihf 16.2.0-13 or later).
+| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-17 on SharedLibs-C-armeabihf 16.2.0-13 or later).
 | It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov, a profile-guided build, a gprof run and a module that is built, loaded and run, and checks that a compile error is reported.
 | BEFORE: install the packages with PackMan, REBOOT, and double-click !GCC16 once (it sets GCC16$Dir and the search path).
 | RUN IT IN A TASK WINDOW (Ctrl-F12):     Obey <GCC16Test$Dir>.RunSelfTest        About half a minute.
@@ -23,7 +23,7 @@ Copy <SelfTest$Src>.Makefile <SelfTest$Dir>.Makefile F~C~V
 Dir <SelfTest$Dir>
 | what double-clicking !GCC16 does: Run$Path, return code limit and the suffix swapping lists of every tool
 Obey <GCC16$Dir>.!Run
-If "<GCC16$Version>" <> "16.2.0-16" Then Error This self-test is for Gcc16 16.2.0-16 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-16 with PackMan, reboot, double-click !GCC16, then run this again
+If "<GCC16$Version>" <> "16.2.0-17" Then Error This self-test is for Gcc16 16.2.0-17 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-17 with PackMan, reboot, double-click !GCC16, then run this again
 Unset TMPDIR
 WimpSlot -min 48M -max 48M
 Unset SelfTest$Fails

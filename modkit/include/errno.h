@@ -68,6 +68,7 @@ extern int errno;
 #define ETOOMANYREFS 59
 #define ETIMEDOUT 60
 #define ECONNREFUSED 61
+#define EREFUSED 61
 #define ELOOP 62
 #define ENAMETOOLONG 63
 #define EHOSTDOWN 64
@@ -86,8 +87,14 @@ extern int errno;
 #define EIDRM 77
 #define ENOTSUP 78
 #define ENOLCK 79
+#define ELIBVER 82
+#define ELIBACC 83
+#define ELIBLIM 84
+#define ELIBNOENT 85
+#define ELIBNOEXEC 86
 #define ENOSYS 87
 #define EOPSYS 88
+#define ESIG 89
 #define EILSEQ 90
 #define EOVERFLOW 91
 #ifdef __cplusplus

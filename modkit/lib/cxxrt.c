@@ -5,7 +5,7 @@
                                            from your initialisation and finalisation code.
      operator new, new[], delete, delete[]   (and the nothrow and sized ones: cxxnew.c, cxxnewa.c, cxxdel.c, cxxdela.c) on malloc / free (the RMA); a failure that new would throw for is abort () (a RISC OS
                                            error in a module).  A program may replace the global operator new (size_t) and operator delete (void *): new[] and the nothrow forms of new go through the
-                                           operator new that is linked, and delete[] and the sized and nothrow forms through the operator delete, as in C++.
+                                           operator new that is linked (the nothrow forms of new take memory from malloc directly), and delete[] and the sized and nothrow forms of delete through the operator delete that is linked.
      __cxa_pure_virtual, the guards of local statics, __dso_handle, and the  std::__throw_*  functions that the headers of libstdc++ call from their templates (<vector>, <array>, <algorithm> ... work as far as
      they need nothing from the library; <string> is instantiated by the code of the module, <map> <set> <list> use members of libstdc++ that the kit links from libstdcxx-mod.a, <iostream> does not work).
    The names are those of the C++ ABI of the ARM (_Znwj is operator new (unsigned)); this file is C, so that the library needs no C++ compiler. */

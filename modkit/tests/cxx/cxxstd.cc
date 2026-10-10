@@ -1,6 +1,6 @@
 /* cxxstd.cc - the parts of the C++ standard library that a module can use (see MODULES.md): built for the host (g++, glibc, libstdc++) and for a module (g++ -mmodule, the headers of libstdc++ and the members
    of libstdc++.a that libstdcxx-mod.a keeps, no exceptions) and run on the A32 interpreter: the two must print the same text.  std::string, std::vector, std::map, std::set, std::list, std::deque,
-   std::unique_ptr and std::shared_ptr (not make_shared), std::function and std::bind, <algorithm>, <numeric>, <tuple>, <optional>, <variant>, <string_view>, <bitset>, <array>, <cmath>, <chrono> (the
+   std::unique_ptr and std::shared_ptr, std::function and std::bind, <algorithm>, <numeric>, <tuple>, <optional>, <variant>, <string_view>, <bitset>, <array>, <cmath>, <chrono> (the
    types), <atomic>, <mutex> is not there.  Every container is checked after the operations by walking it. */
 #include <string>
 #include <vector>

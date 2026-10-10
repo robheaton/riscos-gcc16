@@ -51,9 +51,9 @@ scan () {
     }
     END { for (f in bad) print f, bad[f] }'
 }
-# objdump of every member of DIR in one run; it must succeed and say "file format" once per member (a failure must not look like "nothing found")
+# objdump of every member of DIR in one run, decoded as ARMv8-A whatever the .ARM.attributes say (without them objdump shows ARMv6T2 and ARMv7 instructions as UNDEFINED, with no mnemonic); it must succeed and say "file format" once per member (a failure must not look like "nothing found")
 disassemble () {   # DIR LIST OUTFILE
-  (cd "$1" && xargs "$OBJDUMP" -d < "$2") > "$3" 2> "$3.err" || { echo "mklibgcc: objdump failed:" >&2; head -5 "$3.err" >&2; exit 1; }
+  (cd "$1" && xargs "$OBJDUMP" -d -m armv8-a < "$2") > "$3" 2> "$3.err" || { echo "mklibgcc: objdump failed:" >&2; head -5 "$3.err" >&2; exit 1; }
   n=$(grep -c ':[[:space:]]\+file format' "$3" || true)
   [ "$n" = "$(wc -l < "$2")" ] || { echo "mklibgcc: objdump described $n of $(wc -l < "$2") members" >&2; exit 1; }
 }

@@ -20,7 +20,7 @@ On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all 
 
 ## Get it
 
-**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-16_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-16 (`RunSelfTest` stops with a message if the installed `Gcc16` is another release; the module check uses `cmunge` and `gcc -mmodule`) and installs `!GCC16Test`.
+**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-17_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-17 (`RunSelfTest` stops with a message if the installed `Gcc16` is another release; the module check uses `cmunge` and `gcc -mmodule`) and installs `!GCC16Test`.
 
 Or copy this folder to RISC OS yourself: the files are in the RISC OS layout (directories `c`, `cc`, `f90` and `h`; `RunSelfTest,feb` is the Obey file: on RISC OS it must have the file type Obey, `*SetType RunSelfTest Obey`).
 

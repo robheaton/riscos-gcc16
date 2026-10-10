@@ -72,9 +72,18 @@ if [ -e "$TC/arm-riscos-gnueabihf/lib/libmodkit.a" ]; then
   chk "-mmodule: an output named *.elf stays an ELF file (for a debugger or a simulation), and modreloc makes the same module image of it" "$T-gcc -mmodule -o modhello.elf modhello.o modhello_hdr.o && head -c 4 modhello.elf | grep -q ELF && $T-modreloc -q modhello.elf modhello2,ffa && cmp modhello,ffa modhello2,ffa"
   chk "-mmodule -r (a partial link) is not turned into a module" "$T-gcc -mmodule -r -o modpart.o modhello.o modhello_hdr.o && head -c 4 modpart.o | grep -q ELF"
   chk "the module has no call into a C library (every symbol is the module's or modkit's)" "test -f modhello.elf && ! $T-nm -u modhello.elf | grep -q ."
+  chk "libgcc-mod.a and libstdcxx-mod.a are in the tool chain (install-modkit.sh makes them)" "test -s $TC/arm-riscos-gnueabihf/lib/libgcc-mod.a && test -s $TC/arm-riscos-gnueabihf/lib/libstdcxx-mod.a"
   if [ -e "$TC/arm-riscos-gnueabihf/lib/libgcc-mod.a" ]; then
     chk "-mmodule: libmodkit.a names libgcc-mod.a (the members of libgcc.a without VFP or ARMv7 code), not -lgcc" "grep -q libgcc-mod.a $TC/arm-riscos-gnueabihf/lib/libmodkit.a && ! grep -q -e '-lgcc' $TC/arm-riscos-gnueabihf/lib/libmodkit.a && test -s $TC/arm-riscos-gnueabihf/lib/libgcc-mod.a"
     chk "-mmodule: a double converted to a long long, popcount, powi, printf of a double and sqrt link, and not one member comes from libgcc.a (the VFP ones)" "$T-gcc -mmodule -O2 -Wall -c $HERE/modfp.c -o modfp.o && $T-gcc -mmodule -o modfp.elf modfp.o -Wl,-Map=modfp.map && ! grep -q 'libgcc\\.a(' modfp.map && grep -q 'libgcc-mod\\.a(' modfp.map && grep -q 'libmodkit-core\\.a(gccrt\\.o)' modfp.map"
+  fi
+  if [ -e "$TC/arm-riscos-gnueabihf/lib/libstdcxx-mod.a" ]; then
+    CXXDIRS=$(echo | $T-g++ -x c++ -E -v - 2>&1 | sed -n '/^#include <...>/,/^End of search/p' | grep '/c++/' | sed 's/^ *//')
+    CXXI=""; for d in $CXXDIRS; do CXXI="$CXXI -isystem $d"; done
+    MODCXXFLAGS="-mmodule -U__STDC_HOSTED__ -D__STDC_HOSTED__=1 -isystem $TC/share/riscos-modkit/include-cxx $CXXI -isystem $TC/share/riscos-modkit/include -isystem $($T-gcc -print-file-name=include-modkit) -isystem $($T-gcc -print-file-name=include) -std=gnu++17 -O2 -fno-exceptions -fno-rtti -fno-threadsafe-statics"
+    chk "C++ modules: libmodkit.a names libstdcxx-mod.a (the members of libstdc++.a that are plain ARMv6 code and not position independent), and share/riscos-modkit has include-cxx and module.mk" "grep -q libstdcxx-mod.a $TC/arm-riscos-gnueabihf/lib/libmodkit.a && test -s $TC/arm-riscos-gnueabihf/lib/libstdcxx-mod.a && test -f $TC/share/riscos-modkit/include-cxx/cmath && test -f $TC/share/riscos-modkit/module.mk"
+    chk "C++ modules: cmunge accepts module-is-c-plus-plus:" "cmunge -tgcc -32bit -p -d modcxx.h -o modcxx_hdr.o $HERE/modcxx.cmhg && test -s modcxx_hdr.o"
+    chk "C++ modules: std::string, std::map, std::unordered_map, unique_ptr, virtual functions, new and delete compile and link as a module (the driver runs modreloc, which refuses a global offset table); no libstdc++ and no libgcc VFP member, no undefined symbol" "$T-g++ $MODCXXFLAGS -I. -c $HERE/modcxx.cc -o modcxx.o && $T-gcc -mmodule -o modcxx.elf modcxx.o modcxx_hdr.o -Wl,-Map=modcxx.map && $T-gcc -mmodule -o modcxx,ffa modcxx.o modcxx_hdr.o && ! head -c 4 modcxx,ffa | grep -q ELF && ! grep -q 'libstdc++\\.a(\\|libgcc\\.a(' modcxx.map && ! $T-nm -u modcxx.elf | grep -q ."
   fi
 else
   echo "  skip  modules: this toolchain has no modkit (install-modkit.sh puts it in)"

@@ -9,6 +9,9 @@
 
    The inputs come from a generator of this file (xorshift32), identical in every build; the work is scaled by SCALE.  With  -v  (host) every result is printed, to find the first difference with diff.
    The test code itself uses only its own t_* helpers for strings and memory, never the functions under test. */
+#ifdef T_ARM
+#define __MODLIB_WANT_TIMESPEC 1                 /* (the kit's time.h has struct timespec and clock_gettime only for C11 and C++ otherwise) */
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <stdarg.h>

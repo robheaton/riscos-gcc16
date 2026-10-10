@@ -18,6 +18,7 @@ Compare the checksums with the ones GNU publishes next to the downloads.
 | What | Where | Used for |
 |---|---|---|
 | UnixLib 5.0 sources | GCCSDK svn trunk, revision **7800**: `svn://svn.riscos.info/gccsdk/trunk`, `gcc4/recipe/files/gcc/libunixlib`. The release attaches an unmodified snapshot of exactly that directory, `gccsdk-unixlib-r7800.tar.xz` (sha256 `bedf336746e7ca9d03ec4486d161ad6d55c0249419e18362dee34fc28236f071`; it unpacks to `libunixlib/`) | the `libunixlib` and `libm` of the runtime package, with [`patches-unixlib/`](recipe/gcc-16.2.0-riscos/patches-unixlib) applied |
+| fdlibm 5.3 (Sun Microsystems) | the copy in GNU Classpath, `native/fdlibm`: the source of the maths functions in `modkit/lib/fd_*.c`, kept with Sun's notice; licence in [LICENSES.md](LICENSES.md) |
 | The GCC 10.2.0 EABI recipe | the same svn, `autobuilder/develop/gcc` | the RISC OS target files that were forward-ported to GCC 16 (`recipe/gcc-16.2.0-riscos`), and the sysroot pieces (headers, `crt0.o`, loader) |
 | `SharedLibs-C-armeabihf` 10.2.0-1 | the GCCSDK autobuilder package | the dynamic loader, `libgcc_s.so.1` and `libdl` in the C runtime package, unchanged |
 | `gcc_10.2.0-1` package | the GCCSDK autobuilder | the icon sprites of `!GCC16` |
@@ -27,8 +28,8 @@ Compare the checksums with the ones GNU publishes next to the downloads.
 
 | Asset | Built from |
 |---|---|
-| `riscos-gcc16-cross-16.2.0-16-x86_64-linux.tar.xz` | GCC 16.2.0 + binutils 2.45.1 + this repository's `recipe/` and `modkit/` (the module kit, installed by `install-modkit.sh`; [BUILDING.md](docs/BUILDING.md), steps 2 to 5), UnixLib headers and libraries from the GCCSDK sources and the runtime packages |
-| `Gcc16_16.2.0-16_arm.zip` | GCC 16.2.0, binutils 2.45.1 and make 4.4.1 plus the patches in `recipe/` and the module kit of `modkit/` (the native build: step 7), cross-built with the cross compiler above |
+| `riscos-gcc16-cross-16.2.0-17-x86_64-linux.tar.xz` | GCC 16.2.0 + binutils 2.45.1 + this repository's `recipe/` and `modkit/` (the module kit, installed by `install-modkit.sh`; [BUILDING.md](docs/BUILDING.md), steps 2 to 5), UnixLib headers and libraries from the GCCSDK sources and the runtime packages |
+| `Gcc16_16.2.0-17_arm.zip` | GCC 16.2.0, binutils 2.45.1 and make 4.4.1 plus the patches in `recipe/` and the module kit of `modkit/` (the native build: step 7), cross-built with the cross compiler above |
 | `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` | UnixLib 5.0 (svn r7800) + `patches-unixlib/` built with the cross compiler; the loader, `libgcc_s` and `libdl` from the GCCSDK package |
 | `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip`, `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` | libstdc++ and libgfortran of GCC 16.2.0 built by the cross compiler |
 | `SharedULibFix_1.16-vforkfix3_arm.zip` | `module/sul.s` of the UnixLib snapshot with `patches-unixlib/unixlib-sul-vfork-child-*.patch`, assembled by `build-sul.sh` with GCCSDK 10.2.0's tool chain (step 6 of [BUILDING.md](docs/BUILDING.md)); the programs and Obey files are `recipe/gcc-16.2.0-riscos/sulfix`, built with the cross compiler |

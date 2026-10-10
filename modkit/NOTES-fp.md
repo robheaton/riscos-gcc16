@@ -1,6 +1,6 @@
 # Floating point in modules: work notes (started 2026-10-09, after 16.2.0-16)
 
-Plan item 1 of "module support next". Not released; nothing committed. Read this before touching the FP work.
+Design notes of the floating point and C++ work for modules (released in 16.2.0-17). These are the author's working notes, kept because they record why things are as they are; the documentation for users is docs/MODULES.md.
 
 ## Finding 1 (a fault of 16.2.0-14 .. -16, found 2026-10-09): libgcc members that are VFP / ARMv7 code
 
@@ -23,15 +23,6 @@ Fix (done in the work area, tested on the interpreter):
   `__popcountsi2/di2 __paritysi2/di2 __ctzdi2 __ffssi2/di2 __powidf2 __powisf2`. Integer code; powi uses the soft float routines.
 * Tests: `modkit/tests/libtest/libtest-fp.c` (included by libtest.c): sections `fparith` (62,500 results), `fpconv` (40,000), `gccrt` (32,500):
   glibc = host-lib (sanitizers) = ARM interpreter, all identical (SCALE 1; the ARM run is now 260 s: 183 M steps).
-
-## TODO for the next release (collect here, do not forget)
-* `make-native-tree.sh` line ~85: copy `libgcc-mod.a` (and libgcc-mod.txt) into the native tree next to libmodkit.a (the script names it!).
-* `make-native-package.py` MODLIB text (line ~242: "names libmodkit-core.a ... and libgcc") + ReadMe text for floating point.
-* `cross-smoke.sh` ~line 65: check `libgcc-mod.a` exists; the -mmodule link line has no `-lgcc`.
-* `docs/BUILDING.md` ~line 92 ("writes libmodkit.a as a linker script that names it and libgcc.a"), MODULES.md (Floating point row, line ~74 libgcc sentence, KNOWN limitations), CHANGELOG (new entry: the fault + the fix + what is new), KNOWN-ISSUES, README, FEATURES, HISTORY, TESTING (new sections), tools/README.
-* Say plainly in the notes that 16.2.0-14, -15, -16 could link VFP/ARMv7 libgcc code into a module (when a module used one of the routines above).
-* `module.mk` comments (lines 28, 72) say "and libgcc": now libgcc-mod.
-* The OS-module survey (`tools/build-os-modules.py`): rerun with the new kit: does any of the 29 that linked pull a dropped member?
 
 ## Design decisions for printf / scanf / strtod (not written yet)
 * `%f %F %e %E %g %G %a %A`, flags `- + space # 0`, width, precision, `l`/`L` ignored (long double = double on this target). Exact (round-half-even on
@@ -77,6 +68,3 @@ make-native-tree.sh must copy libgcc-mod.a; ask the user before commit/release.
   bits/gthr-default.h,bits/c++config.h}, module.mk (CXX rules, include-cxx first), tools/a32.py (ldrex/strex/clrex).
 * Not supported (documented): exceptions, RTTI, thread_local, iostreams, <mutex>/<thread>, <stdexcept> classes, <random> (needs std::lgamma; no permissive source here: Classpath's fdlibm has no lgamma/erf, UnixLib's is glibc's),
   wide characters.
-* NEXT: run `python3 modkit/pack/make-pack41.py` (about 25 min; needs the full ARM libtest run first: tests/libtest/run-arm.py with BUILD=<dir>), upload the pack to the test machine's share,
-  tell the user (*Dir to the module41 folder, *Obey RunMod41, results ResultsMod41). Then fill the `<not run yet>` for C++ in MODULES.md. Release TODO: version bump, MODLIB_17 text, cross-smoke checks
-  (libstdcxx-mod.a, include-cxx, a C++ link), native tree (include-cxx and libstdcxx-mod.a for the native compiler: untested), function count ('about 285' must be recounted), HISTORY row, clean-room run, Pi tests, ask before commit.

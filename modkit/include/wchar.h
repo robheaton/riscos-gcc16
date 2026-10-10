@@ -1,5 +1,5 @@
 /* wchar.h - only what the headers of the C++ library need: the types mbstate_t and wint_t and WEOF.  There are no wide character functions in the C library of the kit (wchar_t is the compiler's: 4 bytes on this
-   target); a program that uses wcslen and the like gets an undefined symbol at the link. */
+   target); a program that uses wcslen and the like gets an error at the compile (the functions are not declared). */
 #ifndef _WCHAR_H
 #define _WCHAR_H
 #ifdef __cplusplus

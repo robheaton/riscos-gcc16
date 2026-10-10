@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the PackMan package Gcc16SelfTest_16.2.0-<REL>_arm.zip: the self-test of tests/selftest as the application !GCC16Test, with RISC OS file types.
 
-usage: make-selftest-package.py [REL]        (default 16)      output directory: $PKG_OUT, default ../../../release
+usage: make-selftest-package.py [REL]        (default 17)      output directory: $PKG_OUT, default ../../../release
 Files get RISC OS types through the Info-ZIP "ARC0" extra field (Obey &FEB for !Boot, !Run and RunSelfTest, Text &FFF for the rest); see make-native-package.py.
 """
 import os, struct, sys, time, zipfile
@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.normpath(os.path.join(HERE, "..", "tests", "selftest"))           # the author's work area
 if not os.path.isdir(SRC):
     SRC = os.path.normpath(os.path.join(HERE, "..", "..", "..", "tests", "selftest"))      # this repository: the tests of the recipe are published in tests/
-REL = sys.argv[1] if len(sys.argv) > 1 else "16"
+REL = sys.argv[1] if len(sys.argv) > 1 else "17"
 VER = "16.2.0-" + REL
 OUT = os.environ.get("PKG_OUT") or os.path.normpath(os.path.join(HERE, "..", "..", "..", "release"))
 os.makedirs(OUT, exist_ok=True)
