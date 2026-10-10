@@ -1,0 +1,13 @@
+; the CMHG options of 16.2.0-18: a function of its own for a SWI, swi-decoding-code, the options of the veneers, handler: and no-handler: in the command table
+title-string:           ModOpts
+help-string:            ModOpts 1.00
+date-string:            10 Oct 2026
+swi-chunk-base-number:  0x58D00
+swi-decoding-table:     MO One/mo_one Two
+swi-handler-code:       mo_swi
+swi-decoding-code:      mo_dec/mo_name
+generic-veneers:        g1/g1_h (private-word: r4, carry-capable:)
+vector-handlers:        v1/v1_h (error-capable:)
+command-keyword-table: mo_table
+  MO_A(min-args: 0, max-args: 0, handler: mo_a),
+  MO_B(no-handler:, help-text: "only help\n")

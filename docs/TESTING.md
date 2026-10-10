@@ -14,7 +14,7 @@ tests/cross-smoke/cross-smoke.sh <toolchain directory> [<reference toolchain>]
 ```
 
 It compiles and links programs in C, C++, Fortran, LTO and as a shared library with the cross compiler in the given directory, checks that every part of the compiler (`cc1`, `lto1`, the linker plugin, `libunixlib.so` ...) is found **inside** that directory, that the objects are ELF 32-bit ARM EABI5 for the shared UnixLib,
-and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 50 checks with the directory it was built in hidden from it, and all 54 when that tool chain is given as the reference: the four extra checks compare the programs with the reference's.
+and that stack probing is on. With a second directory it compares the programs byte for byte with that toolchain's. The release tarball passes all 51 checks with the directory it was built in hidden from it, and all 55 when that tool chain is given as the reference: the four extra checks compare the programs with the reference's.
 
 ## 3. The regression suites (developers)
 
@@ -52,7 +52,7 @@ The test programs of the runtime work, each with the symptom it was written for 
 Each hardware test prints lines like `SUMMARY [name]: 48 checks, 0 failed -> PASS` and sets its exit status; the Obey runners `Spool` everything to a results file. The Obey files all begin with `Set X$Dir <Obey$Dir>` because the first EABI program
 that runs changes `<Obey$Dir>`.
 
-The expected results, from the final regression run of 16.2.0-17 on the author's machine (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests): **54 `SUMMARY` lines, the same as in the runs of 16.2.0-16 and 16.2.0-13, none failing** (the 50 of 16.2.0-11 and the four that 16.2.0-12 added: `finitest`, `rlimtest` twice, `semtest`). The compiler, UnixLib and the runtime packages are not changed in 16.2.0-17 (the release changes the module kit), so these are the lines to expect. (The runs of 16.2.0-14 and 16.2.0-15 ran only the self-test of these eight suites: the script had stopped at the second one; see the [CHANGELOG](../CHANGELOG.md).)
+The expected results, from the final regression run of 16.2.0-18 on the author's machine (the runtime checks, 22 library test programs, the dynamic-library suite, the stack and heap suite, and the native compiler, make and Fortran tests): **54 `SUMMARY` lines, the same as in the runs of 16.2.0-17, 16.2.0-16 and 16.2.0-13, none failing** (the 50 of 16.2.0-11 and the four that 16.2.0-12 added: `finitest`, `rlimtest` twice, `semtest`). The compiler, UnixLib and the runtime packages are not changed in 16.2.0-18 (the release changes the module kit), so these are the lines to expect. (The runs of 16.2.0-14 and 16.2.0-15 ran only the self-test of these eight suites: the script had stopped at the second one; see the [CHANGELOG](../CHANGELOG.md).)
 
 ## 5. Host tests (no RISC OS needed)
 

@@ -28,8 +28,8 @@ Compare the checksums with the ones GNU publishes next to the downloads.
 
 | Asset | Built from |
 |---|---|
-| `riscos-gcc16-cross-16.2.0-17-x86_64-linux.tar.xz` | GCC 16.2.0 + binutils 2.45.1 + this repository's `recipe/` and `modkit/` (the module kit, installed by `install-modkit.sh`; [BUILDING.md](docs/BUILDING.md), steps 2 to 5), UnixLib headers and libraries from the GCCSDK sources and the runtime packages |
-| `Gcc16_16.2.0-17_arm.zip` | GCC 16.2.0, binutils 2.45.1 and make 4.4.1 plus the patches in `recipe/` and the module kit of `modkit/` (the native build: step 7), cross-built with the cross compiler above |
+| `riscos-gcc16-cross-16.2.0-18-x86_64-linux.tar.xz` | GCC 16.2.0 + binutils 2.45.1 + this repository's `recipe/` and `modkit/` (the module kit, installed by `install-modkit.sh`; [BUILDING.md](docs/BUILDING.md), steps 2 to 5), UnixLib headers and libraries from the GCCSDK sources and the runtime packages |
+| `Gcc16_16.2.0-18_arm.zip` | GCC 16.2.0, binutils 2.45.1 and make 4.4.1 plus the patches in `recipe/` and the module kit of `modkit/` (the native build: step 7), cross-built with the cross compiler above |
 | `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` | UnixLib 5.0 (svn r7800) + `patches-unixlib/` built with the cross compiler; the loader, `libgcc_s` and `libdl` from the GCCSDK package |
 | `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip`, `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` | libstdc++ and libgfortran of GCC 16.2.0 built by the cross compiler |
 | `SharedULibFix_1.16-vforkfix3_arm.zip` | `module/sul.s` of the UnixLib snapshot with `patches-unixlib/unixlib-sul-vfork-child-*.patch`, assembled by `build-sul.sh` with GCCSDK 10.2.0's tool chain (step 6 of [BUILDING.md](docs/BUILDING.md)); the programs and Obey files are `recipe/gcc-16.2.0-riscos/sulfix`, built with the cross compiler |

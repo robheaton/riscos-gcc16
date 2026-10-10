@@ -13,8 +13,8 @@ trap '[ -z "${FSDIR:-}" ] && rm -rf "$FS"' EXIT
 python3 "$HERE/mkrename.py" "$B" "$K/include" >/dev/null
 GCCINC=$(gcc -print-file-name=include)
 SAN="-fsanitize=address,undefined -fno-sanitize-recover=all"
-# every source of lib/ that is not ARM only (heap.c, exit.c, assert.c and start.c use SWIs in inline assembler / need printf / are the start of a runnable module; cxxrt.c is the C++ runtime of a module: it defines __dso_handle, the host has one; cxxsp.c names a symbol that only a program using make_shared has)
-LIBSRC=$(cd "$K/lib" && ls *.c | grep -v -E '^(heap|exit|assert|start|cxxrt|cxxsp)\.c$' | sed 's/\.c$//' | tr "\n" " ")
+# every source of lib/ that is not ARM only (heap.c, exit.c, assert.c and start.c use SWIs in inline assembler / need printf / are the start of a runnable module; sclcompat.c is the names of the Shared C Library (ARM inline assembler); cxxrt.c is the C++ runtime of a module: it defines __dso_handle, the host has one; cxxsp.c names a symbol that only a program using make_shared has)
+LIBSRC=$(cd "$K/lib" && ls *.c | grep -v -E '^(heap|exit|assert|start|cxxrt|cxxsp|sclcompat)\.c$' | sed 's/\.c$//' | tr "\n" " ")
 for f in $LIBSRC; do
   case $f in fd_*) NOSH="-fno-sanitize=shift,signed-integer-overflow -fwrapv" ;; *) NOSH="" ;; esac       # Sun's fdlibm shifts and adds signed words as two's complement (fdlibm.h asks for -fwrapv)
   gcc -std=gnu11 -O1 -g -fno-builtin $SAN $NOSH -Wall -Wextra -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -DMODLIB_HOST -Derrno=mk_errno -nostdinc -I"$K/include" -I"$GCCINC" \

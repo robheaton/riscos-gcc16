@@ -240,7 +240,10 @@ MODLIB_17 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a i
              "  module-is-c-plus-plus: runs the static constructors and destructors; new and delete; std::string, vector, map, set, list, unordered_map ... from libstdc++'s headers and libstdcxx-mod.a; no exceptions,\n"
              "  RTTI, streams or threads; built with the cross compiler: the C++ headers are not in this package), and a correction of a fault of 16.2.0-14 to -16: libgcc code that needs the VFP or ARMv7 could be\n"
              "  linked into a module (libmodkit.a now names libgcc-mod.a, which has only code for an ARMv6 CPU).")
-MODULES = MODULES.replace("%%MODLIB%%", MODLIB_17 if int(REL) >= 17 else MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
+MODLIB_18 = (MODLIB_17 + "  New in 16.2.0-18: mkoslib put only the R0 constant of an OSLib comment (Calls SWI N with R1 |= 3) into a veneer, so 617 of the OSLib veneers were wrong, and a parameter called r, e or flags made a\n"
+             "  veneer that did not compile; modreloc relocated the word of an undefined weak reference and of an absolute symbol: all fixed.  cmunge takes swi-decoding-code:, a function of its own for a SWI, the options\n"
+             "  private-word:, carry-capable: and error-capable: of the veneers, handler: and no-handler: in the command table, and module-is-not-reentrant:.")
+MODULES = MODULES.replace("%%MODLIB%%", MODLIB_18 if int(REL) >= 18 else MODLIB_17 if int(REL) >= 17 else MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
 if int(REL) >= 15:                                                    # the words that were true of the small kit of 16.2.0-14 only (REL 14 stays byte for byte as it was released)
     for old, new_ in (
         ("as with GCCSDK 4.7.4, without a C library\n", "as with GCCSDK 4.7.4, without UnixLib or the Shared C Library\n"),
