@@ -1,4 +1,5 @@
 #!/bin/bash
+# (OSLib's headers are GPL v1+ with a linking exception and are NOT shipped with this project: you need your own copy of OSLib; the library made here is yours.)
 # mkoslib-lib.sh TOOLCHAIN_DIR [OSLIB_INCLUDE_DIR]  -  builds libOSLib32.a, the OSLib of the EABI: every OSLib function (the X-functions xos_cli ... and the ones that raise an error: os_cli ...) as a
 # small veneer (mkoslib --library, from OSLib's own headers), one object each, so that  -lOSLib32  in the Makefile of a GCCSDK 4.7.4 module links with this tool chain unchanged.
 # The veneers call the SWI through __modlib_xswi (OS_CallASWI) and raise an error through __modlib_raise (OS_GenerateError); both are in libmodkit-core.a, and the archive has its own weak copies

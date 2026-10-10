@@ -60,9 +60,9 @@ cp "$K"/lib/*.c "$K"/lib/*.S "$K"/lib/*.h "$K"/lib/module.ld "$S/lib/"
 cp -r "$K"/include/. "$S/include/"
 cp -r "$K"/include-cxx/. "$S/include-cxx/"
 cp "$K/module.mk" "$S/module.mk"
-# libOSLib32.a and OSLib's headers (-lOSLib32 as with GCCSDK 4.7.4), when the OSLib headers are there ($OSLIB/oslib, else ~/gccsdk/env/include/oslib; OSLIB_HEADERS=none: not at all)
-OH=${OSLIB:+$OSLIB/oslib}; OH=${OH:-$HOME/gccsdk/env/include/oslib}
-if [ "${OSLIB_HEADERS:-}" != none ] && [ -f "$OH/os.h" ]; then
-  bash "$K/bin/mkoslib-lib.sh" "$TC" "$OH"
-else echo "install-modkit: no OSLib headers found (set OSLIB): no libOSLib32.a"; fi
+# libOSLib32.a (-lOSLib32 as with GCCSDK 4.7.4) is made ONLY when OSLIB names a folder that has oslib/*.h (OSLib's headers, GPL with a linking exception: they and the library made from them are not
+# part of this project's releases, so the tool chains of the releases do not have them; kit/bin/mkoslib-lib.sh does the same later, for anyone who has OSLib)
+if [ -n "${OSLIB:-}" ] && [ -f "$OSLIB/oslib/os.h" ]; then
+  bash "$K/bin/mkoslib-lib.sh" "$TC" "$OSLIB/oslib"
+else echo "install-modkit: OSLIB is not set: no libOSLib32.a (OSLIB=<folder with oslib/> and mkoslib-lib.sh make it)"; fi
 echo "modkit installed in $TC (gcc $VER): libmodkit-core.a $(stat -c %s "$TC/$T/lib/libmodkit-core.a") bytes (+ libgcc-mod.a $(stat -c %s "$TC/$T/lib/libgcc-mod.a") bytes, and libmodkit.a: the script that names both), cmunge, $T-modreloc, $T-mkoslib"
