@@ -3,6 +3,9 @@ ENTRY(_start)
 SECTIONS
 {
   . = 0;
+  /* "_Lib$Reloc$Off$DP": the offset that the Shared C Library adds to a data pointer of a module that is relocated by the library (assembler sources of the OS add it with an immediate): there is none here, the module
+     relocates itself.  It is outside the section so that it is an absolute value: modreloc does not treat a word that holds it as an address */
+  "_Lib$Reloc$Off$DP" = 0;
   .image : {
     /* the symbols that the Norcroft linker defines (assembler sources of the OS import them): the module is one image that starts at 0 and is moved by modreloc, so they are addresses inside it */
     "Image$$RO$$Base" = .;

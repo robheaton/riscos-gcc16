@@ -4,7 +4,7 @@
 
 [modkit](MODULES.md) builds relocatable modules with `gcc -mmodule` and `cmunge`, and so far it had been tested with small modules written for it. The RISC OS Open sources (the BCM2835 subset) have **66 components that build C modules**, written for the Norcroft C compiler and the Shared C Library, 184,000 lines of C in all. They are a test that the kit's authors did not write, so the kit was held against them: **each of the 66 was built the way the OS build builds it, with the kit in place of the Norcroft tools and the Shared C Library.**
 
-**The result: 29 of the 66 build and link into a module image, with no change to their sources.** For 40 of them every C and assembler file compiles; for the 37 that do not link the table [below](#what-stops-the-others) says what stops each one, and it is not, with a few exceptions, the kit.
+**The result: 38 of the 66 build and link into a module image, with no change to their sources** (29 with 16.2.0-16 and -17, 38 with 16.2.0-18: [what changed](#new-in-1620-18)). For 44 of them every C and assembler file compiles; for the 28 that do not link the table [below](#what-stops-the-others) says what stops each one, and it is not, with a few exceptions, the kit.
 
 ## How to run it
 
@@ -25,29 +25,38 @@ What `tools/build-os-modules.py` does is what the OS build does, done by a progr
 
 The only help the sources get is a header (`norcroft.h`) that makes the Norcroft keywords `__packed`, `__value_in_regs` and `__va_list` harmless, and the compiler is told not to stop at what the OS code has always got away with (`-fpermissive`).
 
-## The 29 that build and link
+## The 38 that build and link
 
 | Module | Bytes | What it is |
 |---|---:|---|
 | `Audio/SoundCtrl` | 26,476 | the sound mixer's control module |
 | `HWSupport/CD/CDFSSoftSCSI` | 17,676 | the software SCSI driver of the CD file system |
+| `FileSys/ImageFS/DOSFS` | 70,068 | the DOS disc image file system (new in 16.2.0-18) |
+| `FileSys/PCCardFS/PCCardFS` | 27,696 | the PC card file system (new in 16.2.0-18) |
+| `FileSys/SDFS/SDFS` | 30,224 | the SD card file system (new in 16.2.0-18) |
 | `HWSupport/GPIO` | 14,644 | GPIO devices on the HAL |
 | `HWSupport/PortMan` | 9,832 | the port manager |
+| `HWSupport/SCSI/SCSISoftUSB` | 29,964 | the USB mass storage driver of SCSI (new in 16.2.0-18) |
+| `HWSupport/SCSI/SCSISwitch` | 27,828 | the SCSI switch (new in 16.2.0-18) |
 | `HWSupport/RTC` | 14,744 | the real time clock device |
 | `HWSupport/SD/SDIODriver/Test/FakeCardInt` | 34,408 | a test module of the SD driver |
 | `Networking/AUN/Access/Freeway` | 31,236 | Freeway, the service directory |
 | `Networking/AUN/Net` | 49,240 | the Net module (Econet over IP) |
 | `Networking/DHCP` | 36,628 | the DHCP client |
+| `Networking/Ethernet/EtherGENET` | 36,984 | the Ethernet driver of the Raspberry Pi 4 (new in 16.2.0-18) |
 | `Networking/MimeMap` | 27,592 | the MIME map |
 | `Networking/Omni/Protocols/OmniLanManFS` | 152,520 | the LanManager file system |
+| `Programmer/BootCmds` | 38,796 | the commands of the boot sequence (new in 16.2.0-18) |
 | `Programmer/Squash` | 17,560 | compression (with its assembler) |
 | `Toolbox/Toolbox`, and `ColourDbox`, `ColourMenu`, `DCS`, `FileInfo`, `FontDbox`, `FontMenu`, `IconBar`, `Menu`, `PrintDbox`, `ProgInfo`, `SaveAs`, `Scale` | 16,092 - 27,392 each | the Toolbox and the 12 object modules that use the Toolbox library |
+| `Toolbox/Window` | 82,544 | the Toolbox window object and its gadgets (new in 16.2.0-18) |
 | `Video/Render/DrawFile` | 48,872 | Draw file rendering |
+| `Video/UserI/Picker` | 85,396 | the colour picker (new in 16.2.0-18) |
 | `Video/UserI/BootFX` | 31,152 | the boot bar |
 | `Video/UserI/ScrModes` | 53,824 | screen modes and the monitor files |
 | `Video/UserI/ScrSaver` | 10,892 | the screen saver service |
 
-Together 745,000 bytes. Each is a module image with the header words, the command table, the SWI chunk and the names that its CMHG file says, and a relocation table that `tools/modinfo.py` checks (the table ends the file; every word it lists holds an address inside the image).
+Together 1,360,000 bytes. Each is a module image with the header words, the command table, the SWI chunk and the names that its CMHG file says, and a relocation table that `tools/modinfo.py` checks (the table ends the file; every word it lists holds an address inside the image).
 
 ## What stops the others
 
@@ -55,19 +64,31 @@ Together 745,000 bytes. Each is a module image with the header words, the comman
 |---:|---|---|
 | 4 | the CMHG directives `library-enter-code` and `library-initialisation-code`, which redirect the start-up of the Shared C Library (`cmunge` refuses them, and says why) | ShellCLI, URI, MakePSFont, Internet |
 | 1 | `swi-handler-code: f (flags-capable:)`, an extension of the newer Norcroft CMHG, not in GCCSDK's CMunge either | TerritoryManager |
-| 4 | Norcroft inline assembler (`__asm { ... }`), which GCC cannot read | BCMSupport, SDIODriver (two files), TimeFGBG, EtherUSB |
-| 4 | the USB stack's headers, which the OS build makes and this program does not | SCSISoftUSB, DWCDriver, XHCIDriver, USBDriver |
-| 4 | the run-time symbols of the Shared C Library and the Norcroft compiler that assembler sources import (`_Lib$Reloc$Off$DP`, `__current_sp`, `_clib_at_destruction`) | DOSFS, PCCardFS, SCSISwitch, the `atexit` test |
-| 2 | functions of OSLib that `mkoslib` cannot make: the SWIs whose parameters are "components" of a block in memory (`wimp_delete_icon`) or whose comment does not say a register | Picker, BootCmds |
+| 4 | Norcroft inline assembler (`__asm { MOV r0, e  BLX handler, {r0}, {}, {lr} }`: registers in and out by name), which GCC cannot read; each block needs a hand-written replacement | BCMSupport, SDIODriver (two files), TimeFGBG, EtherUSB |
 | 2 | the Wimp C library of the OS (`RISC_OSLib/rlib`: `dbox_`, `event_`, `wimp_`), which is not built here | FilerAct, WindowScroll |
+| 3 | headers of the USB stack that are in no source folder (`dwc_os.h`, `sys/kmem.h`, `sys/pool.h`, `wimplib.h`) or do not match the sources (a member that `usbhid.h` lacks) | DWCDriver, XHCIDriver, USBDriver |
+| 3 | tests of the Shared C Library: its run-time names (`_clib_at_destruction`, `quick_exit`), the 8, 16 and 64 bit atomic functions (`__atomic_*_8`, `__sync_*_1`: libatomic), module entry names that a Makefile of the test sets another way | the `atexit`, `atomic` and `longcmd` tests |
 | 2 | C that GCC 16 rejects (an assignment to a `const`, a non-constant initialiser) | RTSupport, Gadgets |
-| 2 | a constant that the exported headers do not have | SDFS, ToolAction |
-| 1 | SyncLib's assembler, where `asasm` rejects an objasm macro rule | EtherGENET |
-| 1 | the VFP assembler of VFPSupport (`asasm` has no VFP syntax) | VFPSupport |
-| (1) | floating point (`math.h`), already counted in the first row (the kit has `math.h` since 16.2.0-17, and the scan counts 66 of 66 now; MakePSFont's other obstacles are unchanged) | MakePSFont |
-| 1 each | headers that are not in the sources (libpng, VideoCore, the Linux SDIO headers), `uchar.h` (included by a test of the Shared C Library), an include path of the RISC OS folder layout (AbortTrap), a RISC OS dotted include name (Window), an assembler header that is not found (BCMVideo: BCM2835Reg; Debugger: ExcDump, with `excdump.h`), code that the Makefile builds another way (`longcmd`), and SDCMOS, which has no object to build | CompressPNG, VCHIQ, FakeLibInt, `atomic`, AbortTrap, Window, BCMVideo, Debugger, `longcmd`, SDCMOS |
+| 1 each | a header or a library that is not in the sources (the VideoCore headers, the Linux SDIO headers, libpng and zlib), a constant that OSLib's header lacks (ToolAction: `toolaction_SELECT_WHEN_OVER`), assembler that `asasm` has no syntax for (the VFP of VFPSupport, `SSAT` of BCMVideo), a generated header of the Debugger that its Makefile makes with a help-text tool, the include path of the RISC OS folder layout (AbortTrap), a component that builds nothing (SDCMOS) | VCHIQ, FakeLibInt, CompressPNG, ToolAction, VFPSupport, BCMVideo, Debugger, AbortTrap, SDCMOS |
 
-So of the 37: **5** are stopped by CMHG features that the kit leaves out on purpose; **13** by source that only the Norcroft tools read (inline assembler, run-time symbols of the Shared C Library, C that GCC 16 rejects, the VFP assembler, include paths of the RISC OS folder layout); **15** by libraries, headers and constants of the OS that this program does not provide (the USB stack's headers, the Wimp C library, libpng, the VideoCore and SDIO headers, SyncLib's assembler, two constants that the exported headers lack ...); **2** are limits of the kit's own `mkoslib` (Picker and BootCmds: see [below](#what-the-survey-changed-in-the-kit)); one needs `uchar.h`, which only a test of the Shared C Library includes; and `SDCMOS` has nothing in its Makefile to build.
+So of the 28: **5** are stopped by CMHG features that the kit leaves out on purpose or that GCCSDK's CMunge lacks as well; **12** by source that only the Norcroft tools read (inline assembler, run-time names of the Shared C Library, C that GCC 16 rejects, assembler syntax that `asasm` lacks, the RISC OS folder layout); **11** by libraries and headers of the OS that this program does not provide (the Wimp C library, the USB stack's headers, libpng, the VideoCore and SDIO headers ...).
+
+## New in 16.2.0-18
+
+The survey of 16.2.0-16 gave 29. Going through what stopped the others raised it to **38** (DOSFS, PCCardFS, SDFS, SCSISwitch, SCSISoftUSB, EtherGENET, BootCmds, Picker and the Toolbox's Window), and found **three faults in the kit that matter outside the OS sources**. They are fixed in `modkit/`, and each has a test in `test-ctools.py`:
+
+* **`mkoslib` dropped the register constants of the OSLib comments.** The comment above an OSLib function says `Calls SWI 0x40240 with R1 |= 0x3` or `with R1 = 0x0, R2 = 0x80000000`, and `mkoslib` put only the `R0` constant into the veneer; every other one was left out. For 617 of the 2,125 functions that could be made the veneer changes: `xwimp_initialise` had no `R1 = 0x4B534154` ("TASK"), `xosfile_load` no `R3 = 1`, the `xservice_*` functions no service number in `R1`, the `xpalettev_*` and `xkeyv_*` functions no vector number in `R9`. **A module of 16.2.0-14 to -17 that calls one of those functions gets a wrong veneer.** The functions that the examples and the hardware tests of the kit call (`xos_cli`, `xosfile_delete`, `xosfile_read_no_path`, `xosfind_*`, `xosgbpb_*`, `xos_claim`, `xsocket_*` ...) are not among them. Now every `R<n> = / |= / += value` is put in, and a comment that `mkoslib` does not understand is an error instead of being ignored.
+* **`mkoslib` made a veneer that did not compile** when a parameter of the OSLib function was called `r`, `e` or `flags` (`colourtrans_convert_cmyk_to_rgb`): the locals of the veneer are `_r`, `_e`, `_flags` now. A test compiles one in five of the 2,150 veneers that can be made; 18 of them do not compile whatever the locals are called (an output that is an aggregate type, a pointer type that does not fit, a header that declares a function twice) and are listed in the test.
+* **`modreloc` relocated words that are not addresses**: the word of a weak reference that is not defined (its value is 0: `if (weak_fn) weak_fn ();`, SyncLib's list of initialisation functions) was moved by the load address, so the test "is it there?" became true and the module called the first bytes of its own header. SDFS and EtherGENET crashed in the interpreter's model because of it. A word that holds an absolute symbol is left alone as well.
+
+**On the Raspberry Pi (2026-10-10, `KitFix`, 8 checks, all pass):** an undefined weak function and `_Lib$Reloc$Off$DP` are 0 in the running module, `__current_sp ()` and `_sprintf ()` work, and `xos_read_var_val_size` and `xosfile_load` do what the raw SWI with the constants of the comment does. The last two do not tell the old veneer from the new one: the kernel gives the same error ("Buffer overflow", "No load action specified for this file type") either way, so what proves the constants is the generated source and the test that compares it with the comments of OSLib, not the machine.
+
+And these, for the OS sources:
+
+* **`mkoslib` reads OSLib's own register tables** (`Hdr/Wimp` of the OSLib in the sources, or `Wimp.Hdr` of a GCCSDK installation) for the parameters whose register the comment of the header does not give, and makes the functions whose parameters are the "components" of a block of words (`wimp_delete_icon (w, i)`: the block's address in `R1`). 25 of the 37 functions that it refused are made now (`xwimp_*`, `xfont_*`, `xeconet_read_station_number`, `xos_read_var_val_size` ...); 12 are still refused, 172 more (the Toolbox gadget functions, which are not SWI veneers) are not meant to be made.
+* **The library has** `__current_sp ()`, `_sprintf` (the Shared C Library's name of `sprintf`), `<uchar.h>` (the types) and the linker script defines `_Lib$Reloc$Off$DP` (0, absolute) for the assembler sources that add it to a data pointer.
+* **`tools/build-os-modules.py`** makes the generated header `FileCoreErr` (the OS assembles `s/FileCoreErr` and takes the bytes), the USB device list (`usbdevs.h`, with its awk script) and `Interface/USBDriver.h`; builds the Toolbox libraries (`wimplib`, `eventlib` ...); knows `VPATH` (the Toolbox's gadgets), the RISC OS include `gadgets.actbut.h`, assembler includes in any case (`GET BCM2835Reg` for the file `BCM2835reg`); and works around two things in `asasm` 2.01 in the copies it makes (SyncLib's `Barrier$cc` and `BarrierSync$cc` macros, and an exported name that is defined as `name * label`: `spin_lock`).
+* **The interpreter** (`tools/a32.py`) reads the CPU identification registers (`MRC p15`: SyncLib's initialisation uses them) with the values of a Cortex-A72.
 
 ## What was checked
 

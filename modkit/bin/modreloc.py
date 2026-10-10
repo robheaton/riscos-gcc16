@@ -35,6 +35,11 @@ def convert(elf, out, RE, quiet):
         data = bytearray(open(img, "rb").read())
         rel = subprocess.run([RE, "-r", "-W", elf], capture_output=True, text=True, check=True).stdout
         offs, bad = [], []
+        absolute = set()
+        for ln in subprocess.run([NM, elf], capture_output=True, text=True, check=True).stdout.split("\n"):
+            p = ln.split()
+            if len(p) == 3 and p[1] in ("A", "a") and p[2] not in ("reloc_info",): absolute.add(p[2])
+            elif len(p) == 2 and p[0] in ("w", "v", "U"): absolute.add(p[1])                   # undefined weak: its value is 0, a word that holds it is not an address
         section = None
         for ln in rel.split("\n"):
             h = re.match(r"^Relocation section '([^']*)'", ln)
@@ -43,7 +48,9 @@ def convert(elf, out, RE, quiet):
             m = re.match(r"^([0-9a-f]{8})\s+[0-9a-f]+\s+(R_ARM_\w+)", ln)
             if not m: continue
             off, typ = int(m.group(1), 16), m.group(2)
-            if typ in ("R_ARM_ABS32", "R_ARM_TARGET1"): offs.append(off)
+            if typ in ("R_ARM_ABS32", "R_ARM_TARGET1"):
+                if ln.split()[-1] in absolute: continue              # an absolute value (SHN_ABS: the linker script's _Lib$Reloc$Off$DP = 0): a number, not an address
+                offs.append(off)
             elif typ in ("R_ARM_CALL", "R_ARM_JUMP24", "R_ARM_PC24", "R_ARM_REL32", "R_ARM_PREL31", "R_ARM_V4BX", "R_ARM_NONE"): pass     # PC relative: already resolved by the linker (--emit-relocs only lists them)
             else: bad.append((off, typ))
         if bad:

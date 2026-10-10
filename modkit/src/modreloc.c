@@ -135,6 +135,11 @@ static void convert (const char *elfpath, const char *outpath, int quiet)
             {
             case 2: case 38:                                     /* R_ARM_ABS32, R_ARM_TARGET1: a word that holds an address */
               if (off + 4 > n) die ("%s: a relocation at %s is outside the image", elfpath, hx (off));
+              {                                                  /* ... unless the symbol is an absolute value (SHN_ABS: the linker script's _Lib$Reloc$Off$DP = 0) or an undefined weak one (its address is 0, the test "is it there?" of SyncLib's init list): a number, not an address */
+                const ElfSec *y = r->link < (unsigned) e.nsec ? &e.sec[r->link] : NULL;
+                unsigned si = rd32 (p + 4) >> 8;
+                if (y && y->type == SHT_SYMTAB && (size_t) si * 16 + 16 <= y->size && (rd16 (e.data + y->offset + (size_t) si * 16 + 14) == 0xFFF1 || (si != 0 && rd16 (e.data + y->offset + (size_t) si * 16 + 14) == 0))) break;
+              }
               offs[nrel++] = off;
               break;
             case 0: case 1: case 3: case 28: case 29: case 40: case 42:   /* NONE, PC24, REL32, CALL, JUMP24, V4BX, PREL31: PC relative, already resolved by the linker */

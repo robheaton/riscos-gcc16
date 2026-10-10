@@ -277,6 +277,12 @@ class Cpu:
             if op not in (8, 9, 10, 11):
                 if rd == 15: self.r[15] = res
                 else: self.r[rd] = res
+        elif (w & 0x0F100F10) == 0x0E100F10:                                   # MRC p15: a read of one of the identification registers (the values of a Cortex-A72, the Raspberry Pi 4's CPU)
+            reg = ((w >> 21) & 7, (w >> 16) & 15, w & 15, (w >> 5) & 7)
+            ids = {(0, 0, 0, 0): 0x410FD083, (0, 0, 0, 5): 0x80000000, (0, 0, 1, 0): 0x00000131, (0, 0, 1, 1): 0x00011011, (0, 0, 1, 4): 0x10201105,
+                   (0, 0, 2, 0): 0x02101110, (0, 0, 2, 1): 0x13112111, (0, 0, 2, 2): 0x21232042, (0, 0, 2, 3): 0x01112131, (0, 0, 2, 4): 0x00011142, (0, 0, 2, 5): 0x01011121, (0, 0, 1, 6): 0x00100000}
+            rd = (w >> 12) & 15
+            if rd != 15: self.r[rd] = ids.get(reg, 0)
         elif top in (2, 3):
             if top == 3 and (w & 0x10): raise Fault("media instruction %08x" % w)
             p = (w >> 24) & 1; u = (w >> 23) & 1; b = (w >> 22) & 1; wb = (w >> 21) & 1; ld = (w >> 20) & 1

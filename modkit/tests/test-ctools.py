@@ -7,7 +7,7 @@
 
   TOOLCHAIN=<tool chain>/bin  OSLIB=<the folder with oslib/>  [CC=cc]  test-ctools.py [--quick]
 exit status 0 = nothing differs."""
-import glob, os, random, re, shutil, subprocess, sys, tempfile
+import glob, os, random, re, shutil, struct, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT = os.path.abspath(os.path.join(HERE, ".."))
@@ -442,6 +442,24 @@ if os.path.exists(d2 + "/m.elf"):
     check(rp.returncode != 0 and rc.returncode != 0 and "WeirdSection" in rc.stderr and "WeirdSection" in rp.stderr, "a section outside .image is refused by both, and named (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-100:]))
 else:
     check(False, "the orphan section test: the link did not make an ELF file: %s" % r.stderr[-200:])
+# a weak reference that is not defined (SyncLib's list of init functions, C's  if (weak_fn)): its word holds 0 and stays 0 (it is not an address); a word that holds an absolute symbol (the linker script's
+# _Lib$Reloc$Off$DP) stays as it is too; both tools agree
+d4 = os.path.join(D, "weak"); os.makedirs(d4)
+shutil.copy(os.path.join(D, "hello", "h.o"), d4 + "/h.o")
+open(d4 + "/weak.c", "w").write("extern void weak_fn (void) __attribute__ ((weak));\nextern char abs_sym[] __asm__ (\"_Lib$Reloc$Off$DP\");\nvoid *weak_ptr = (void *) weak_fn;\nvoid *abs_ptr = (void *) abs_sym;\nstatic int local = 5;\nint *local_ptr = &local;\nint weak_test (void) { return weak_ptr == 0 && abs_ptr == 0 && *local_ptr == 5; }\n")
+r = run([GCC, "-mmodule", "-O2", "-c", d4 + "/weak.c", "-o", d4 + "/w.o"]); assert r.returncode == 0, r.stderr
+r = run([GCC, "-mmodule", "-o", d4 + "/m.elf", d4 + "/h.o", d4 + "/w.o", os.path.join(D, "hello", "s0.o")])
+if os.path.exists(d4 + "/m.elf"):
+    rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d4 + "/m.elf", d4 + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d4 + "/m.elf", d4 + "/c,ffa"])
+    nm = run([os.path.join(TC, "arm-riscos-gnueabihf-nm"), d4 + "/m.elf"]).stdout
+    syms = dict((l.split()[2], int(l.split()[0], 16)) for l in nm.split("\n") if len(l.split()) == 3)
+    img = open(d4 + "/c,ffa", "rb").read() if rc.returncode == 0 else b""
+    tbl, cnt = (struct.unpack_from("<II", img, syms["reloc_info"]) if img else (0, 0))
+    relocated = set(struct.unpack_from("<I", img, tbl + 4 * i)[0] for i in range(cnt)) if img else set()
+    check(rp.returncode == 0 and rc.returncode == 0 and same_files(d4 + "/py,ffa", d4 + "/c,ffa"), "a module with a weak undefined reference and an absolute symbol: both tools make the same image (py %d, c %d): %s" % (rp.returncode, rc.returncode, (rp.stderr + rc.stderr).strip()[-100:]))
+    check(syms["weak_ptr"] not in relocated and syms["abs_ptr"] not in relocated and syms["local_ptr"] in relocated, "weak_ptr and abs_ptr are not in the relocation table, local_ptr is")
+else:
+    check(False, "the weak reference test: the link did not make an ELF file: %s" % r.stderr[-200:])
 # code compiled with -fPIC (the shared library model of this tool chain: a table at 0x8000) cannot be in a module: the .got is an orphan section, refused by both, and the reason is given
 d3 = os.path.join(D, "pic"); os.makedirs(d3)
 shutil.copy(os.path.join(D, "hello", "h.o"), d3 + "/h.o")
@@ -479,6 +497,7 @@ print("  %d X functions in the OSLib headers of %s" % (len(names), INC))
 sample = names if not QUICK else names[::12]
 refused_py = refused_c = 0
 n_same = 0
+made_names = []
 for n in sample:
     try:
         py = mk.generate([n], INC); pyfail = False
@@ -495,7 +514,42 @@ for n in sample:
         ok = open(o, "r", encoding="latin-1").read() == py
         n_same += ok
         check(ok, "mkoslib %s: different output" % n)
+        if ok: made_names.append(n)
 print("  one function at a time: %d made identically, Python refuses %d, C refuses %d" % (n_same, refused_py, refused_c))
+# the veneers compile (a parameter that is called r, e or flags once clashed with the locals of the veneer): one function at a time, every 5th of the ones that can be made (the whole set takes ten minutes);
+# 18 of the 2150 do not compile whatever the locals are called (15: an output that is an aggregate type of OSLib, 2: a pointer type that does not fit, 1: a header that declares a function twice) - they stop
+# the module that uses them at compile time
+KNOWN_NOT_COMPILING = set("xadfsdiscop64_format_track xadfsdiscop64_read_id xadfsdiscop64_read_sectors xadfsdiscop64_read_sectors_via_cache xadfsdiscop64_read_track xadfsdiscop64_restore xadfsdiscop64_seek xadfsdiscop64_specify xadfsdiscop64_verify xadfsdiscop64_write_sectors xadfsdiscop64_write_track xinversetable_sprite_table_for_sprite xos_change_redirection xpci_hardware_address xpci_ram_alloc xscrolllist_set_colour xtextarea_set_colour xtextgadgets_redraw_all".split())
+nbatch = 0
+for b in range(0, len(made_names), 5):
+    n = made_names[b]
+    o = os.path.join(W, "all.c")
+    r = run([os.path.join(BIN, "mkoslib"), "-I", INC, "-o", o, n])
+    if r.returncode: check(False, "mkoslib %s: %s" % (n, r.stderr.strip()[-150:])); continue
+    r = run([GCC, "-mmodule", "-fsyntax-only", "-I" + os.path.dirname(INC.rstrip("/")), "-x", "c", o])
+    nbatch += 1
+    err = [l for l in r.stderr.split("\n") if "error" in l]
+    check(r.returncode == 0 or n in KNOWN_NOT_COMPILING, "the veneer %s does not compile: %s" % (n, (err or [r.stderr])[0][-200:]))
+print("  %d of %d veneers compile one by one" % (nbatch, len(made_names) // 5 + 1))
+# the constants of "Calls SWI N with R1 |= 0x3, R3 = 0x0" are put into their registers (16.2.0-17 and earlier dropped every one but R0's)
+for fn, want in (("xadfsdiscop_read_track", ["_r[1] |= 0x3;"]), ("xos_read_var_val_size", None), ("xos_change_environment", None)):
+    o = os.path.join(W, "const.c")
+    rc_ = run([os.path.join(BIN, "mkoslib"), "-I", INC, "-o", o, fn])
+    if want is None: continue
+    check(rc_.returncode == 0 and all(w in open(o).read() for w in want), "mkoslib %s: %s in the veneer" % (fn, want))
+import glob as _g
+nonzero = 0
+for hf in sorted(_g.glob(os.path.join(INC, "*.h"))):
+    for m in re.finditer(r"^ \* Function: +(\w+)\(\)(?:(?!\*/).)*?Calls SWI 0x[0-9A-Fa-f]+ with R([1-9]) (=|\|=|\+=) (0x[0-9A-Fa-f]+)", open(hf, encoding="latin-1").read(), re.M | re.S):
+        fn = "x" + m.group(1)
+        o = os.path.join(W, "const2.c")
+        r2 = run([os.path.join(BIN, "mkoslib"), "-I", INC, "-o", o, fn])
+        if r2.returncode: continue
+        nonzero += 1
+        check(("  _r[%s] %s %#x;" % (m.group(2), m.group(3), int(m.group(4), 16))) in open(o).read(), "mkoslib %s: the register constant of the comment is in the veneer" % fn)
+        if nonzero >= 300: break
+    if nonzero >= 300: break
+print("  %d veneers with a register constant other than R0 checked" % nonzero)
 ok_names = []
 for n in sample[:400]:
     try:

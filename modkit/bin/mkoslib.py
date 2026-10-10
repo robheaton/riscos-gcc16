@@ -54,6 +54,31 @@ def split_params(s):
     if cur.strip(): out.append(cur.strip())
     return out
 
+def hdr_entries(incdir, header, swi):
+    """OSLib's own register table of a SWI, from the  <Module>.Hdr  file next to the header: ({name: (register, kind)} of the Entry lines, the same of the Exit lines, [(register, type)] of the Entry lines that
+    are blocks of components: "R1 -> delete_icon (sequence of (Wimp_W, Wimp_I))"); kind is "=" (a value) or "->" (a pointer).  Used for the parameters whose register the comment of the header does not give"""
+    base = os.path.splitext(os.path.basename(header))[0].lower()
+    path = next((os.path.join(incdir, f) for f in os.listdir(incdir) if f.lower() == base + ".hdr"), None)          # OSLib's own layout of the headers: Wimp.Hdr next to wimp.h
+    if not path and os.path.isdir(os.path.join(incdir, "Hdr")):                                                      # the layout of the RISC OS sources: Hdr/Wimp (objasm syntax) in the folder of the headers
+        path = next((os.path.join(incdir, "Hdr", f) for f in os.listdir(os.path.join(incdir, "Hdr")) if f.lower() == base), None)
+    if not path: return {}, {}, []
+    lines = open(path, encoding="latin-1").read().split("\n")
+    for i, ln in enumerate(lines):
+        m = re.match(r"\.set X?\w+,0x([0-9A-Fa-f]+)\s*$", ln) or re.match(r"X?\w+\s+\*\s+&([0-9A-Fa-f]+)\s*$", ln)
+        if not m or int(m.group(1), 16) != swi or not (i + 1 < len(lines) and re.match(r"\s+[@;]", lines[i + 1])): continue            # (a number that is the value of a message too: Message_SlotSize = Wimp_DeleteIcon = &400C4)
+        entry, exit_, blocks, cur = {}, {}, [], None
+        for ln2 in lines[i + 1:]:
+            if not re.match(r"\s+[@;]", ln2): break
+            t = ln2.strip()[1:].strip()
+            if t in ("Entry", "Exit"): cur = t; continue
+            mm = re.match(r"R(\d+) (=|->) (\w+)(?: \((.*)\))?$", t)
+            if not mm or cur is None: continue
+            d = entry if cur == "Entry" else exit_
+            d.setdefault(mm.group(3), (int(mm.group(1)), mm.group(2)))
+            if cur == "Entry" and mm.group(2) == "->" and mm.group(4) and mm.group(4).startswith("sequence of"): blocks.append((int(mm.group(1)), mm.group(4)))
+        return entry, exit_, blocks
+    return {}, {}, []
+
 def parse(incdir, name):
     f, txt, pos = find_decl(incdir, name)
     cstart = txt.rfind("/* ------", 0, pos); cend = txt.index("*/", cstart)
@@ -78,9 +103,33 @@ def parse(incdir, name):
         elif mp: outputs[mp.group(1)] = 16
         elif re.search(r"value of R\d+ on (entry|exit)", line) or re.search(r"\bR\d+ (= |\|= )", line.split("Calls SWI")[0] if "Calls SWI" in line else ""):
             sys.exit("mkoslib: %s: the comment line %r is not a pattern that mkoslib knows" % (name, line))
-    ms = re.search(r"Calls SWI (0x[0-9A-Fa-f]+)(?: with R0 (=|\|=) (0x[0-9A-Fa-f]+))?", comment)
+    ms = re.search(r"Calls SWI (0x[0-9A-Fa-f]+)", comment)
     if not ms: sys.exit("mkoslib: %s: no 'Calls SWI' in its comment" % name)
-    return dict(name=name, header=os.path.basename(f), params=params, inputs=inputs, outputs=outputs, swi=int(ms.group(1), 16), r0op=(ms.group(2), int(ms.group(3), 16)) if ms.group(2) else None, comment=comment)
+    # "with R0 = 0x4", "with R1 |= 0x3, R3 = 0x0", "with R0 = 0x1, R1 += 0x2": constants put into registers after the inputs (up to 16.2.0-17 only R0 was understood and the others were dropped)
+    ops = []
+    rest = comment[ms.end():].split("\n")[0].rstrip()
+    if rest.startswith(" with "):
+        for item in rest[6:].rstrip(".").split(", "):
+            mo = re.fullmatch(r"R(\d) (=|\|=|\+=) (0x[0-9A-Fa-f]+)", item)
+            if not mo: sys.exit("mkoslib: %s: the comment part %r is not a pattern that mkoslib knows" % (name, item))
+            ops.append((int(mo.group(1)), mo.group(2), int(mo.group(3), 16)))
+    swi = int(ms.group(1), 16)
+    # parameters that the comment gives no register: the Hdr file of OSLib has the table of the SWI (and "name - component N": the parameters that go into a block of words, whose address is the register of the "sequence of" entry)
+    comps = {}
+    for line in comment.split("\n"):
+        mc = re.match(r"\s*\*\s+(?:Input:\s*)?(\w+) - component (\d+)\s*$", line)
+        if mc: comps[mc.group(1)] = int(mc.group(2))
+    missing = [p[1] for p in params if p[1] not in inputs and p[1] not in outputs and p[1] not in comps]
+    block = None
+    if missing or comps:
+        hin, hout, blocks = hdr_entries(incdir, f, swi)
+        for pn in missing:
+            if pn in hin: inputs[pn] = hin[pn][0]
+            elif pn in hout: outputs[pn] = hout[pn][0]
+        if comps:
+            if len(blocks) != 1: sys.exit("mkoslib: %s: the parameters %s are components of a block, but the Hdr file of OSLib does not show one block (%d)" % (name, ", ".join(sorted(comps)), len(blocks)))
+            block = (blocks[0][0], [pn for pn, k in sorted(comps.items(), key=lambda kv: kv[1])])
+    return dict(name=name, header=os.path.basename(f), params=params, inputs=inputs, outputs=outputs, swi=swi, ops=ops, comment=comment, block=block)
 
 def generate(funcs, incdir):
     heads = []; body = []; uses_flags = False
@@ -90,25 +139,30 @@ def generate(funcs, incdir):
         sig = ", ".join(p[2] for p in d["params"]) or "void"
         flags = 16 in d["outputs"].values()
         uses_flags = uses_flags or flags
-        L = ["os_error *%s (%s)\n{" % (name, sig), "  unsigned r[10] = { 0 };"] + (["  unsigned flags = 0;"] if flags else [])
+        L = ["os_error *%s (%s)\n{" % (name, sig), "  unsigned _r[10] = { 0 };"] + (["  unsigned _flags = 0;"] if flags else [])
         known = {p[1]: p for p in d["params"]}
+        if d["block"]:
+            breg, bnames = d["block"]
+            for pn in bnames:
+                L.append("  _Static_assert (sizeof (%s) == 4, \"%s is not a word\");" % (known[pn][0].strip(), pn))
+            L.append("  unsigned _blk[%d] = { %s };" % (len(bnames), ", ".join("(unsigned) %s" % pn for pn in bnames)))
+            L.append("  _r[%d] = (unsigned) _blk;" % breg)
         for pn, reg in sorted(d["inputs"].items(), key=lambda kv: kv[1]):
             if pn not in known: sys.exit("mkoslib: %s: the comment names an input %r that is not a parameter" % (name, pn))
-            L.append("  r[%d] = (unsigned) %s;" % (reg, pn))
-        if d["r0op"]:
-            op, val = d["r0op"]; L.append("  r[0] %s %#x;" % ("=" if op == "=" else "|=", val))
-        L.append("  os_error *e = (os_error *) %s (%#x, r%s);" % ("__modlib_xswif" if flags else "__modlib_xswi", 0x20000 | d["swi"], ", &flags" if flags else ""))
+            L.append("  _r[%d] = (unsigned) %s;" % (reg, pn))
+        for reg, op, val in d["ops"]: L.append("  _r[%d] %s %#x;" % (reg, op, val))
+        L.append("  os_error *_e = (os_error *) %s (%#x, _r%s);" % ("__modlib_xswif" if flags else "__modlib_xswi", 0x20000 | d["swi"], ", &_flags" if flags else ""))
         outs = []
         for pn, reg in sorted(d["outputs"].items(), key=lambda kv: kv[1]):
             if pn not in known: sys.exit("mkoslib: %s: the comment names an output %r that is not a parameter" % (name, pn))
             ptype = known[pn][0].strip()
             if not ptype.endswith("*"): sys.exit("mkoslib: %s: output %r is not a pointer parameter (%s)" % (name, pn, ptype))
             pointee = ptype[:-1].strip()
-            outs.append("    if (%s) *%s = (%s) %s;" % (pn, pn, pointee, "flags" if reg == 16 else "r[%d]" % reg))
-        if outs: L.append("  if (!e)\n    {\n" + "\n".join(outs) + "\n    }")
-        L.append("  return e;\n}")
+            outs.append("    if (%s) *%s = (%s) %s;" % (pn, pn, pointee, "_flags" if reg == 16 else "_r[%d]" % reg))
+        if outs: L.append("  if (!_e)\n    {\n" + "\n".join(outs) + "\n    }")
+        L.append("  return _e;\n}")
         for p in d["params"]:
-            if p[1] not in d["inputs"] and p[1] not in d["outputs"]:
+            if p[1] not in d["inputs"] and p[1] not in d["outputs"] and not (d["block"] and p[1] in d["block"][1]):
                 sys.exit("mkoslib: %s: the parameter %r has no register in the comment" % (name, p[1]))
         body.append("\n".join(L))
     head = "/* Generated by mkoslib.py from the OSLib headers.  DO NOT EDIT. */\n"

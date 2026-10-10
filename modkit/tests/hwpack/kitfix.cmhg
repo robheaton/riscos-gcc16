@@ -1,0 +1,10 @@
+; KitFix: what changed in the kit in 16.2.0-18, on the machine: a weak undefined reference and an absolute symbol stay 0 (modreloc), the OSLib veneers that had lost their register constants (xosfile_load,
+; xos_read_var_val_size), __current_sp and _sprintf
+title-string:           KitFix
+help-string:            KitFix 1.00
+date-string:            10 Oct 2026
+
+initialisation-code:    kf_init
+
+command-keyword-table: kf_table
+  KitFix_Test(min-args: 0, max-args: 0, help-text: "*KitFix_Test checks the changes of 16.2.0-18 of the kit.\n", invalid-syntax: "Syntax: *KitFix_Test")

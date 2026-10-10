@@ -21,7 +21,7 @@ Needs perl (for the OS's Hdr2H), a C compiler is not needed.  The steps are thos
      veneers (mkoslib --from-objects), then the link with the libraries: the driver runs modreloc and the result is the module image
 The environment is that of the Raspberry Pi build (MACHINE=RPi, USERIF=Raspberry ...).  The Norcroft keywords __packed, __value_in_regs and __va_list are made harmless by a header (norcroft.h) that is
 included first; nothing else of the sources is changed.  The results say, for each module, what stops it (the last column of report.txt)."""
-import argparse, collections, concurrent.futures as cf, json, os, re, shlex, shutil, struct, subprocess, sys
+import glob, argparse, collections, concurrent.futures as cf, json, os, re, shlex, shutil, struct, subprocess, sys
 
 # the environment of the Raspberry Pi build of the OS (Env/ROOL/BCM2835.sh)
 OSENV = dict(LOCALE="UK", KEYBOARD="All", MACHINE="RPi", SYSTEM="Ursula", USERIF="Raspberry", DISPLAYTYPE="PAL", IMAGESIZE="5120K", HALSIZE="64K", BUILD="ROOL/BCM2835", APCS="APCS-32")
@@ -41,6 +41,7 @@ LIBMAP = {
     "DEBUGLIB": ["Lib/DebugLib"], "REMOTEDBLIB": ["Lib/remotedb"], "TRACELIB": ["Lib/Trace"], "PDEBUGLIB": ["Lib/PDebug"], "MODMALLOCLIB": ["Lib/ModMalloc"], "WILDLIB": ["Lib/Wild"], "DDTLIB": ["Lib/DDTLib"],
     "INETLIB": ["Lib/TCPIPLibs/inetlib"], "SOCK5LIB": ["Lib/TCPIPLibs/socklib"], "UNIXLIB": ["Lib/TCPIPLibs/unixlib"],
 }
+LIBMAP.update({"WIMPLIB": ["Toolbox/ToolboxLib/wimplib"], "EVENTLIB": ["Toolbox/ToolboxLib/eventlib"], "TBOXLIB": ["Toolbox/ToolboxLib/toolboxlib"], "FLEXLIB": ["Toolbox/ToolboxLib/flexlib"], "RENDERLIB": ["Toolbox/ToolboxLib/renderlib"]})
 LIBMAP["NET5LIBS"] = LIBMAP["UNIXLIB"] + LIBMAP["INETLIB"] + LIBMAP["SOCK5LIB"]
 LIBMAP["DEBUGLIBS"] = LIBMAP["DEBUGLIB"] + LIBMAP["REMOTEDBLIB"] + LIBMAP["INETLIB"] + LIBMAP["SOCK5LIB"] + LIBMAP["TRACELIB"] + LIBMAP["PDEBUGLIB"] + LIBMAP["MODMALLOCLIB"] + LIBMAP["WILDLIB"] + LIBMAP["DDTLIB"]
 
@@ -241,21 +242,27 @@ def export_headers(tree, ovl, log, asasm="", objcopy=""):
             d = os.path.join(tree.src, rel)
             mk = Make({"COMPONENT": os.path.basename(rel)}).parse(read(os.path.join(d, "Makefile")))
             a2t = mk.get("ASM2TXT").split()
-            if a2t and os.path.isfile(os.path.join(d, "s", a2t[0])):
-                tmp = os.path.join(ovl, "_asm2txt")
-                os.makedirs(tmp, exist_ok=True)
-                env = dict(os.environ, HDR_PATH=os.path.join(ovl, "Hdr", "Global") + ":" + os.path.join(ovl, "Hdr", "Interface"), **OSENV)
-                obj = os.path.join(tmp, a2t[0] + ".o")
-                r = subprocess.run([asasm, "-cpu=ARM1176JZF-S", "-i" + os.path.join(ovl, "Hdr", "Global"), "-i" + os.path.join(ovl, "Hdr", "Interface"), '-PreDefine=APCS SETS "%s"' % OSENV["APCS"], '-PreDefine=Machine SETS "%s"' % OSENV["MACHINE"], '-PreDefine=UserIF SETS "%s"' % OSENV["USERIF"],
-                                    "-o", obj, os.path.join(d, "s", a2t[0])], capture_output=True, text=True, env=env, cwd=tmp)
-                if r.returncode == 0 and objcopy:
-                    txt = os.path.join(ovl, "Hdr", "Interface", a2t[0])
-                    subprocess.run([objcopy, "-O", "binary", obj, txt], check=False)
-                    if os.path.exists(txt):
-                        conv(txt, os.path.join(ovl, "Interface", a2t[0] + ".h"))
-                        n["ASM2TXT"] += 1
-                else:
-                    log("ASM2TXT %s failed: %s" % (rel, (r.stderr or r.stdout)[:200]))
+            plain = set(a2t)
+            for i in range(1, 10):                                            # CHEADERn = X with a rule  h.X: o.X  (${LD} -bin): the same thing (FileCoreErr)
+                x = mk.get("CHEADER%d" % i).strip()
+                if x and x not in a2t and os.path.isfile(os.path.join(d, "s", x)): a2t.append(x)
+            for a2 in a2t:
+              if os.path.isfile(os.path.join(d, "s", a2)):
+                    tmp = os.path.join(ovl, "_asm2txt")
+                    os.makedirs(tmp, exist_ok=True)
+                    env = dict(os.environ, HDR_PATH=os.path.join(ovl, "Hdr", "Global") + ":" + os.path.join(ovl, "Hdr", "Interface"), **OSENV)
+                    obj = os.path.join(tmp, a2 + ".o")
+                    r = subprocess.run([asasm, "-cpu=ARM1176JZF-S", "-i" + d, "-i" + os.path.join(ovl, "Hdr", "Global"), "-i" + os.path.join(ovl, "Hdr", "Interface"), '-PreDefine=APCS SETS "%s"' % OSENV["APCS"], '-PreDefine=Machine SETS "%s"' % OSENV["MACHINE"], '-PreDefine=UserIF SETS "%s"' % OSENV["USERIF"],
+                                        "-o", obj, os.path.join(d, "s", a2)], capture_output=True, text=True, env=env, cwd=tmp)
+                    if r.returncode == 0 and objcopy:
+                        txt = os.path.join(ovl, "Hdr", "Interface", a2) if a2 in plain else obj + ".txt"          # (FileCoreErr: hdr/FileCoreErr is the assembler header that others read: leave it)
+                        subprocess.run([objcopy, "-O", "binary", obj, txt], check=False)
+                        if os.path.exists(txt):
+                            if a2 in plain: conv(txt, os.path.join(ovl, "Interface", a2 + ".h"))
+                            else: shutil.copy(txt, os.path.join(ovl, "Interface", a2 + ".h"))             # (the object holds the C header itself)
+                            n["ASM2TXT"] += 1
+                    else:
+                        log("ASM2TXT %s failed: %s" % (rel, (r.stderr or r.stdout)[:200]))
     # 3. the libraries
     libs = os.path.join(tree.src, "Lib")
     for L in sorted(os.listdir(libs)):
@@ -300,6 +307,21 @@ def export_headers(tree, ovl, log, asasm="", objcopy=""):
     usbfs = os.path.join(tree.src, "HWSupport", "USB", "USBDriver", "build", "h", "USBDevFS")
     if os.path.isfile(usbfs):
         copy_file(usbfs, os.path.join(ovl, "lib", "USB", "USBDevFS.h"))
+    # the USB stack's generated headers (the OS build's export_hdrs_custom): usbdevs.h from the device list with its awk script, Interface/USBDriver.h from the assembler header
+    usbd = os.path.join(tree.src, "HWSupport", "USB", "USBDriver")
+    awkf = os.path.join(usbd, "dev", "usb", "devlist2h.awk")
+    if os.path.isfile(awkf) and shutil.which("awk"):
+        w = os.path.join(ovl, "_usbdevs"); os.makedirs(w, exist_ok=True)
+        r = subprocess.run(["awk", "-v", "os=Linux -s", "-f", awkf, os.path.join(usbd, "dev", "usb", "usbdevs")], cwd=w, capture_output=True, text=True)
+        for f, g in (("^.dev.usb.h.usbdevs", "usbdevs.h"), ("^.dev.usb.h.usbdevs_data", "usbdevs_data.h")):          # (the script says  if (os="RISC_OS")  and so always writes these names)
+            if r.returncode == 0 and os.path.isfile(os.path.join(w, f)):
+                os.makedirs(os.path.join(ovl, "usb", "dev", "usb"), exist_ok=True)
+                copy_file(os.path.join(w, f), os.path.join(ovl, "usb", "dev", "usb", g)); n["usb generated"] += 1
+    hdrusb = os.path.join(usbd, "build", "Hdr", "USBDriver")
+    if os.path.isfile(hdrusb):
+        copy_file(hdrusb, os.path.join(ovl, "Hdr", "Interface", "USBDriver"))
+        conv(hdrusb, os.path.join(ovl, "Interface", "USBDriver.h"))
+        n["usb generated"] += 1
     open(os.path.join(ovl, "norcroft.h"), "w").write(COMPAT)
     return n
 
@@ -448,24 +470,28 @@ class Builder:
     @staticmethod
     def resolve_include(name, roots, aliasdir):
         """NAME as written in an #include that was not found: look for it ignoring the case of every part in the include folders (RISC OS names are not case sensitive); make a link ALIASDIR/NAME"""
-        parts = name.split("/")
-        for root in roots:
-            cur, ok = root, True
-            for part in parts:
-                if not os.path.isdir(cur):
-                    ok = False
-                    break
-                hit = next((e for e in os.listdir(cur) if e.lower() == part.lower()), None)
-                if hit is None:
-                    ok = False
-                    break
-                cur = os.path.join(cur, hit)
-            if ok and os.path.isfile(cur):
-                dst = os.path.join(aliasdir, name)
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                if not os.path.lexists(dst):
-                    os.symlink(os.path.realpath(cur), dst)
-                return dst
+        cands = [name.split("/")]
+        dots = name.split(".")
+        if "/" not in name and len(dots) >= 3 and dots[-1] in ("h", "hdr"):                   # RISC OS: gadgets.actbut.h is the file h.actbut of the folder gadgets (gadgets/h/actbut)
+            cands.append(dots[:-2] + [dots[-1], dots[-2]])
+        for parts in cands:
+            for root in roots:
+                cur, ok = root, True
+                for part in parts:
+                    if not os.path.isdir(cur):
+                        ok = False
+                        break
+                    hit = next((e for e in os.listdir(cur) if e.lower() == part.lower()), None)
+                    if hit is None:
+                        ok = False
+                        break
+                    cur = os.path.join(cur, hit)
+                if ok and os.path.isfile(cur):
+                    dst = os.path.join(aliasdir, name)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    if not os.path.lexists(dst):
+                        os.symlink(os.path.realpath(cur), dst)
+                    return dst
         return None
 
     def compile_c(self, src, obj, base, inc, objs, errlimit=10):
@@ -483,7 +509,39 @@ class Builder:
             self.warnings.extend(re.findall(r"warning: implicit declaration of function '(\w+)'", msg))
         return rc == 0, errs[:errlimit], len(errs)
 
+    @staticmethod
+    def asasm_compat(objs):
+        """asasm 2.01 does not take the two macros  Barrier$cc  and  BarrierSync$cc  (BarrierSync would be Barrier with the condition "Sync": one eclipses the other; objasm takes the longest name): the copy of SyncLib's
+        hdr/barrier in the link farm has no condition code on Barrier (the sources only use it unconditionally)"""
+        for f in glob.glob(os.path.join(objs, "*.hdr")):
+            try: t = open(f, encoding="latin-1").read()
+            except OSError: continue
+            a = t.find("$label  Barrier$cc")
+            if a < 0 or "$label  BarrierSync$cc" not in t: continue
+            b = t.index("        MEND\n", a)
+            blk = t[a:b].replace("Barrier$cc", "Barrier").replace("$cc", "")
+            new = t[:a] + blk + t[b:]
+            if os.path.islink(f): os.unlink(f)
+            open(f, "w", encoding="latin-1").write(new)
+
+    @staticmethod
+    def asasm_alias_exports(src):
+        """asasm 2.01 writes no symbol for an exported name that is defined as  name * label  (SyncLib: spin_lock * spin_lock_smp, chosen by IF): the copy of the source in the link farm has  name  B label  there instead,
+        a label of its own with a branch to the real one (the branch is never run through: it is only reached by a call)"""
+        try: t = open(src, encoding="latin-1").read()
+        except OSError: return src
+        exported = set(re.findall(r"^\s+EXPORT\s+(\w+)", t, re.M))
+        def sub(m):
+            return ("%s\n        B       %s" % (m.group(1), m.group(2))) if m.group(1) in exported and not re.fullmatch(r"[0-9&].*", m.group(2)) else m.group(0)
+        new = re.sub(r"^(\w+)[ \t]+\*[ \t]+([A-Za-z_]\w*)[ \t]*(?:;.*)?$", sub, t, flags=re.M)
+        if new == t: return src
+        if os.path.islink(src): os.unlink(src)
+        open(src, "w", encoding="latin-1").write(new)
+        return src
+
     def assemble(self, src, obj, mk, objs):
+        self.asasm_compat(objs)
+        src = self.asasm_alias_exports(src)
         defs = ['APCS SETS "%s"' % OSENV["APCS"], 'Machine SETS "%s"' % OSENV["MACHINE"], 'UserIF SETS "%s"' % OSENV["USERIF"], "standalone SETL {TRUE}", 'MergedMsgs SETS "_ResData_/MergedMessages"']
         try:
             toks = shlex.split(mk.get("ASMDEFINES") + " " + mk.get("RAMASMDEFINES"))
@@ -492,8 +550,31 @@ class Builder:
         for i, t in enumerate(toks[:-1]):
             if t in ("-PD", "-pd") and toks[i + 1] not in defs:
                 defs.append(toks[i + 1])
-        cmd = [self.asasm, "-cpu=ARM1176JZF-S", "-i" + objs, "-i" + os.path.join(self.ovl, "Hdr", "Global"), "-i" + os.path.join(self.ovl, "Hdr", "Interface")] + ["-PreDefine=%s" % x for x in defs] + ["-o", obj, src]
-        rc, msg = self.run(cmd, objs, self.asenv)
+        cmd = [self.asasm, "-cpu=ARM1176JZF-S", "-i" + objs, "-i" + os.path.dirname(objs), "-i" + os.path.join(self.ovl, "Hdr", "Global"), "-i" + os.path.join(self.ovl, "Hdr", "Interface")] + ["-PreDefine=%s" % x for x in defs] + ["-o", obj, src]
+        for attempt in range(20):
+            rc, msg = self.run(cmd, objs, self.asenv)
+            m = re.search(r'Cannot find file "([^"]+)"', msg)
+            if rc == 0 or not m:
+                break
+            # RISC OS names are not case sensitive (GET BCM2835Reg for the file BCM2835reg): a link with the name as written
+            made = False
+            for root in (objs, os.path.dirname(objs), os.path.join(self.ovl, "Hdr", "Global"), os.path.join(self.ovl, "Hdr", "Interface")):
+                cur, ok = root, True
+                for part in m.group(1).split("/"):
+                    hit = next((e for e in os.listdir(cur) if e.lower() == part.lower()), None) if os.path.isdir(cur) else None
+                    if hit is None:
+                        ok = False
+                        break
+                    cur = os.path.join(cur, hit)
+                if ok and os.path.isfile(cur):
+                    dst = os.path.join(objs, m.group(1))
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    if not os.path.lexists(dst):
+                        os.symlink(os.path.realpath(cur), dst)
+                        made = True
+                    break
+            if not made:
+                break
         ok = rc == 0 and os.path.exists(obj)
         if ok:                                    # asasm leaves the EABI version of the ELF header at 0: the linker wants 5
             b = bytearray(open(obj, "rb").read())
@@ -523,6 +604,22 @@ class Builder:
         res["target"] = target
         objs = self.farm(rel, d, root)
         import glob
+        if mk.get("VPATH").split():                                       # the sources of the VPATH folders say  #include "../globals.h"  (the h folder of the component, one level up from their c folder)
+            hd = os.path.join(d, "h")
+            if os.path.isdir(hd):
+                for f in sorted(os.listdir(hd)):
+                    link = os.path.join(os.path.dirname(objs), f + ".h")
+                    if not os.path.lexists(link):
+                        os.symlink(os.path.join(hd, f), link)
+        for vp in mk.get("VPATH").split():                                # VPATH = gadgets: more folders with c/, s/ and h/ (the sources of Toolbox/Window's gadgets)
+            vd = os.path.join(d, vp)
+            for sub, ext in (("c", ".c"), ("s", ".s"), ("h", ".h")):
+                sd = os.path.join(vd, sub)
+                if os.path.isdir(sd):
+                    for f in sorted(os.listdir(sd)):
+                        link = os.path.join(objs, f + ext)
+                        if os.path.isfile(os.path.join(sd, f)) and not os.path.lexists(link):
+                            os.symlink(os.path.join(sd, f), link)
         for pat in re.findall(r"\$\(wildcard\s+([^)]+)\)", mk.v.get("SOURCES_TO_SYMLINK", "")):          # more sources for the link farm: dir/sub/file -> file.sub
             for pth in glob.glob(os.path.join(d, pat.strip())):
                 if os.path.isfile(pth):

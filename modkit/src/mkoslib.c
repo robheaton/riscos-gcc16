@@ -139,7 +139,9 @@ typedef struct
   Reg *in; int nin;
   Reg *out; int nout;
   unsigned swi;
-  int has_r0op; int r0op_is_or; unsigned r0val;
+  char *comp[8]; int comp_k[8]; int ncomp;                         /* "w - component 0": parameters that go into a block of words */
+  int has_block; int block_reg; char *block_name[8]; int nblock;
+  int nops; int op_reg[8]; int op_kind[8]; unsigned op_val[8];     /* "with R1 |= 0x3, R3 = 0x0": kind 0 =, 1 |=, 2 += */
 } Func;
 
 static char *normalise (const char *s, size_t n)             /* Python: re.sub (r"\s+", " ", s) */
@@ -271,6 +273,166 @@ static unsigned parse_hex_at (const char *p, const char **end)
   return v;
 }
 
+/* LINE matches  [Input:\s*](\w+) - component (\d+)\s*$ */
+static int match_component (const char *line, char **name, int *k)
+{
+  const char *p = line, *q;
+  if (strncmp (p, "Input:", 6) == 0) { p += 6; while (is_space ((unsigned char) *p)) p++; }
+  q = p;
+  while (is_word ((unsigned char) *q)) q++;
+  if (q == p || strncmp (q, " - component ", 13) != 0) return 0;
+  *name = xstrndup (p, (size_t) (q - p));
+  q += 13;
+  if (!isdigit ((unsigned char) *q)) { free (*name); return 0; }
+  *k = 0;
+  while (isdigit ((unsigned char) *q)) { if (*k < 100000) *k = *k * 10 + (*q - '0'); q++; }
+  while (is_space ((unsigned char) *q)) q++;
+  if (*q) { free (*name); return 0; }
+  return 1;
+}
+
+/* OSLib's own register table of a SWI (the  <Module>.Hdr  file next to the header):  Entry / Exit lines  "R1 -> s (String)",  "R2 = station (Int)";  Entry lines that are blocks of components
+   "R1 -> delete_icon (sequence of (Wimp_W, Wimp_I))".  Only on hosts that can list a folder (not RISC OS: there the parameters keep the comment's registers) */
+typedef struct { Reg *e; int ne; Reg *x; int nx; int blockreg[4]; int nblocks; } HdrInfo;
+
+#if !defined (__riscos__)
+static HdrInfo hdr_entries (const char *dir, const char *header, unsigned swi)
+{
+  HdrInfo h;
+  char base[256], *txt = NULL, *ln, *nx;
+  size_t bl = 0;
+  DIR *dp;
+  struct dirent *de;
+  char path[2048];
+  int found = 0, section = 0;
+  memset (&h, 0, sizeof h);
+  while (header[bl] && header[bl] != '.' && bl < sizeof base - 1) { base[bl] = (char) tolower ((unsigned char) header[bl]); bl++; }
+  base[bl] = 0;
+  dp = opendir (dir);
+  if (!dp) return h;
+  path[0] = 0;
+  while ((de = readdir (dp)) != NULL)
+    {
+      size_t nl = strlen (de->d_name);
+      char lower[256];
+      size_t i;
+      if (nl != bl + 4 || nl >= sizeof lower) continue;
+      for (i = 0; i < nl; i++) lower[i] = (char) tolower ((unsigned char) de->d_name[i]);
+      lower[nl] = 0;
+      if (strncmp (lower, base, bl) == 0 && strcmp (lower + bl, ".hdr") == 0) { snprintf (path, sizeof path, "%s/%s", dir, de->d_name); break; }
+    }
+  closedir (dp);
+  if (!path[0])                                          /* the layout of the RISC OS sources: Hdr/Wimp (objasm syntax) in the folder of the headers */
+    {
+      char sub[1024];
+      snprintf (sub, sizeof sub, "%s/Hdr", dir);
+      dp = opendir (sub);
+      if (dp)
+        {
+          while ((de = readdir (dp)) != NULL)
+            {
+              size_t nl = strlen (de->d_name), i;
+              char lower[256];
+              if (nl != bl || nl >= sizeof lower) continue;
+              for (i = 0; i < nl; i++) lower[i] = (char) tolower ((unsigned char) de->d_name[i]);
+              lower[nl] = 0;
+              if (strcmp (lower, base) == 0) { snprintf (path, sizeof path, "%s/%s", sub, de->d_name); break; }
+            }
+          closedir (dp);
+        }
+    }
+  if (!path[0]) return h;
+  {
+    FILE *fp = fopen (path, "rb");
+    long n;
+    if (!fp) return h;
+    fseek (fp, 0, SEEK_END); n = ftell (fp); fseek (fp, 0, SEEK_SET);
+    txt = xmalloc ((size_t) n + 1);
+    if (fread (txt, 1, (size_t) n, fp) != (size_t) n) n = 0;
+    txt[n] = 0;
+    fclose (fp);
+  }
+  for (ln = txt; ln && *ln; ln = nx)
+    {
+      char *e;
+      nx = strchr (ln, '\n');
+      if (nx) { *nx = 0; nx++; }
+      e = ln + strlen (ln);
+      while (e > ln && (e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
+      if (!found)
+        {
+          const char *q = ln;
+          unsigned v = 0;
+          int ok = 0;
+          if (strncmp (q, ".set ", 5) == 0)                  /* gas:  .set Name,0x4000f */
+            {
+              q += 5;
+              if (*q == 'X') q++;
+              if (!is_word ((unsigned char) *q)) continue;
+              while (is_word ((unsigned char) *q)) q++;
+              if (strncmp (q, ",0x", 3) != 0 || !isxdigit ((unsigned char) q[3])) continue;
+              q += 3;
+              ok = 1;
+            }
+          else                                                /* objasm:  Name   *   &4000F */
+            {
+              if (!is_word ((unsigned char) *q)) continue;
+              while (is_word ((unsigned char) *q)) q++;
+              while (*q == ' ' || *q == '\t') q++;
+              if (*q != '*') continue;
+              q++;
+              while (*q == ' ' || *q == '\t') q++;
+              if (*q != '&' || !isxdigit ((unsigned char) q[1])) continue;
+              q++;
+              ok = 1;
+            }
+          if (!ok) continue;
+          while (isxdigit ((unsigned char) *q)) { v = v * 16 + (unsigned) (isdigit ((unsigned char) *q) ? *q - '0' : tolower ((unsigned char) *q) - 'a' + 10); q++; }
+          if (*q == 0 && v == swi && nx && (nx[0] == ' ' || nx[0] == '\t') && (strchr (nx, '@') != NULL || strchr (nx, ';') != NULL))
+            {
+              const char *w = nx;                               /* the next line must be a comment line:  white space, then @ or ;  */
+              while (*w == ' ' || *w == '\t') w++;
+              if (*w == '@' || *w == ';') found = 1;
+            }
+          continue;
+        }
+      {
+        const char *t = ln;
+        while (*t == ' ' || *t == '\t') t++;
+        if (t == ln || (*t != '@' && *t != ';')) break;
+        t++;
+        char name[128];
+        int reg = 0, ptr;
+        size_t k;
+        while (*t == ' ' || *t == '\t') t++;
+        if (strcmp (t, "Entry") == 0) { section = 1; continue; }
+        if (strcmp (t, "Exit") == 0) { section = 2; continue; }
+        if (t[0] != 'R' || !isdigit ((unsigned char) t[1]) || !section) continue;
+        t++;
+        while (isdigit ((unsigned char) *t)) { reg = reg * 10 + (*t - '0'); t++; }
+        if (strncmp (t, " = ", 3) == 0) { ptr = 0; t += 3; }
+        else if (strncmp (t, " -> ", 4) == 0) { ptr = 1; t += 4; }
+        else continue;
+        k = 0;
+        while (is_word ((unsigned char) *t) && k < sizeof name - 1) name[k++] = *t++;
+        name[k] = 0;
+        if (!k) continue;
+        if (*t == ' ' && t[1] == '(') { if (t[strlen (t) - 1] != ')') continue; }
+        else if (*t) continue;
+        {
+          Reg **arr = section == 1 ? &h.e : &h.x;
+          int *cnt = section == 1 ? &h.ne : &h.nx, i, dup = 0;
+          for (i = 0; i < *cnt; i++) if (strcmp ((*arr)[i].name, name) == 0) dup = 1;
+          if (!dup) { *arr = xrealloc (*arr, sizeof (Reg) * (size_t) (*cnt + 1)); (*arr)[*cnt].name = xstrdup (name); (*arr)[*cnt].reg = reg; (*cnt)++; }
+        }
+        if (section == 1 && ptr && strncmp (t, " (sequence of", 13) == 0 && h.nblocks < 4) h.blockreg[h.nblocks++] = reg;
+      }
+    }
+  free (txt);
+  return h;
+}
+#endif
+
 static Func parse_func (const char *dir, const char *name)
 {
   Decl d = find_decl (dir, name);
@@ -360,6 +522,7 @@ static Func parse_func (const char *dir, const char *name)
       while (*l == ' ' || *l == '*') l++;
       if (match_reg_line (l, "Input:", "entry", 0, &nm, &reg)) set_reg (&f.in, &f.nin, nm, reg);
       else if (match_reg_line (l, "Output:", "exit", 1, &nm, &reg)) set_reg (&f.out, &f.nout, nm, reg);
+      else if (match_component (l, &nm, &reg)) { if (f.ncomp < 8) { f.comp[f.ncomp] = xstrdup (nm); f.comp_k[f.ncomp++] = reg; } }
       else if (match_psr_line (l, &nm)) set_reg (&f.out, &f.nout, nm, 16);                   /* the flags of the SWI: register 16 */
       else if (has_value_of_r (l) || has_r_equals (l)) die ("%s: the comment line '%s' is not a pattern that mkoslib knows", name, l);
       free (nm); free (line);
@@ -376,20 +539,73 @@ static Func parse_func (const char *dir, const char *name)
         p++;
       }
     f.swi = parse_hex_at (p + 10, &e);
-    if (strncmp (e, " with R0 ", 9) == 0)
+    if (strncmp (e, " with ", 6) == 0)                       /* constants put into registers after the inputs (up to 16.2.0-17 only R0 was understood and the others were dropped) */
       {
-        const char *q = e + 9;
-        int is_or = 0;
-        if (strncmp (q, "|= ", 3) == 0) { is_or = 1; q += 3; }
-        else if (strncmp (q, "= ", 2) == 0) q += 2;
-        else q = NULL;
-        if (q && q[0] == '0' && q[1] == 'x' && isxdigit ((unsigned char) q[2]))
+        const char *q = e + 6;
+        for (;;)
           {
-            f.has_r0op = 1; f.r0op_is_or = is_or;
-            f.r0val = parse_hex_at (q, &e);
+            int kind;
+            const char *item = q;
+            if (q[0] != 'R' || !isdigit ((unsigned char) q[1])) die ("%s: the comment part '%.30s' is not a pattern that mkoslib knows", name, item);
+            if (f.nops >= 8) die ("%s: too many register settings in the comment", name);
+            f.op_reg[f.nops] = q[1] - '0';
+            q += 2;
+            if (strncmp (q, " = ", 3) == 0) { kind = 0; q += 3; }
+            else if (strncmp (q, " |= ", 4) == 0) { kind = 1; q += 4; }
+            else if (strncmp (q, " += ", 4) == 0) { kind = 2; q += 4; }
+            else die ("%s: the comment part '%.30s' is not a pattern that mkoslib knows", name, item);
+            if (!(q[0] == '0' && q[1] == 'x' && isxdigit ((unsigned char) q[2]))) die ("%s: the comment part '%.30s' is not a pattern that mkoslib knows", name, item);
+            f.op_kind[f.nops] = kind;
+            f.op_val[f.nops] = parse_hex_at (q, &q);
+            f.nops++;
+            if (q[0] == ',' && q[1] == ' ') { q += 2; continue; }
+            if (q[0] == '.' && (q[1] == 0 || q[1] == '\n' || q[1] == '\r' || q[1] == ' ')) break;
+            if (q[0] == 0 || q[0] == '\n' || q[0] == '\r') break;
+            die ("%s: the comment part '%.30s' is not a pattern that mkoslib knows", name, q);
           }
       }
   }
+#if !defined (__riscos__)
+  {                                                       /* the parameters that the comment gives no register: OSLib's Hdr file has the table of the SWI */
+    int missing = 0, j;
+    for (j = 0; j < f.nparams; j++)
+      {
+        int iscomp = 0, c;
+        for (c = 0; c < f.ncomp; c++) if (strcmp (f.comp[c], f.params[j].name) == 0) iscomp = 1;
+        if (!iscomp && !find_reg (f.in, f.nin, f.params[j].name) && !find_reg (f.out, f.nout, f.params[j].name)) missing = 1;
+      }
+    if (missing || f.ncomp)
+      {
+        HdrInfo h = hdr_entries (dir, d.header, f.swi);
+        for (j = 0; j < f.nparams; j++)
+          {
+            int iscomp = 0, c, k;
+            for (c = 0; c < f.ncomp; c++) if (strcmp (f.comp[c], f.params[j].name) == 0) iscomp = 1;
+            if (iscomp || find_reg (f.in, f.nin, f.params[j].name) || find_reg (f.out, f.nout, f.params[j].name)) continue;
+            for (k = 0; k < h.ne; k++) if (strcmp (h.e[k].name, f.params[j].name) == 0) { set_reg (&f.in, &f.nin, f.params[j].name, h.e[k].reg); goto found; }
+            for (k = 0; k < h.nx; k++) if (strcmp (h.x[k].name, f.params[j].name) == 0) { set_reg (&f.out, &f.nout, f.params[j].name, h.x[k].reg); goto found; }
+          found: ;
+          }
+        if (f.ncomp)
+          {
+            int a, b;
+            if (h.nblocks != 1) die ("%s: the parameters are components of a block, but the Hdr file of OSLib does not show one block (%d)", name, h.nblocks);
+            f.has_block = 1; f.block_reg = h.blockreg[0];
+            for (a = 0; a < f.ncomp; a++)                    /* by component number (stable) */
+              {
+                int best = -1;
+                for (b = 0; b < f.ncomp; b++)
+                  {
+                    int used = 0, u;
+                    for (u = 0; u < f.nblock; u++) if (strcmp (f.block_name[u], f.comp[b]) == 0) used = 1;
+                    if (!used && (best < 0 || f.comp_k[b] < f.comp_k[best])) best = b;
+                  }
+                f.block_name[f.nblock++] = f.comp[best];
+              }
+          }
+      }
+  }
+#endif
   (void) i;
   free (comment); free (decl); free (norm); free (plist);
   return f;
@@ -414,6 +630,13 @@ static void sort_regs (Reg *a, int n)                    /* by register, stable 
     }
 }
 
+static int in_block (const Func *f, const char *name)
+{
+  int i;
+  for (i = 0; i < f->nblock; i++) if (strcmp (f->block_name[i], name) == 0) return 1;
+  return 0;
+}
+
 static char *generate (const char *dir, char **funcs, int nfuncs)
 {
   Buf out, body;
@@ -434,16 +657,31 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
       for (i = 0; i < f.nparams; i++) { if (i) buf_adds (&L, ", "); buf_adds (&L, f.params[i].text); }
       for (i = 0; i < f.nout; i++) if (f.out[i].reg == 16) flags = 1;
       uses_flags |= flags;
-      buf_adds (&L, ")\n{\n  unsigned r[10] = { 0 };\n");
-      if (flags) buf_adds (&L, "  unsigned flags = 0;\n");
+      buf_adds (&L, ")\n{\n  unsigned _r[10] = { 0 };\n");
+      if (flags) buf_adds (&L, "  unsigned _flags = 0;\n");
       sort_regs (f.in, f.nin);
+      if (f.has_block)
+        {
+          for (i = 0; i < f.nblock; i++)
+            {
+              Param *bp = find_param (&f, f.block_name[i]);
+              char *ty;
+              if (!bp) die ("%s: the comment names a component '%s' that is not a parameter", f.name, f.block_name[i]);
+              ty = strip_ws (bp->type, strlen (bp->type));
+              buf_printf (&L, "  _Static_assert (sizeof (%s) == 4, \"%s is not a word\");\n", ty, f.block_name[i]);
+              free (ty);
+            }
+          buf_printf (&L, "  unsigned _blk[%d] = { ", f.nblock);
+          for (i = 0; i < f.nblock; i++) buf_printf (&L, "%s(unsigned) %s", i ? ", " : "", f.block_name[i]);
+          buf_printf (&L, " };\n  _r[%d] = (unsigned) _blk;\n", f.block_reg);
+        }
       for (i = 0; i < f.nin; i++)
         {
           if (!find_param (&f, f.in[i].name)) die ("%s: the comment names an input '%s' that is not a parameter", f.name, f.in[i].name);
-          buf_printf (&L, "  r[%d] = (unsigned) %s;\n", f.in[i].reg, f.in[i].name);
+          buf_printf (&L, "  _r[%d] = (unsigned) %s;\n", f.in[i].reg, f.in[i].name);
         }
-      if (f.has_r0op) buf_printf (&L, "  r[0] %s %s;\n", f.r0op_is_or ? "|=" : "=", hx (f.r0val));
-      buf_printf (&L, "  os_error *e = (os_error *) %s (%s, r%s);\n", flags ? "__modlib_xswif" : "__modlib_xswi", hx (0x20000u | f.swi), flags ? ", &flags" : "");
+      for (i = 0; i < f.nops; i++) buf_printf (&L, "  _r[%d] %s %s;\n", f.op_reg[i], f.op_kind[i] == 1 ? "|=" : f.op_kind[i] == 2 ? "+=" : "=", hx (f.op_val[i]));
+      buf_printf (&L, "  os_error *_e = (os_error *) %s (%s, _r%s);\n", flags ? "__modlib_xswif" : "__modlib_xswi", hx (0x20000u | f.swi), flags ? ", &_flags" : "");
       sort_regs (f.out, f.nout);
       for (i = 0; i < f.nout; i++)
         {
@@ -457,14 +695,14 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
           pointee = strip_ws (ty, tl - 1);
           if (outs.len == 0 && i == 0) {}
           if (i) buf_addc (&outs, '\n');
-          if (f.out[i].reg == 16) buf_printf (&outs, "    if (%s) *%s = (%s) flags;", f.out[i].name, f.out[i].name, pointee);
-          else buf_printf (&outs, "    if (%s) *%s = (%s) r[%d];", f.out[i].name, f.out[i].name, pointee, f.out[i].reg);
+          if (f.out[i].reg == 16) buf_printf (&outs, "    if (%s) *%s = (%s) _flags;", f.out[i].name, f.out[i].name, pointee);
+          else buf_printf (&outs, "    if (%s) *%s = (%s) _r[%d];", f.out[i].name, f.out[i].name, pointee, f.out[i].reg);
           free (ty); free (pointee);
         }
-      if (f.nout) { buf_adds (&L, "  if (!e)\n    {\n"); buf_adds (&L, outs.s); buf_adds (&L, "\n    }\n"); }
-      buf_adds (&L, "  return e;\n}");
+      if (f.nout) { buf_adds (&L, "  if (!_e)\n    {\n"); buf_adds (&L, outs.s); buf_adds (&L, "\n    }\n"); }
+      buf_adds (&L, "  return _e;\n}");
       for (j = 0; j < f.nparams; j++)
-        if (!find_reg (f.in, f.nin, f.params[j].name) && !find_reg (f.out, f.nout, f.params[j].name))
+        if (!find_reg (f.in, f.nin, f.params[j].name) && !find_reg (f.out, f.nout, f.params[j].name) && !in_block (&f, f.params[j].name))
           die ("%s: the parameter '%s' has no register in the comment", f.name, f.params[j].name);
       if (fi) buf_adds (&body, "\n\n");
       buf_adds (&body, L.s);
