@@ -88,6 +88,12 @@ class RiscosModel(Kernel):
             if (cpu.r[1], cpu.r[2]) in lst: lst.remove((cpu.r[1], cpu.r[2])); cpu.v = 0
             else: cpu.r[0] = self.error_block(0x1E4, "Vector not claimed"); cpu.v = 1
             return
+        if n == 0x58 and cpu.r[0] == 6:                                                                                                # OS_ReadSysInfo 6: OSRSI6_SVCSTK (16) is the top of the SVC stack
+            for i in range(0, 8):
+                idx = cpu.rd32(cpu.r[1] + 4 * i)
+                if idx == 0xFFFFFFFF: break
+                for j, b in enumerate(struct.pack('<I', self.sp0 if idx == 16 else 0)): cpu.wr8(cpu.r[2] + 4 * i + j, b)
+            cpu.v = 0; return
         if n == 0x2B:                                                                                                                  # OS_GenerateError: recorded (the real kernel passes the error to the error handler of the caller)
             self.generated.append((self.cpu.rd32(cpu.r[0]), self.read_cstr(cpu.r[0] + 4))); cpu.v = 1; return
         if n == 0x42: self.mono += 1; cpu.r[0] = self.mono; cpu.v = 0; return                                                          # OS_ReadMonotonicTime: one cs per call

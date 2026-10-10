@@ -10,6 +10,9 @@ typedef struct { int r[10]; } _kernel_swi_regs;
 typedef struct stack_chunk { unsigned long sc_mark; struct stack_chunk *sc_next, *sc_prev; unsigned long sc_size; int (*sc_deallocate) (); } _kernel_stack_chunk;      /* (the type only: a module has no stack chunks of the SharedCLibrary) */
 #define _kernel_NONX 0x80000000
 /* Call the SWI NO with the registers IN, return the registers in OUT.  The X bit is set unless bit 31 (_kernel_NONX) is set. */
+/* The bytes that are left of the kernel's SVC stack (32 KB, shared with the OS) for the caller, or -1 when that cannot be known (user mode, the stack of a runnable module).  There is no overflow
+   check: a module that recurses or has big local arrays (more than a few KB) should ask first, or use malloc. */
+extern long __modlib_stack_left (void);
 extern _kernel_oserror *_kernel_swi (int no, const _kernel_swi_regs *in, _kernel_swi_regs *out);
 extern _kernel_oserror *_kernel_swi_c (int no, const _kernel_swi_regs *in, _kernel_swi_regs *out, int *carry);
 

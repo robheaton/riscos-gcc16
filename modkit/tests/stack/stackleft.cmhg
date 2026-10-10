@@ -1,0 +1,6 @@
+title-string:           StkLeft
+help-string:            StkLeft 0.01
+date-string:            10 Oct 2026
+finalisation-code:      sl_final
+command-keyword-table:  sl_command
+  StkLeft_Show(min-args: 0, max-args: 1, help-text: "*StkLeft_Show [depth] prints the stack that is left at that depth of recursion.\n", invalid-syntax: "Syntax: *StkLeft_Show [depth]")
