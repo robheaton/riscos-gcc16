@@ -136,6 +136,7 @@ def gen_cmhg(rng):
             ents = [("%s_e%d/%s_h%d" % (kind[:3], i, kind[:3], i)) if rng.random() < .6 else ("%s_e%d" % (kind[:3], i)) for i in range(rng.randint(1, 3))]
             L(kind, rng.choice([", ", " ", ",\n    "]).join(ents))
     if rng.random() < .25: L("module-is-runnable", rng.choice(["", " "]))
+    if rng.random() < .25: L("module-is-c-plus-plus", rng.choice(["", " "]))
     if rng.random() < .3: L("international-help-file", q(rng))
     if rng.random() < .3: lines.insert(rng.randint(0, len(lines)), "")
     if rng.random() < .3: lines.insert(rng.randint(0, len(lines)), "   ; indented comment")
@@ -362,6 +363,17 @@ if os.path.exists(d2 + "/m.elf"):
     check(rp.returncode != 0 and rc.returncode != 0 and "WeirdSection" in rc.stderr and "WeirdSection" in rp.stderr, "a section outside .image is refused by both, and named (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-100:]))
 else:
     check(False, "the orphan section test: the link did not make an ELF file: %s" % r.stderr[-200:])
+# code compiled with -fPIC (the shared library model of this tool chain: a table at 0x8000) cannot be in a module: the .got is an orphan section, refused by both, and the reason is given
+d3 = os.path.join(D, "pic"); os.makedirs(d3)
+shutil.copy(os.path.join(D, "hello", "h.o"), d3 + "/h.o")
+open(d3 + "/pic.c", "w").write("int g_a = 5;\nint g_tab[4] = { 1, 2, 3, 4 };\nint *g_ptr = g_tab;\nextern int pic_extra (int);\nint pic_get (int i) { return g_a + g_tab[i & 3] + *g_ptr + pic_extra (i); }\nint pic_extra (int i) { return i * 3 + g_a; }\n")
+r = run([GCC, "-O2", "-fPIC", "-march=armv6", "-mfloat-abi=soft", "-marm", "-ffreestanding", "-c", d3 + "/pic.c", "-o", d3 + "/p.o"]); assert r.returncode == 0, r.stderr      # (-mmodule compiles without -fPIC: the object is made without it, as the members of libstdc++.a were)
+r = run([GCC, "-mmodule", "-o", d3 + "/m.elf", d3 + "/h.o", d3 + "/p.o", os.path.join(D, "hello", "s0.o")])
+if os.path.exists(d3 + "/m.elf"):
+    rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d3 + "/m.elf", d3 + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d3 + "/m.elf", d3 + "/c,ffa"])
+    check(rp.returncode != 0 and rc.returncode != 0 and ".got" in rc.stderr and ".got" in rp.stderr and "position independent" in rc.stderr and "position independent" in rp.stderr, "a module with a global offset table (-fPIC code) is refused by both, and the reason is given (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-100:]))
+else:
+    check(False, "the PIC test: the link did not make an ELF file: %s" % r.stderr[-200:])
 # in place and refused: the ELF file stays what it was
 shutil.copy(d + "/m.elf", d + "/inplace.elf2")
 r = run([os.path.join(BIN, "modreloc"), "-q", "--driver", d + "/inplace.elf2"])

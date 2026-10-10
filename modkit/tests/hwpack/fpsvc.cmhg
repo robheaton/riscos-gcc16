@@ -1,0 +1,16 @@
+; FpSvc: floating point in a module, on the machine (pack/module39 of the work area).  The commands run in SVC mode, the generic veneer fp_tick in interrupt time; nothing here is a program.
+title-string:           FpSvc
+help-string:            FpSvc 0.39
+date-string:            09 Oct 2026
+
+initialisation-code:    fp_init
+finalisation-code:      fp_final
+
+generic-veneers:        fp_tick/fp_tick_handler
+
+command-keyword-table:  fp_command
+  FpSvc_SelfTest(min-args: 0, max-args: 0, help-text: "*FpSvc_SelfTest checks printf, sscanf, strtod, strtof, the arithmetic and the conversions of double and float against answers worked out on the host (glibc), in SVC mode.\n", invalid-syntax: "Syntax: *FpSvc_SelfTest"),
+  FpSvc_Heavy(min-args: 0, max-args: 0, help-text: "*FpSvc_Heavy prints 1e300 with 1000 decimals, 5e-324 with 1100, and reads numbers of 800 digits: the largest uses of memory and time of the conversions.\n", invalid-syntax: "Syntax: *FpSvc_Heavy"),
+  FpSvc_Tick(min-args: 0, max-args: 0, help-text: "*FpSvc_Tick does floating point arithmetic in a generic veneer that OS_CallEvery calls 100 times, and checks the result.\n", invalid-syntax: "Syntax: *FpSvc_Tick"),
+  FpSvc_Math(min-args: 0, max-args: 0, help-text: "*FpSvc_Math checks the functions of math.h (sqrt, sin, exp, pow, floor ...) against the answers of the host, within the error that is claimed for each.\n", invalid-syntax: "Syntax: *FpSvc_Math"),
+  FpSvc_Calc(min-args: 1, max-args: 255, help-text: "*FpSvc_Calc <number> [<op> <number>]... works out a sum from left to right (+ - * /) in double and prints the answer in decimal and in hex.\n", invalid-syntax: "Syntax: *FpSvc_Calc <number> [<op> <number>]...")

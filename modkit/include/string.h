@@ -1,6 +1,9 @@
 /* string.h - the string and memory functions of the C library (libmodkit.a).  The "C" locale only: strcoll is strcmp and strxfrm a copy; the case-insensitive comparisons fold ASCII only. */
 #ifndef _STRING_H
 #define _STRING_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stddef.h>
 extern void *memcpy (void *d, const void *s, size_t n);
 extern void *memmove (void *d, const void *s, size_t n);
@@ -39,5 +42,8 @@ extern int strcasecmp (const char *a, const char *b);
 extern int strncasecmp (const char *a, const char *b, size_t n);
 extern void bzero (void *p, size_t n);
 extern void bcopy (const void *s, void *d, size_t n);
+#endif
+#ifdef __cplusplus
+}
 #endif
 #endif

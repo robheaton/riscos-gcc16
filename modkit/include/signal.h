@@ -2,6 +2,9 @@
    useful for code that raises its own.  The signal numbers are the SharedCLibrary's.  The default action of raise () is abort () (a module has no program to end: it stops with an error). */
 #ifndef _SIGNAL_H
 #define _SIGNAL_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef int sig_atomic_t;
 typedef void (*__sighandler_t) (int);
 #define SIG_DFL	((__sighandler_t) 0)
@@ -20,4 +23,7 @@ typedef void (*__sighandler_t) (int);
 #define _NSIG	11
 extern __sighandler_t signal (int sig, __sighandler_t func);
 extern int raise (int sig);
+#ifdef __cplusplus
+}
+#endif
 #endif

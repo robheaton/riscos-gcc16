@@ -9,6 +9,16 @@ SECTIONS
     KEEP(*(.text.header))
     *(.text .text.*)
     *(.rodata .rodata.*)
+    /* the static constructors and destructors of C++ (lib/cxxrt.c runs them): the words are addresses, which modreloc relocates like any other */
+    . = ALIGN(4);
+    __init_array_start = .;
+    KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+    KEEP(*(.init_array .ctors))
+    __init_array_end = .;
+    __fini_array_start = .;
+    KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*)))
+    KEEP(*(.fini_array .dtors))
+    __fini_array_end = .;
     . = ALIGN(4);
     "Image$$RO$$Limit" = .;
     "Image$$RW$$Base" = .;

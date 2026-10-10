@@ -5,6 +5,9 @@
    The arguments are, in this order: the input registers (r0 - r9), pointers to the outputs (r0 - r9), a pointer for the flags (_OUT (_FLAGS)), then the words of a _BLOCK. */
 #ifndef __SWIS_H
 #define __SWIS_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stdarg.h>
 #include <kernel.h>
 #include <swisnums.h>
@@ -24,4 +27,7 @@ extern int _swi (int swi_no, unsigned int mask, ...);
 extern _kernel_oserror *_swix (int swi_no, unsigned int mask, ...);
 extern int _vswi (int swi_no, unsigned int mask, va_list ap);						/* the same with a va_list */
 extern _kernel_oserror *_vswix (int swi_no, unsigned int mask, va_list ap);
+#ifdef __cplusplus
+}
+#endif
 #endif

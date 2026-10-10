@@ -190,6 +190,13 @@ def main():
         status = "main returned %d" % rc
     except Exit as e:
         status = str(e)
+    except Fault as e:                                                                              # what was printed so far, and where the program was
+        pc = m.cpu.r[15]
+        near = max(((a, n) for n, a in elf.syms.items() if a <= pc), default=(0, "?"))
+        status = "FAULT %s at pc %#x (%s+%#x), lr %#x" % (e, pc, near[1], pc - near[0], m.cpu.r[14])
+        sys.stdout.write("".join(m.out))
+        sys.stderr.write("armrun: %s; %d steps in %.1f s\n" % (status, m.cpu.steps, time.time() - t0))
+        sys.exit(1)
     sys.stdout.write("".join(m.out))
     sys.stderr.write("armrun: %s; %d steps in %.1f s\n" % (status, m.cpu.steps, time.time() - t0))
 

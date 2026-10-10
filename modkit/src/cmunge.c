@@ -22,6 +22,8 @@ The CMHG language that is supported (anything else is an error, nothing is dropp
                                    and #define Module_MessagesFile in the C header
   swi-chunk-base-number: N, swi-decoding-table: PREFIX NAME ..., swi-handler-code: FN     _kernel_oserror *FN (int swi_offset, _kernel_swi_regs *r, void *pw)
   irq-handlers:, vector-handlers:, generic-veneers: ENTRY/FN, ...     int FN (_kernel_swi_regs *r, void *pw)
+  module-is-c-plus-plus:           the module is written in C++ (compile with -fno-exceptions -fno-rtti): the initialisation veneer calls libmodkit's __modlib_cxx_init (the static constructors) before the
+                                   initialisation code, the finalisation veneer calls __modlib_cxx_fini (the destructors of the static objects and .fini_array) after the finalisation code (lib/cxxrt.c)
   module-is-runnable:              the module has a start entry: *RMRun Module args (OS_Module Enter) calls it in USER mode; it takes the top of the application memory (OS_GetEnv) as its stack and calls
                                    int main (int argc, char **argv) - argv[0] is the title, the arguments are the words of the command tail ("..." groups) - and ends the program with its result (libmodkit's
                                    __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
@@ -54,6 +56,7 @@ typedef struct
   unsigned swi_chunk; char *swi_prefix; char **swi_names; int nswi; char *swi_handler;
   Veneer *ven; int nven;
   int runnable;
+  int cxx;                                                  /* module-is-c-plus-plus: */
   unsigned char *mfile; size_t mfilelen;                    /* international-help-file: the name of the Messages file */
 } Module;
 
@@ -671,6 +674,7 @@ static void parse_cmhg (const char *text, Module *m)
             }
         }
       else if (strcmp (key, "module-is-runnable") == 0) m->runnable = 1;
+      else if (strcmp (key, "module-is-c-plus-plus") == 0) m->cxx = 1;
       else if (strcmp (key, "international-help-file") == 0)
         {
           size_t pos = 0;
@@ -841,7 +845,7 @@ static char *generate_asm (const Module *m, const char *src)
   if (m->runnable) A (&o, "\t.equ\tOS_GetEnv, 0x10");
   A (&o, "\t.section\t\".text.header\",\"ax\"\n\t.global\t_start\n_start:");
   A (&o, "\t.word\t%s", m->runnable ? "start - _start\t\t\t@ start code (module-is-runnable)" : "0\t\t\t\t@ start code (none)");
-  A (&o, "\t.word\tinit - _start\n\t.word\t%s", m->final ? "final - _start" : "0\t\t\t\t@ finalisation (none)");
+  A (&o, "\t.word\tinit - _start\n\t.word\t%s", (m->final || m->cxx) ? "final - _start" : "0\t\t\t\t@ finalisation (none)");
   A (&o, "\t.word\t%s", has_svc ? "service - _start\t\t@ service call handler" : "0\t\t\t\t@ service call handler (none)");
   A (&o, "\t.word\ttitle - _start\n\t.word\thelp - _start");
   A (&o, "\t.word\t%s", ncmds ? "cmdtab - _start" : "0");
@@ -910,9 +914,18 @@ static char *generate_asm (const Module *m, const char *src)
   A (&o, "\tadrl\tr4, _start\t\t\t@ where the image is now (PC relative)\n\tldr\tr5, link_addr\t\t\t@ where the linker put it (0), or where it already is (a second initialisation)\n\tsubs\tr6, r4, r5\n\tbeq\trelocated");
   A (&o, "\tadrl\tr7, reloc_info\n\tldr\tr8, [r7]\n\tldr\tr9, [r7, #4]\n\tadd\tr8, r4, r8\nrloop:\tcmp\tr9, #0\n\tbeq\trdone\n\tldr\tr0, [r8], #4\n\tldr\tr1, [r4, r0]\n\tadd\tr1, r1, r6\n\tstr\tr1, [r4, r0]\n\tsub\tr9, r9, #1\n\tb\trloop");
   A (&o, "rdone:\tmov\tr0, #1\n\tmov\tr1, r4\n\tldr\tr2, =__image_end\n\tsub\tr2, r2, #1\n\tswi\tXOS_SynchroniseCodeAreas\nrelocated:");
+  if (m->cxx)                                                /* module-is-c-plus-plus: the static constructors run before the module's own initialisation code (libmodkit's cxxrt.c; the private word is kept in r8) */
+    A (&o, "\tmov\tr8, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t__modlib_cxx_init\n\tmov\tsp, r4\n\tmov\tr12, r8");
   if (m->init) A (&o, "\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone", m->init);
   else A (&o, "\tmov\tr0, #0\n\tb\tdone");
-  if (m->final)
+  if (m->cxx)                                                /* ... and the destructors of the static objects after the module's finalisation code */
+    {
+      A (&o, "\nfinal:\n\tstmfd\tsp!, {r4-r11, lr}");
+      if (m->final) A (&o, "\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tmov\tr8, r0", m->final);
+      else A (&o, "\tmov\tr8, #0");
+      A (&o, "\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t__modlib_cxx_fini\n\tmov\tsp, r4\n\tmov\tr0, r8\n\tb\tdone");
+    }
+  else if (m->final)
     {
       A (&o, "\nfinal:\n\tstmfd\tsp!, {r4-r11, lr}");
       A (&o, "\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone", m->final);

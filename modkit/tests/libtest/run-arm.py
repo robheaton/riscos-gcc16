@@ -8,7 +8,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 scale = sys.argv[1] if len(sys.argv) > 1 else "1"
 TC = os.environ.get("TC") or next(p for p in (os.path.expanduser("~/gccsdk-next/tc-dev/riscos-gcc16-cross-16.2.0-14-x86_64-linux"), os.path.expanduser("~/gccsdk-next/env-f")) if os.path.exists(p))
 CC = os.path.join(TC, "bin", "arm-riscos-gnueabihf-gcc")
-B = os.path.join(HERE, "build")
+B = os.environ.get("BUILD") or os.path.join(HERE, "build")                    # (the host run below uses the same folder: give BUILD to keep a long run apart from the host runs that you do meanwhile)
 os.makedirs(B, exist_ok=True)
 FS = tempfile.mkdtemp(prefix="mkstdio-") + "/"                  # the folder of the files of the stdio test (the interpreter's file system model works on the files of the host)
 subprocess.run([os.path.join(HERE, "run-host.sh"), scale], check=True, stdout=subprocess.DEVNULL, env=dict(os.environ, FSDIR=FS.rstrip("/")))
@@ -16,7 +16,8 @@ subprocess.run([CC, "-mmodule", "-O2", "-std=gnu99", "-Wall", "-Wno-unused-funct
 r = subprocess.run([CC, "-mmodule", "-o", os.path.join(B, "libtest-arm.elf"), os.path.join(B, "libtest-arm.o")], capture_output=True, text=True)
 if r.returncode:
     sys.exit(r.stderr)
-run = subprocess.run([sys.executable, os.path.join(HERE, "armrun.py"), os.path.join(B, "libtest-arm.elf"), "--steps", "20000000000"], capture_output=True, text=True)
+only = os.environ.get("LT_ONLY")                                  # run only these sections (the host run above has the variable in its environment as well)
+run = subprocess.run([sys.executable, os.path.join(HERE, "armrun.py"), os.path.join(B, "libtest-arm.elf"), "--steps", "20000000000"] + (["--var", "LT_ONLY=" + only] if only else []) + (["--var", "LT_VERBOSE=1"] if os.environ.get("LT_VERBOSE") else []), capture_output=True, text=True)
 open(os.path.join(B, "arm.out"), "w").write(run.stdout)
 print(run.stderr.strip())
 SELF = {"limits", "rand", "clock", "arm", "swixblock", "heap", "stdio2", "stdio3", "probe"}
@@ -35,7 +36,7 @@ for name, v in oracle.items():
     ok = arm.get(name) == v
     bad += not ok
     print("%-8s glibc %s  ARM %s  %s" % (name, v, arm.get(name), "same" if ok else "DIFFERENT"))
-for name in ("swix",):
+for name in ("swix", "fpmath"):                                                      # (compared with the host build of the library: no oracle gives the same last bit)
     ok = arm.get(name) == host.get(name)
     bad += not ok
     print("%-8s host-lib %s  ARM %s  %s" % (name, host.get(name), arm.get(name), "same" if ok else "DIFFERENT"))

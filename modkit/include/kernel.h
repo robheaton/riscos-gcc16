@@ -1,6 +1,9 @@
 /* kernel.h - the part of SharedCLibrary's <kernel.h> that a module needs: the error block, the register block, _kernel_swi.  (modkit: modules are built without UnixLib or the Shared C Library.) */
 #ifndef __KERNEL_H
 #define __KERNEL_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stddef.h>						/* (size_t: the SharedCLibrary's kernel.h defines it too) */
 typedef struct { int errnum; char errmess[252]; } _kernel_oserror;
 typedef struct { int r[10]; } _kernel_swi_regs;
@@ -38,4 +41,7 @@ extern int _kernel_processor_mode (void);                        /* the mode bit
 extern void *_kernel_RMAalloc (size_t size);                     /* NULL when there is no room (or size is 0) */
 extern void *_kernel_RMAextend (void *p, size_t size);           /* the block becomes SIZE bytes (p NULL: as _kernel_RMAalloc, size 0: as _kernel_RMAfree); NULL on error: the old block is still there */
 extern void _kernel_RMAfree (void *p);
+#ifdef __cplusplus
+}
+#endif
 #endif

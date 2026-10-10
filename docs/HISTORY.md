@@ -30,4 +30,4 @@ Nothing was called "working" until it had passed on the machine, and the package
 
 ## What was left
 
-[KNOWN-ISSUES.md](KNOWN-ISSUES.md) lists it. In short: modules beyond small and medium C ones (floating point, which has not been run on hardware, C++, and the CMHG directives that are still refused: [MODULES.md](MODULES.md#what-can-be-built-today-and-what-cannot)), a profile with a finer grain than a function, and the ARMEABISupport bug, which needs its maintainer: the SharedUnixLibrary bug has an optional fixed module ([SHAREDULIB-FIX.md](SHAREDULIB-FIX.md)).
+[KNOWN-ISSUES.md](KNOWN-ISSUES.md) lists it. In short: modules beyond small and medium C and C++ ones (floating point and C++ are in the repository since 16.2.0-16 and were run on hardware, but are in no release yet; exceptions, RTTI and streams in C++ modules, and the CMHG directives that are still refused: [MODULES.md](MODULES.md#what-can-be-built-today-and-what-cannot)), a profile with a finer grain than a function, and the ARMEABISupport bug, which needs its maintainer: the SharedUnixLibrary bug has an optional fixed module ([SHAREDULIB-FIX.md](SHAREDULIB-FIX.md)).

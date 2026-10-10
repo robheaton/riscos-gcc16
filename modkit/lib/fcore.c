@@ -30,6 +30,7 @@ FILE __modlib_stdin = { 0, K_KEYBOARD, M_READ, S_IDLE, B_STATIC, -1, kbbuf, size
 FILE __modlib_stdout = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0 };
 FILE __modlib_stderr = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0 };
 static FILE *files;                             /* the open files */
+void (*__modlib_tmp_hook) (FILE *f);              /* tmpfile.c: called when a stream made by tmpfile has been closed (its file is to go) */
 
 /* errno from an OS error (the numbers of FileSwitch, FileCore and the other file systems).  The error itself stays for _kernel_last_oserror. */
 static void set_errno (const _kernel_oserror *e)
@@ -318,6 +319,7 @@ static int close_file (FILE *f)
       if (__modlib_flush (f)) r = EOF;
       if (_kernel_osfind (0, (const char *) f->handle) == _kernel_ERROR) { os_errno (); r = EOF; }
       unlink_file (f);
+      if ((f->bits & B_TEMP) && __modlib_tmp_hook) __modlib_tmp_hook (f);
       if (f->bits & B_OWNBUF) { free (f->buf); f->buf = 0; f->bufsize = 0; }
     }
   f->kind = K_CLOSED;                                             /* nothing of the old state is left: reading from it is a bad file, not stale bytes */

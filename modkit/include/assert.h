@@ -4,6 +4,10 @@
 #ifdef NDEBUG
 #define assert(e)	((void) 0)
 #else
+#ifdef __cplusplus
+extern "C" void __modlib_assert (const char *expr, const char *file, int line) __attribute__ ((noreturn));
+#else
 extern void __modlib_assert (const char *expr, const char *file, int line) __attribute__ ((noreturn));
+#endif
 #define assert(e)	((e) ? (void) 0 : __modlib_assert (#e, __FILE__, __LINE__))
 #endif

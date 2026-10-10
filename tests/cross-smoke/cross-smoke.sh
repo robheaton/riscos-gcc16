@@ -72,6 +72,10 @@ if [ -e "$TC/arm-riscos-gnueabihf/lib/libmodkit.a" ]; then
   chk "-mmodule: an output named *.elf stays an ELF file (for a debugger or a simulation), and modreloc makes the same module image of it" "$T-gcc -mmodule -o modhello.elf modhello.o modhello_hdr.o && head -c 4 modhello.elf | grep -q ELF && $T-modreloc -q modhello.elf modhello2,ffa && cmp modhello,ffa modhello2,ffa"
   chk "-mmodule -r (a partial link) is not turned into a module" "$T-gcc -mmodule -r -o modpart.o modhello.o modhello_hdr.o && head -c 4 modpart.o | grep -q ELF"
   chk "the module has no call into a C library (every symbol is the module's or modkit's)" "test -f modhello.elf && ! $T-nm -u modhello.elf | grep -q ."
+  if [ -e "$TC/arm-riscos-gnueabihf/lib/libgcc-mod.a" ]; then
+    chk "-mmodule: libmodkit.a names libgcc-mod.a (the members of libgcc.a without VFP or ARMv7 code), not -lgcc" "grep -q libgcc-mod.a $TC/arm-riscos-gnueabihf/lib/libmodkit.a && ! grep -q -e '-lgcc' $TC/arm-riscos-gnueabihf/lib/libmodkit.a && test -s $TC/arm-riscos-gnueabihf/lib/libgcc-mod.a"
+    chk "-mmodule: a double converted to a long long, popcount, powi, printf of a double and sqrt link, and not one member comes from libgcc.a (the VFP ones)" "$T-gcc -mmodule -O2 -Wall -c $HERE/modfp.c -o modfp.o && $T-gcc -mmodule -o modfp.elf modfp.o -Wl,-Map=modfp.map && ! grep -q 'libgcc\\.a(' modfp.map && grep -q 'libgcc-mod\\.a(' modfp.map && grep -q 'libmodkit-core\\.a(gccrt\\.o)' modfp.map"
+  fi
 else
   echo "  skip  modules: this toolchain has no modkit (install-modkit.sh puts it in)"
 fi

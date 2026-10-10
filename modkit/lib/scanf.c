@@ -1,5 +1,5 @@
 /* scanf.c - the scan of sscanf, fscanf and scanf: the conversions of the C library for integers, characters and strings: %d %i %u %o %x %X %p %c %s %[...] %n %%, the assignment suppression *, the field width and
-   the sizes hh h l ll j z t.  No floating point (%f %e %g %a stop the scan: nothing is stored for them) and no wide characters.  The standard's rules for the return value: the number of items assigned, or EOF when
+   the sizes hh h l ll j z t L, and floating point (%f %F %e %E %g %G %a %A: the characters are collected as glibc's scanf does, then converted exactly by __modlib_strtofp, strtod.c).  No wide characters.  The standard's rules for the return value: the number of items assigned, or EOF when
    the input ended before the first conversion was complete.  "0x" that no hex digit follows is not a number (a matching failure).  A number out of the range of 64 bits is the limit, as strtoll / strtoull give it;
    the value is then stored as the low bits that fit.
    The input comes from a reader: a function that gives the next character (or -1 at the end of the input), and a little look-ahead (up to 2 characters, 1 left over at the end) that is given back to the
@@ -9,6 +9,10 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+extern unsigned long long __modlib_strtofp (const char *s, const char **endp, int kind, int *range);          /* strtod.c */
 
 typedef struct
 {
@@ -85,6 +89,106 @@ static int scan_integer (reader *r, int width, int base, unsigned long long *val
   return 1;
 }
 
+/* ---- floating point.  The characters of the number are collected the way glibc's scanf takes them (a sign, "nan" or "nan(chars)", "inf" / "infinity", "0x", digits, one point, an exponent: the longest run that fits, even when a
+   number does not end up in it, such as "1e+"), then the text is converted with strtod's routine; the characters that were collected are used up, the text that the conversion did not use is lost (as in glibc) */
+typedef struct { char *p; size_t n, cap; int fail; char init[64]; } fbuf;
+static void fadd (fbuf *b, int c)
+{
+  if (b->n + 2 >= b->cap)
+    {
+      size_t nc = b->cap * 2;
+      char *np;
+      if (b->p == b->init) { np = malloc (nc); if (np) memcpy (np, b->p, b->n); }
+      else np = realloc (b->p, nc);
+      if (!np) { b->fail = 1; return; }
+      b->p = np; b->cap = nc;
+    }
+  b->p[b->n++] = (char) c;
+}
+static int lcase (int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+/* take the next character when it is C (any case): 1, else 0 (the character stays) */
+static int take_ci (reader *r, int *left, fbuf *b, int ch)
+{
+  int c;
+  if (*left <= 0 || (c = peek (r, 0)) < 0 || lcase (c) != ch) return 0;
+  fadd (b, c); adv (r); (*left)--;
+  return 1;
+}
+/* 1: a number (its bits in *BITS), 0: no number (a matching failure; also when the text collected is not a number all through: "1e", "0x1p", "1e+" ...), -1: the input has ended at the start */
+static int scan_float (reader *r, int width, int kind, unsigned long long *bits)
+{
+  fbuf b;
+  int left = width ? width : 0x7FFFFFFF, c, got_digit = 0, got_dot = 0, got_e = 0, got_sign = 0, hexa = 0, expc = 'e', res = 0, range;
+  const char *end;
+  b.p = b.init; b.n = 0; b.cap = sizeof b.init; b.fail = 0;
+  c = peek (r, 0);
+  if (c < 0) return -1;
+  if (c == '-' || c == '+')
+    {
+      got_sign = 1; fadd (&b, c); adv (r); left--;
+      if (left <= 0 || (c = peek (r, 0)) < 0) goto out;
+    }
+  if (lcase (c) == 'n')
+    {
+      if (!take_ci (r, &left, &b, 'n') || !take_ci (r, &left, &b, 'a') || !take_ci (r, &left, &b, 'n')) goto out;
+      if (left > 0 && peek (r, 0) == '(')                                                      /* nan(n-char-sequence): all of it within the width, or the scan fails (as glibc's) */
+        {
+          fadd (&b, '('); adv (r); left--;
+          for (;;)
+            {
+              if (left <= 0 || (c = peek (r, 0)) < 0) goto out;
+              if (c == ')') break;
+              if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_')) goto out;
+              fadd (&b, c); adv (r); left--;
+            }
+          fadd (&b, ')'); adv (r); left--;
+        }
+      goto convert;
+    }
+  if (lcase (c) == 'i')
+    {
+      if (!take_ci (r, &left, &b, 'i') || !take_ci (r, &left, &b, 'n') || !take_ci (r, &left, &b, 'f')) goto out;
+      if (left > 0 && (c = peek (r, 0)) >= 0 && lcase (c) == 'i')                                  /* "inf" followed by "inity", all of it or the scan fails */
+        {
+          if (!take_ci (r, &left, &b, 'i') || !take_ci (r, &left, &b, 'n') || !take_ci (r, &left, &b, 'i') || !take_ci (r, &left, &b, 't') || !take_ci (r, &left, &b, 'y')) goto out;
+        }
+      goto convert;
+    }
+  if (c == '0' && left > 1)
+    {
+      fadd (&b, c); adv (r); left--;
+      c = peek (r, 0);
+      if (c >= 0 && lcase (c) == 'x')                                                          /* (room for the x: "0x" is then all of a field of width 2, and no number) */
+        {
+          fadd (&b, c); adv (r); left--;
+          hexa = 1; expc = 'p';
+          c = left > 0 ? peek (r, 0) : -1;
+        }
+      else got_digit = 1;
+    }
+  while (c >= 0)
+    {
+      if (c >= '0' && c <= '9') { fadd (&b, c); got_digit = 1; }
+      else if (!got_e && hexa && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) { fadd (&b, c); got_digit = 1; }
+      else if (got_e && b.n > 0 && b.p[b.n - 1] == expc && (c == '-' || c == '+')) fadd (&b, c);
+      else if (got_digit && !got_e && lcase (c) == expc) { fadd (&b, expc); got_e = got_dot = 1; }
+      else if (!got_dot && c == '.') { fadd (&b, '.'); got_dot = 1; }
+      else break;                                                                              /* not part of the number: it stays in the input */
+      adv (r); left--;
+      if (left <= 0) break;
+      c = peek (r, 0);
+    }
+  if (b.n == (size_t) got_sign || (hexa && b.n == (size_t) 2 + (size_t) got_sign)) goto out;     /* only a sign, or only "0x": no number */
+ convert:
+  if (b.fail) goto out;
+  b.p[b.n] = 0;
+  *bits = __modlib_strtofp (b.p, &end, kind, &range);
+  if (end == b.p + b.n) res = 1;                                                              /* all of what was collected must be a number */
+ out:
+  if (b.p != b.init) free (b.p);
+  return res;
+}
+
 static void store_int (va_list *ap, int size, unsigned long long v)
 {
   switch (size)
@@ -139,13 +243,18 @@ static int scan (reader *r, const char *fmt, va_list ap0)
       fmt++;
       int suppress = 0, width = 0, size = 0;                         /* size: -2 hh, -1 h, 0 int, 1 l, 2 ll / j / q, size_t and ptrdiff_t are as wide as long */
       if (*fmt == '*') { suppress = 1; fmt++; }
-      while (*fmt >= '0' && *fmt <= '9') width = width * 10 + (*fmt++ - '0');
+      while (*fmt >= '0' && *fmt <= '9')
+	{
+	  int dg = *fmt++ - '0';
+	  width = width > (0x7FFFFFFF - dg) / 10 ? 0x7FFFFFFF : width * 10 + dg;                    /* a width that does not fit in an int is no limit at all, as in glibc */
+	}
       for (;; fmt++)
 	{
 	  if (*fmt == 'h') size = size == -1 ? -2 : -1;
 	  else if (*fmt == 'l') size = size == 1 ? 2 : 1;
 	  else if (*fmt == 'q' || *fmt == 'j') size = 2;
 	  else if (*fmt == 'z' || *fmt == 't') size = 1;
+	  else if (*fmt == 'L') size = 3;                                   /* a long double (a double here); for an integer glibc's long long */
 	  else break;
 	}
       char conv = *fmt;
@@ -222,8 +331,24 @@ static int scan (reader *r, const char *fmt, va_list ap0)
 	    fmt = close;
 	    break;
 	  }
+	case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': case 'a': case 'A':
+	  {
+	    unsigned long long bits = 0;
+	    int kind = size == 0, st = scan_float (r, width, kind, &bits);                  /* %f: a float; %lf and %Lf: a double */
+	    if (st < 0) goto input_failure;
+	    if (st == 0) goto finish;
+	    if (!suppress)
+	      {
+		union { float f; unsigned u; } xf;
+		union { double d; unsigned long long u; } xd;
+		if (kind) { xf.u = (unsigned) bits; *va_arg (ap, float *) = xf.f; }
+		else { xd.u = bits; *va_arg (ap, double *) = xd.d; }
+		done++;
+	      }
+	    break;
+	  }
 	default:
-	  goto finish;                                                  /* %f %e %g %a and the rest: not supported */
+	  goto finish;                                                  /* the rest: not supported */
 	}
       completed |= conv != 'n' && conv != '%';                       /* neither %n nor %% completes a conversion: input that ends after them is EOF, as in glibc */
     }

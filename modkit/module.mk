@@ -1,6 +1,6 @@
 # module.mk - rules to build a RISC OS module with the GCC 16 EABI tool chain without UnixLib or the Shared C Library (modkit has a small C library of its own), with  gcc -mmodule  (a tool chain of 16.2.0-14 or later; the CMHG options and the C library of 16.2.0-15 need that release) and  cmunge.
 #   include this file from the Makefile of a module that defines:  MODULE (the output name), CMHG (the CMHG file), SRCS (C sources, RISC OS style 'c/name' or plain .c); optional: OSLIB_FUNCS (OSLib functions to make veneers for)
-#   result: $(MODULE),ffa   (the flat module image; load it with RMLoad)
+#   result: $(MODULE),ffa   (the flat module image; load it with RMLoad);  SRCS may have C++ files (.cc .cpp .cxx): the CMHG file then says module-is-c-plus-plus:
 MODKIT   ?= $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 # the bin folder of the tool chain: the one this module.mk was installed in (<tc>/share/riscos-modkit/module.mk), else the work area's
 BIN      ?= $(if $(wildcard $(MODKIT)../../bin/arm-riscos-gnueabihf-gcc),$(abspath $(MODKIT)../../bin),$(HOME)/gccsdk-next/env-f/bin)
@@ -19,6 +19,19 @@ BUILD    ?= build
 GCCINC   := $(shell $(CC) -print-file-name=include)
 # -mmodule: ARMv6, soft float, ARM state, freestanding, no PIC, no stack protector, the headers of modkit (see riscos-gnueabihf.h of the compiler); the kit's own include folder first, so that its changes count
 MODCFLAGS = -mmodule -O2 -std=gnu99 -Wall -isystem $(MODKIT)include -I$(OSLIB) -I$(BUILD) $(EXTRA_CFLAGS)
+# C++ sources (.cc .cpp .cxx): g++ -mmodule without exceptions, RTTI and thread-safe statics (a module has one thread of control, and the guard of a local static is an ARMv6 barrier instruction).  There is no libstdc++ in a
+# module (lib/cxxrt.c of the kit has operator new and the rest), but the headers of libstdc++ that need no library work: <new> <array> <algorithm> <vector> <utility> <type_traits> <limits> <initializer_list> ...  They need
+# __STDC_HOSTED__ (-mmodule says freestanding) and must come before the kit's C headers (their <cstdlib> uses #include_next).  Link with the C driver, as for C: the C++ driver would add libstdc++ and libm.
+ifeq ($(origin CXX),default)
+CXX = $(BIN)/arm-riscos-gnueabihf-g++
+endif
+CXXSTD  ?= -std=gnu++17
+CXXSRCS  = $(filter %.cc %.cpp %.cxx,$(SRCS))
+ifneq ($(CXXSRCS),)
+CXXDIRS := $(shell echo | $(CXX) -x c++ -E -v - 2>&1 | sed -n '/^\#include <...>/,/^End of search/p' | grep '/c++/' | sed 's/^ *//')
+KITINC  := $(shell $(CC) -print-file-name=include-modkit)
+endif
+MODCXXFLAGS = -mmodule -U__STDC_HOSTED__ -D__STDC_HOSTED__=1 -isystem $(MODKIT)include-cxx $(foreach d,$(CXXDIRS),-isystem $(d)) -isystem $(MODKIT)include -isystem $(KITINC) -isystem $(GCCINC) $(CXXSTD) -O2 -Wall -fno-exceptions -fno-rtti -fno-threadsafe-statics -I$(OSLIB) -I$(BUILD) $(EXTRA_CXXFLAGS)
 # the tools of the tool chain (C programs: install-modkit.sh puts them in its bin/); the Python versions in this kit's bin/ do the same when a tool chain has only the older install
 CMUNGE   ?= $(if $(wildcard $(BIN)/cmunge),$(BIN)/cmunge,python3 $(MODKIT)bin/cmunge)
 MKOSLIB  ?= $(if $(wildcard $(BIN)/arm-riscos-gnueabihf-mkoslib),$(BIN)/arm-riscos-gnueabihf-mkoslib,python3 $(MODKIT)bin/mkoslib.py)
@@ -67,7 +80,12 @@ define COMPILE
 $$(BUILD)/$(notdir $(1)).o: $(1) $$(BUILD)/header.h | $$(BUILD)
 	$$(CC) $$(MODCFLAGS) -x c -c $(1) -o $$@
 endef
-$(foreach s,$(SRCS),$(eval $(call COMPILE,$(s))))
+define CXXCOMPILE
+$$(BUILD)/$(notdir $(1)).o: $(1) $$(BUILD)/header.h | $$(BUILD)
+	$$(CXX) $$(MODCXXFLAGS) -x c++ -c $(1) -o $$@
+endef
+$(foreach s,$(filter-out $(CXXSRCS),$(SRCS)),$(eval $(call COMPILE,$(s))))
+$(foreach s,$(CXXSRCS),$(eval $(call CXXCOMPILE,$(s))))
 
 # the driver adds the linker script of the tool chain (module.ld) and links libmodkit.a (and libgcc) after the objects; the kit's own library comes first, so the kit's own sources win
 $(BUILD)/$(MODULE).elf: $(OBJS) $(LOCALLIB)

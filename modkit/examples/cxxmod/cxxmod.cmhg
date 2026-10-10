@@ -1,0 +1,11 @@
+; CxxMod: a module written in C++ (no libstdc++, no exceptions, no RTTI).  module-is-c-plus-plus: makes the initialisation veneer run the static constructors before cxx_init and the finalisation
+; veneer run the destructors of the static objects after cxx_final (libmodkit's lib/cxxrt.c).
+title-string:           CxxMod
+help-string:            CxxMod 0.01
+date-string:            09 Oct 2026
+module-is-c-plus-plus:
+initialisation-code:    cxx_init
+finalisation-code:      cxx_final
+command-keyword-table:  cxx_command
+  CxxMod_Run(min-args: 0, max-args: 1, help-text: "*CxxMod_Run [n] makes n shapes (3 by default) with new, adds up their areas through virtual functions and deletes them.\n", invalid-syntax: "Syntax: *CxxMod_Run [n]"),
+  CxxMod_Info(min-args: 0, max-args: 0, help-text: "*CxxMod_Info says what the static constructors did.\n", invalid-syntax: "Syntax: *CxxMod_Info")

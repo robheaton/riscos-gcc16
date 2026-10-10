@@ -21,6 +21,7 @@ enum { S_IDLE, S_READ, S_WRITE };
 #define B_UNBUF   16                            /* _IONBF */
 #define B_LINE    32                            /* _IOLBF */
 #define B_STATIC  64                            /* the FILE itself is not from malloc (stdin, stdout, stderr) */
+#define B_TEMP    128                           /* made by tmpfile: tmpfile.c removes the file when the stream is closed (__modlib_tmp_hook) */
 
 struct __FILE
 {

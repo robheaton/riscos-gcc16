@@ -2,6 +2,9 @@
    strtoumax as inline functions of llabs, lldiv, strtoll, strtoull.  The scanf macros need the modifiers hh and h, which the library's sscanf has. */
 #ifndef _INTTYPES_H
 #define _INTTYPES_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -165,4 +168,7 @@ static inline intmax_t imaxabs (intmax_t j) { return llabs (j); }
 static inline imaxdiv_t imaxdiv (intmax_t n, intmax_t d) { lldiv_t q = lldiv (n, d); imaxdiv_t r; r.quot = q.quot; r.rem = q.rem; return r; }
 static inline intmax_t strtoimax (const char *s, char **end, int base) { return strtoll (s, end, base); }
 static inline uintmax_t strtoumax (const char *s, char **end, int base) { return strtoull (s, end, base); }
+#ifdef __cplusplus
+}
+#endif
 #endif

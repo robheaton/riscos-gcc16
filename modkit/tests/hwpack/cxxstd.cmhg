@@ -1,0 +1,10 @@
+; CxxStd: the C++ standard library test (tests/cxx/cxxstd.cc) as a module, for the machine: std::string, vector, map, set, list, deque, unique_ptr, shared_ptr, function, optional, variant ... in SVC mode.
+title-string:           CxxStd
+help-string:            CxxStd 0.01
+date-string:            10 Oct 2026
+module-is-c-plus-plus:
+initialisation-code:    cxxstd_init
+finalisation-code:      cxxstd_final
+command-keyword-table:  cxxstd_command
+  CxxStd_Test(min-args: 0, max-args: 1, help-text: "*CxxStd_Test [-v] runs the C++ library test (std::string, vector, map, set, list, deque, unique_ptr, shared_ptr, function ...) and compares what it prints with what the host printed; -v shows the text.\n", invalid-syntax: "Syntax: *CxxStd_Test [-v]"),
+  CxxStd_Info(min-args: 0, max-args: 0, help-text: "*CxxStd_Info says how much memory the module has claimed so far.\n", invalid-syntax: "Syntax: *CxxStd_Info")

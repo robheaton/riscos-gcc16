@@ -22,6 +22,7 @@
 #include <locale.h>
 #include <inttypes.h>
 #include <signal.h>
+#include <math.h>
 #if defined (T_HOSTLIB)
 # include "mk_rename.h"
 # include "mk_decl.h"
@@ -41,7 +42,7 @@ extern int mk_errno;
 static unsigned g_hash, g_count, g_fail;
 static int g_verbose;
 static const char *g_sect;
-static char g_line[400];
+static char g_line[1600];
 static size_t g_ll;
 
 static size_t t_len (const char *s) { size_t n = 0; while (s[n]) n++; return n; }
@@ -129,11 +130,26 @@ static void sect_end (void)
       const char *a = hw_expected[i].name, *c = g_sect;
       while (*a && *a == *c) { a++; c++; }
       if (*a || *c) continue;
-      if (hw_expected[i].count == g_count && hw_expected[i].hash == g_hash) puts ("    same as glibc's");
-      else { g_fail++; puts ("    DIFFERENT from glibc's (n or hash)"); }
+      if (hw_expected[i].count == g_count && hw_expected[i].hash == g_hash) puts (t_cmp (g_sect, "fpmath") ? "    same as glibc's" : "    same as the host build's");        /* (fpmath has no oracle: the host build of the library is the reference) */
+      else { g_fail++; puts (t_cmp (g_sect, "fpmath") ? "    DIFFERENT from glibc's (n or hash)" : "    DIFFERENT from the host build's (n or hash)"); }
     }
 #endif
 }
+/* LT_ONLY=name,name: run only those sections (a system variable on the machine and the interpreter, an environment variable on the host); unset: all */
+static int want (const char *name)
+{
+  const char *e = getenv ("LT_ONLY");
+  size_t n = t_len (name);
+  if (!e || !*e) return 1;
+  while (*e)
+    {
+      if (t_memcmp (e, name, n) == 0 && (e[n] == ',' || e[n] == 0)) return 1;
+      while (*e && *e != ',') e++;
+      if (*e == ',') e++;
+    }
+  return 0;
+}
+#define RUN(name, fn) do { if (want (name)) fn (); } while (0)
 static int sgn (long long v) { return (v > 0) - (v < 0); }
 static unsigned N (unsigned base) { return base * SCALE; }
 
@@ -880,6 +896,70 @@ static void stdio_more (const char *name, const char *name2, const char *name3)
   }
 #pragma GCC diagnostic pop
 }
+#ifndef T_ORACLE
+/* ---- tmpnam, tmpfile, difftime, clock_gettime, timespec_get (only the library has the checks: the names and the clocks are not glibc's) ---- */
+extern const char *__modlib_tmp_prefix;
+extern const char *__modlib_tmpname (FILE *f);
+/* (the host's stdio.h has its own L_tmpnam, 20: the kit's is 32, and the names are as long as that) */
+static int obj_type (const char *name) { _kernel_osfile_block b; b.load = b.exec = b.start = b.end = 0; return _kernel_osfile (17, name, &b); }
+static void test_tmpfile (void)
+{
+  char pre[260], n1[32], n2[32], nm[4][32], buf[40];
+  FILE *f[17];
+  char *a, *b;
+  int i, bad;
+  struct timespec ts, ts2;
+  sect_begin ("tmpfile", 50);
+#ifndef T_HW
+  t_cpy (pre, g_fsbase); t_cpy (pre + t_len (pre), "tmp"); if (t_len (pre) > 24) t_cpy (pre, "mktmp"); __modlib_tmp_prefix = pre;       /* (a name has at most 31 characters: too long a folder: the current one) */                 /* (the host and the interpreter have no scrap directory: the files go where the other files of the test go) */
+#else
+  pre[0] = 0;
+#endif
+  a = tmpnam (n1); b = tmpnam (0);
+  check (a == n1 && b != 0 && t_len (n1) < 32 && t_len (b) < 32, "tmpnam gives names");
+  if (b) t_cpy (n2, b); else n2[0] = 0;
+  check (t_cmp (n1, n2) != 0, "tmpnam: two names differ");
+  check (obj_type (n1) == 0 && obj_type (n2) == 0, "tmpnam: no object has the name");
+  f[0] = tmpfile();
+  check (f[0] != 0, "tmpfile opens a file");
+  if (f[0])
+    {
+      const char *tn = __modlib_tmpname (f[0]);
+      char name[32];
+      if (tn) t_cpy (name, tn); else name[0] = 0;
+      check (tn != 0 && obj_type (name) == 1, "tmpfile: the file is there while it is open");
+      check (fwrite ("hello tmp", 1, 9, f[0]) == 9 && fflush (f[0]) == 0, "tmpfile: write");
+      check (remove (name) == -1, "tmpfile: an open file cannot be removed");
+      rewind (f[0]);
+      buf[0] = 0;
+      check (fgets (buf, sizeof buf, f[0]) != 0 && !t_cmp (buf, "hello tmp"), "tmpfile: the text comes back");
+      check (fclose (f[0]) == 0, "tmpfile: fclose");
+      check (obj_type (name) == 0, "tmpfile: the file is gone after fclose");
+    }
+  for (i = 0, bad = 0; i < 4; i++)                                                                     /* several at once, closed in another order */
+    {
+      f[i] = tmpfile ();
+      if (!f[i]) { bad = 1; break; }
+      t_cpy (nm[i], __modlib_tmpname (f[i]));
+    }
+  check (!bad && t_cmp (nm[0], nm[1]) && t_cmp (nm[1], nm[2]) && t_cmp (nm[2], nm[3]) && t_cmp (nm[0], nm[3]), "tmpfile: four at once have four names");
+  for (i = 0; i < 4 && !bad; i++) check (obj_type (nm[i]) == 1, "tmpfile: each file is there");
+  if (!bad)
+    {
+      fclose (f[2]); fclose (f[0]); fclose (f[3]); fclose (f[1]);
+      for (i = 0; i < 4; i++) check (obj_type (nm[i]) == 0, "tmpfile: each file is gone after its fclose");
+    }
+  for (i = 0; i < 17; i++) { f[i] = tmpfile (); if (!f[i]) break; }                                    /* at most 16 at once: EMFILE */
+  check (i == 16 && f[16] == 0 && T_ERRNO == EMFILE, "tmpfile: the 17th file at once is EMFILE");
+  while (i-- > 0) fclose (f[i]);
+  check (difftime (10, 4) == 6.0 && difftime (4, 10) == -6.0 && difftime (2000000000, -2000000000) == 4000000000.0, "difftime");
+  check (clock_gettime (CLOCK_MONOTONIC, &ts) == 0 && ts.tv_nsec % 10000000 == 0 && ts.tv_nsec >= 0 && ts.tv_nsec < 1000000000, "clock_gettime (CLOCK_MONOTONIC): a centisecond count");
+  check (clock_gettime (CLOCK_MONOTONIC, &ts2) == 0 && (ts2.tv_sec > ts.tv_sec || (ts2.tv_sec == ts.tv_sec && ts2.tv_nsec >= ts.tv_nsec)), "clock_gettime: the monotonic clock does not go back");
+  check (clock_gettime (CLOCK_REALTIME, &ts) == 0 && ts.tv_nsec % 10000000 == 0 && time (0) - ts.tv_sec <= 1, "clock_gettime (CLOCK_REALTIME) agrees with time ()");
+  check (timespec_get (&ts, TIME_UTC) == TIME_UTC && timespec_get (&ts, 0) == 0 && clock_gettime (99, &ts) == -1, "timespec_get, and a clock that is not there");
+  sect_end ();
+}
+#endif
 static void test_stdio_misc (void)
 {
   const char *name = fsname (0), *name2 = fsname (1), *name3 = fsname (2);
@@ -1185,6 +1265,7 @@ static void test_signal (void)
   sect_begin ("signal", 31);
   case_begin (0);
   sig_hits = 0; sig_last = 0;
+  signal (SIGINT, SIG_DFL); signal (SIGUSR1, SIG_DFL);                                /* (a process started in the background by a shell inherits SIGINT ignored: start from the default, whoever started this) */
   old = signal (SIGINT, sig_h); rec_i (old == SIG_DFL);
   rec_i (raise (SIGINT)); rec_i (sig_hits); rec_i (sig_last == SIGINT);
   old = signal (SIGUSR1, sig_h); rec_i (old == SIG_DFL);
@@ -1633,6 +1714,14 @@ static void test_arm_only (void)
   else check (r == 1, "longjmp (jb, 0) makes setjmp return 1");
   { char *v = getenv ("Test$Var"); check (v && !strcmp (v, "hello world"), "getenv of a system variable"); check (getenv ("Test$Missing") == 0, "getenv of a variable that is not there"); }
   { _kernel_oserror *er = _kernel_setenv ("Test$Set", "abc"); check (er == 0, "_kernel_setenv"); char *v = getenv ("Test$Set"); check (v && !strcmp (v, "abc"), "getenv after _kernel_setenv"); }
+  {                                                                                           /* long double is a double on this target: %Lf, %Le, %Lg and the L of scanf */
+    char b[64]; long double ld = 1.5L, ld2 = 0; double d2 = 0; int n;
+    snprintf (b, sizeof b, "%Lf|%Le|%Lg|%.2Lf", ld, ld, ld, 2.675L);
+    check (!t_cmp (b, "1.500000|1.500000e+00|1.5|2.67"), "printf: %Lf %Le %Lg with a long double");
+    n = sscanf ("2.5 -0.125", "%Lf %lf", &ld2, &d2);
+    check (n == 2 && ld2 == 2.5L && d2 == -0.125, "sscanf: %Lf stores a long double");
+    check (sizeof (long double) == sizeof (double) && strtold ("0.1", 0) == 0.1, "strtold is strtod");
+  }
   sect_end ();
 }
 #endif
@@ -1641,6 +1730,8 @@ static void test_arm_only (void)
 /* the module that this program is on the machine (libtest-hw.cmhg): runnable, nothing to initialise */
 _kernel_oserror *lt_init (const char *tail, int podule_base, void *pw) { (void) tail; (void) podule_base; (void) pw; return 0; }
 #endif
+
+#include "libtest-fp.c"
 
 /* ======================================================================== main */
 #if defined (T_ARM)
@@ -1654,6 +1745,7 @@ int main (int argc, char **argv)
   setenv ("TZ", "UTC", 1);
   tzset ();
 #endif
+  { const char *v = getenv ("LT_VERBOSE"); if (v && *v) g_verbose = 1; }                           /* (a system variable on the machine and the interpreter: the results of every case, as -v on the host) */
 #if defined (T_HW)
   { const char *d = getenv ("Wimp$ScrapDir"); size_t l = d ? t_len (d) : 0; if (l > 150) l = 150; if (d) t_mov (g_fsbase, d, l); g_fsbase[l] = '.'; t_cpy (g_fsbase + l + 1, "MK");
     if (!d) { g_fail++; puts ("FAIL the system variable Wimp$ScrapDir is not set (run this in a Task window): the stdio files go to the current directory"); t_cpy (g_fsbase, "MK"); }
@@ -1662,38 +1754,52 @@ int main (int argc, char **argv)
 #else
   t_cpy (g_fsbase, T_FSDIR);
 #endif
-  test_ctype ();
-  test_string ();
-  test_numbers ();
-  test_sort ();
-  test_div ();
-  test_sscanf ();
-  test_printf ();
-  test_stdio ();
-  test_time ();
-  test_limits ();
-  test_inttypes ();
-  test_signal ();
+  RUN ("ctype", test_ctype);
+  RUN ("string", test_string);
+  RUN ("numbers", test_numbers);
+  RUN ("sort", test_sort);
+  RUN ("div", test_div);
+  RUN ("sscanf", test_sscanf);
+  RUN ("printf", test_printf);
+  RUN ("stdio", test_stdio);
+  RUN ("time", test_time);
+  RUN ("limits", test_limits);
+  RUN ("inttypes", test_inttypes);
+  RUN ("signal", test_signal);
+  RUN ("fparith", test_fparith);
+  RUN ("fpconv", test_fpconv);
+  RUN ("gccrt", test_gccrt);
+  RUN ("fpprintf", test_fpprintf);
+  RUN ("strtod", test_strtod);
+  RUN ("fpscanf", test_fpscanf);
+  RUN ("fpmathx", test_fpmathx);
+  RUN ("fpmathsp", test_fpmathsp);
 #if !defined (T_ORACLE)
-  test_rand ();
-  test_stdio_misc ();
-  test_stdio_probe ();
+  RUN ("fpmath", test_fpmath);
+#endif
+#if !defined (T_ORACLE)
+  RUN ("rand", test_rand);
+  RUN ("stdio2", test_stdio_misc);
+#ifndef T_ORACLE
+  RUN ("tmpfile", test_tmpfile);
+#endif
+  RUN ("probe", test_stdio_probe);
 #endif
 #if defined (T_HOSTLIB) || (defined (T_ARM) && !defined (T_HW))
-  test_swix ();
-  test_clock ();
-  test_stdio_streams ();
+  RUN ("swix", test_swix);
+  RUN ("clock", test_clock);
+  RUN ("stdio3", test_stdio_streams);
 #if defined (T_ARM)
-  test_swix_block ();
+  RUN ("swixblock", test_swix_block);
 #endif
 #endif
 #if defined (T_ARM)
-  test_heap ();
-  test_kernel ();
-  test_arm_only ();
+  RUN ("heap", test_heap);
+  RUN ("kernel", test_kernel);
+  RUN ("arm", test_arm_only);
 #endif
 #if defined (T_HW)
-  test_hw ();
+  RUN ("hw", test_hw);
 #endif
   { char b[40] = "TOTAL fail="; size_t n = t_len (b); char d[12]; int k = 0; unsigned v = g_fail; do d[k++] = (char) ('0' + v % 10); while (v /= 10); while (k) b[n++] = d[--k]; b[n] = 0; puts (b); }
 #if defined (T_HW)

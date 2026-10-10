@@ -1,0 +1,106 @@
+// cmath - the C++ face of <math.h> for modules.  libstdc++'s own <cmath> asks the C library for functions that the kit does not have (erf, lgamma, tgamma, fma, remquo, nexttoward and every long double
+// function), so a module gets this one instead (module.mk puts include-cxx before the headers of libstdc++).  It has what math.h of the kit declares, with the overloads that C++ adds: float (the kit's ...f
+// functions), long double (long double is double on this target: the double function is called) and integer arguments (converted to double); the classification macros as functions; std::abs.
+// Not there: the special functions of C++17 (std::beta, std::legendre ...), std::lerp, std::hypot with three arguments, and the functions the C library lacks (erf, gamma, fma ...).
+#ifndef _MODKIT_CMATH
+#define _MODKIT_CMATH 1
+#include <bits/c++config.h>
+#include <type_traits>
+#include <ext/type_traits.h>
+#include <bits/std_abs.h>
+#define _GLIBCXX_INCLUDE_NEXT_C_HEADERS
+#include_next <math.h>
+#undef _GLIBCXX_INCLUDE_NEXT_C_HEADERS
+
+#undef fpclassify
+#undef isfinite
+#undef isinf
+#undef isnan
+#undef isnormal
+#undef signbit
+#undef isgreater
+#undef isgreaterequal
+#undef isless
+#undef islessequal
+#undef islessgreater
+#undef isunordered
+
+namespace std
+{
+  using ::double_t;
+  using ::float_t;
+
+#define _MK_UNARY(F) \
+  using ::F; \
+  inline float F (float x) { return ::F##f (x); } \
+  inline long double F (long double x) { return (long double) ::F ((double) x); } \
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, double>::type F (T x) { return ::F ((double) x); }
+#define _MK_BINARY(F) \
+  using ::F; \
+  inline float F (float x, float y) { return ::F##f (x, y); } \
+  inline long double F (long double x, long double y) { return (long double) ::F ((double) x, (double) y); } \
+  template<typename A, typename B> inline typename __gnu_cxx::__promote_2<A, B>::__type F (A x, B y) \
+  { typedef typename __gnu_cxx::__promote_2<A, B>::__type T; return std::F (T (x), T (y)); }
+#define _MK_INTRESULT(F, R) \
+  using ::F; \
+  inline R F (float x) { return ::F##f (x); } \
+  inline R F (long double x) { return ::F ((double) x); } \
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, R>::type F (T x) { return ::F ((double) x); }
+
+  _MK_UNARY (acos) _MK_UNARY (asin) _MK_UNARY (atan) _MK_UNARY (cos) _MK_UNARY (sin) _MK_UNARY (tan)
+  _MK_UNARY (cosh) _MK_UNARY (sinh) _MK_UNARY (tanh) _MK_UNARY (acosh) _MK_UNARY (asinh) _MK_UNARY (atanh)
+  _MK_UNARY (exp) _MK_UNARY (exp2) _MK_UNARY (expm1) _MK_UNARY (log) _MK_UNARY (log10) _MK_UNARY (log2) _MK_UNARY (log1p) _MK_UNARY (logb)
+  _MK_UNARY (sqrt) _MK_UNARY (cbrt) _MK_UNARY (ceil) _MK_UNARY (floor) _MK_UNARY (trunc) _MK_UNARY (round) _MK_UNARY (rint) _MK_UNARY (nearbyint)
+  _MK_BINARY (atan2) _MK_BINARY (pow) _MK_BINARY (hypot) _MK_BINARY (fmod) _MK_BINARY (remainder) _MK_BINARY (copysign) _MK_BINARY (fmin) _MK_BINARY (fmax) _MK_BINARY (fdim) _MK_BINARY (nextafter)
+  _MK_INTRESULT (ilogb, int) _MK_INTRESULT (lround, long) _MK_INTRESULT (llround, long long) _MK_INTRESULT (lrint, long) _MK_INTRESULT (llrint, long long)
+
+  using ::fabs;
+  inline float fabs (float x) { return ::fabsf (x); }
+  inline long double fabs (long double x) { return (long double) ::fabs ((double) x); }
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, double>::type fabs (T x) { return ::fabs ((double) x); }
+
+  using ::ldexp;
+  inline float ldexp (float x, int e) { return ::ldexpf (x, e); }
+  inline long double ldexp (long double x, int e) { return (long double) ::ldexp ((double) x, e); }
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, double>::type ldexp (T x, int e) { return ::ldexp ((double) x, e); }
+  using ::scalbn;
+  inline float scalbn (float x, int e) { return ::scalbnf (x, e); }
+  inline long double scalbn (long double x, int e) { return (long double) ::scalbn ((double) x, e); }
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, double>::type scalbn (T x, int e) { return ::scalbn ((double) x, e); }
+  using ::frexp;
+  inline float frexp (float x, int *e) { return ::frexpf (x, e); }
+  inline long double frexp (long double x, int *e) { return (long double) ::frexp ((double) x, e); }
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, double>::type frexp (T x, int *e) { return ::frexp ((double) x, e); }
+  using ::modf;
+  inline float modf (float x, float *ip) { return ::modff (x, ip); }
+  inline long double modf (long double x, long double *ip) { double d; double r = ::modf ((double) x, &d); *ip = d; return (long double) r; }
+
+  // the classification macros of C are overloaded functions in C++
+  constexpr int fpclassify (float x) { return __builtin_fpclassify (FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x); }
+  constexpr int fpclassify (double x) { return __builtin_fpclassify (FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x); }
+  constexpr int fpclassify (long double x) { return __builtin_fpclassify (FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x); }
+  template<typename T> constexpr typename std::enable_if<std::is_integral<T>::value, int>::type fpclassify (T x) { return x != 0 ? FP_NORMAL : FP_ZERO; }
+#define _MK_CLASS(F, B, INTVAL) \
+  constexpr bool F (float x) { return B (x); } \
+  constexpr bool F (double x) { return B (x); } \
+  constexpr bool F (long double x) { return B (x); } \
+  template<typename T> constexpr typename std::enable_if<std::is_integral<T>::value, bool>::type F (T x) { return INTVAL; }
+  _MK_CLASS (isfinite, __builtin_isfinite, true)
+  _MK_CLASS (isinf, __builtin_isinf, false)
+  _MK_CLASS (isnan, __builtin_isnan, false)
+  _MK_CLASS (isnormal, __builtin_isnormal, x != 0)
+  _MK_CLASS (signbit, __builtin_signbit, x < 0)
+#define _MK_CMP(F, B) \
+  template<typename A, typename C> constexpr typename std::enable_if<std::is_arithmetic<A>::value && std::is_arithmetic<C>::value, bool>::type F (A x, C y) \
+  { typedef typename __gnu_cxx::__promote_2<A, C>::__type T; return B (T (x), T (y)); }
+  _MK_CMP (isgreater, __builtin_isgreater) _MK_CMP (isgreaterequal, __builtin_isgreaterequal) _MK_CMP (isless, __builtin_isless) _MK_CMP (islessequal, __builtin_islessequal)
+  _MK_CMP (islessgreater, __builtin_islessgreater) _MK_CMP (isunordered, __builtin_isunordered)
+
+  using ::nan;
+#undef _MK_UNARY
+#undef _MK_BINARY
+#undef _MK_INTRESULT
+#undef _MK_CLASS
+#undef _MK_CMP
+}
+#endif

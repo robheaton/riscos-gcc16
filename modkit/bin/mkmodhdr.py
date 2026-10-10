@@ -18,6 +18,8 @@ relocates itself once, in its initialisation (modkit/bin/modreloc.py appends the
                                    r11) and the private word and returns to the original mode; FN returns 0 to CLAIM a vector (the veneer returns to the claim address the kernel stacked), non-zero to pass on
                                    (for a callback: always non-zero, the veneer returns with MOV pc, lr)
   international-help-file: "NAME"  the Messages file (as MessageTrans names it; adjacent strings are joined) that the international: texts come from: header word 11, #define Module_MessagesFile in the C header
+  module-is-c-plus-plus:           the module is written in C++ (compile with -fno-exceptions -fno-rtti): the initialisation veneer calls libmodkit's __modlib_cxx_init (the static constructors) before the
+                                   initialisation code, the finalisation veneer calls __modlib_cxx_fini (the destructors of the static objects and .fini_array) after the finalisation code (lib/cxxrt.c)
   module-is-runnable:              the module has a start entry: *RMRun Module args (OS_Module Enter) calls it in USER mode; it takes the top of the application memory (OS_GetEnv) as its stack and calls
                                    int main (int argc, char **argv) - argv[0] is the title, the arguments are the words of the command tail ("..." groups) - and ends the program with its result (libmodkit's
                                    __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
@@ -239,7 +241,7 @@ def one_name(key, r):
     return r
 
 def parse(text):
-    m = dict(title=None, help=None, date=None, init=None, final=None, service=None, service_numbers=[], commands=None, cmd_handler=None, swi_chunk=0, swi_prefix=None, swi_names=[], swi_handler=None,
+    m = dict(title=None, help=None, date=None, init=None, final=None, cxx=False, service=None, service_numbers=[], commands=None, cmd_handler=None, swi_chunk=0, swi_prefix=None, swi_names=[], swi_handler=None,
              veneers=[], runnable=False, mfile=None, warnings=[])
     for key, rest in logical_lines(text):
         r = rest.strip()
@@ -273,6 +275,7 @@ def parse(text):
             e, h = words[0].split("/", 1) if "/" in words[0] else (words[0], words[0] + "_handler")
             m["veneers"].append((key, e, h, tuple(cexpr(w) for w in words[1:])))
         elif key == "module-is-runnable": m["runnable"] = True
+        elif key == "module-is-c-plus-plus": m["cxx"] = True
         elif key == "international-help-file": m["mfile"], _ = parse_string_literals(rest, 0)
         elif key in ("library-enter-code", "library-initialisation-code"): raise CmhgError("%s: is not supported (it redirects the start-up of the Shared C Library, which a modkit module does not have)" % key)
         else: raise CmhgError("%s: is not supported" % key)
@@ -356,7 +359,7 @@ def generate_asm(m, src):
     cmds = m["commands"] or []
     has_svc = m["service"] is not None; has_swi = m["swi_handler"] is not None
     A("\t.word\t%s" % ("start - _start\t\t\t@ start code (module-is-runnable)" if m["runnable"] else "0\t\t\t\t@ start code (none)"))
-    A("\t.word\tinit - _start\n\t.word\t%s" % ("final - _start" if m["final"] else "0\t\t\t\t@ finalisation (none)"))
+    A("\t.word\tinit - _start\n\t.word\t%s" % ("final - _start" if (m["final"] or m["cxx"]) else "0\t\t\t\t@ finalisation (none)"))
     A("\t.word\t%s" % ("service - _start\t\t@ service call handler" if has_svc else "0\t\t\t\t@ service call handler (none)"))
     A("\t.word\ttitle - _start\n\t.word\thelp - _start")
     A("\t.word\t%s" % ("cmdtab - _start" if cmds else "0"))
@@ -400,10 +403,17 @@ def generate_asm(m, src):
     A("\tadrl\tr4, _start\t\t\t@ where the image is now (PC relative)\n\tldr\tr5, link_addr\t\t\t@ where the linker put it (0), or where it already is (a second initialisation)\n\tsubs\tr6, r4, r5\n\tbeq\trelocated")
     A("\tadrl\tr7, reloc_info\n\tldr\tr8, [r7]\n\tldr\tr9, [r7, #4]\n\tadd\tr8, r4, r8\nrloop:\tcmp\tr9, #0\n\tbeq\trdone\n\tldr\tr0, [r8], #4\n\tldr\tr1, [r4, r0]\n\tadd\tr1, r1, r6\n\tstr\tr1, [r4, r0]\n\tsub\tr9, r9, #1\n\tb\trloop")
     A("rdone:\tmov\tr0, #1\n\tmov\tr1, r4\n\tldr\tr2, =__image_end\n\tsub\tr2, r2, #1\n\tswi\tXOS_SynchroniseCodeAreas\nrelocated:")
+    if m["cxx"]:                                                                          # module-is-c-plus-plus: the static constructors run before the module's own initialisation code (libmodkit's cxxrt.c; the private word is kept in r8)
+        A("\tmov\tr8, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t__modlib_cxx_init\n\tmov\tsp, r4\n\tmov\tr12, r8")
     if m["init"]:
         A("\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone" % m["init"])
     else: A("\tmov\tr0, #0\n\tb\tdone")
-    if m["final"]:
+    if m["cxx"]:                                                                          # ... and the destructors of the static objects after the module's finalisation code
+        A("\nfinal:\n\tstmfd\tsp!, {r4-r11, lr}")
+        if m["final"]: A("\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tmov\tr8, r0" % m["final"])
+        else: A("\tmov\tr8, #0")
+        A("\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t__modlib_cxx_fini\n\tmov\tsp, r4\n\tmov\tr0, r8\n\tb\tdone")
+    elif m["final"]:
         A("\nfinal:\n\tstmfd\tsp!, {r4-r11, lr}")
         A("\tmov\tr0, r10\n\tmov\tr1, r11\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tb\tdone" % m["final"])
     if m["runnable"]:

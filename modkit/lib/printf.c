@@ -1,5 +1,6 @@
-/* printf.c - the formatted output of <stdio.h>: printf, vprintf, sprintf, snprintf, vsprintf, vsnprintf, putchar, puts.  The conversions of C99 without floating point (%d %i %u %x %X %o %p %c %s %n %%, the flags,
-   width, precision and the lengths hh h l ll j z t: see format ()).  printf writes to the screen with OS_WriteC / OS_NewLine; the others format into memory. */
+/* printf.c - the formatted output of <stdio.h>: printf, vprintf, sprintf, snprintf, vsprintf, vsnprintf, putchar, puts.  The conversions of C99 (%d %i %u %x %X %o %p %c %s %n %%, the flags,
+   width, precision and the lengths hh h l ll j z t L: see format ()) and, in fpfmt.c, %f %F %e %E %g %G %a %A (exact, as glibc's; L is a double, as long double is on this target).  printf writes to the
+   screen with OS_WriteC / OS_NewLine; the others format into memory. */
 #pragma GCC optimize ("Os")                       /* not a hot path: the smaller code is the better one in a module */
 #include <stddef.h>
 #include <stdarg.h>
@@ -14,6 +15,8 @@ static void put (sink *s, char c)
   s->out ((unsigned char) c, s->ctx);
   s->n++;
 }
+extern int __modlib_fmtdouble (void (*put) (int, void *), void *ctx, unsigned lo, unsigned hi, int conv, int flags, int width, int prec);   /* fpfmt.c */
+static void put_c (int c, void *p) { put ((sink *) p, (char) c); }
 /* one more digit of a 64-bit number in base 10: *V = *V / 10, returns the remainder; only 32-bit divisions (the number is taken as one 32-bit half and two 16-bit halves of the other), so that no libgcc is needed */
 static unsigned div10_64 (unsigned long long *v)
 {
@@ -37,8 +40,8 @@ static char *digits (char *e, unsigned long long u, unsigned base, const char *d
   else do { *--e = (char) ('0' + ((unsigned) u & 7)); u >>= 3; } while (u);
   return e;
 }
-/* the conversions of C99 that need no floating point: flags - + space # 0, width and precision (digits or *), the lengths hh h l ll j z t, and d i u x X o p c s % (%n stores the count of characters; the
-   floating point ones are not converted: the text is copied as it is) */
+/* the conversions of C99: flags - + space # 0, width and precision (digits or *), the lengths hh h l ll j z t L, and d i u x X o p c s % (%n stores the count of characters) and the floating point ones
+   f F e E g G a A (fpfmt.c) */
 static int format (sink *s, const char *fmt, va_list ap)
 {
   for (; *fmt; fmt++)
@@ -78,6 +81,7 @@ static int format (sink *s, const char *fmt, va_list ap)
           else if (*fmt == 'l') size = size == 1 ? 2 : 1;
           else if (*fmt == 'j') size = 2;
           else if (*fmt == 'z' || *fmt == 't') size = 1;
+          else if (*fmt == 'L') size = 2;                                                           /* (a long double is a double here; for an integer it is glibc's long long) */
           else break;
         }
       char tmp[24], pre[3] = { 0, 0, 0 };
@@ -110,6 +114,13 @@ static int format (sink *s, const char *fmt, va_list ap)
             if (alt && base == 8 && (len == 0 || *str != '0')) zeros = 1;                           /* %#o: the first digit is a 0 */
             break;
           }
+        case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': case 'a': case 'A':
+          {
+            union { double d; unsigned u[2]; } x;
+            x.d = va_arg (ap, double);
+            if (__modlib_fmtdouble (put_c, s, x.u[0], x.u[1], *fmt, (left ? 1 : 0) | (plus ? 2 : 0) | (space ? 4 : 0) | (alt ? 8 : 0) | (zero ? 16 : 0), width, prec) < 0) return -1;
+            continue;
+          }
         case 'c': tmp[0] = (char) va_arg (ap, int); len = 1; break;
         case 's': str = va_arg (ap, const char *); if (!str) str = "(null)"; while ((prec < 0 || len < prec) && str[len]) len++; break;        /* (an array that is not ended by a NUL is read up to the precision, not one more) */
         case '%': tmp[0] = '%'; len = 1; break;
@@ -123,7 +134,7 @@ static int format (sink *s, const char *fmt, va_list ap)
             else *(int *) dst = (int) s->n;
             continue;
           }
-        case 0: return (int) s->n;
+        case 0: if (s->n > INT_MAX) { errno = EOVERFLOW; return -1; } return (int) s->n;
         default:                                                                                    /* not converted: the whole conversion is copied */
           for (; start <= fmt; start++) put (s, *start);
           continue;
@@ -144,6 +155,7 @@ static int format (sink *s, const char *fmt, va_list ap)
       for (int i = 0; i < len; i++) put (s, str[i]);
       if (left) while (pad-- > 0) put (s, ' ');
     }
+  if (s->n > INT_MAX) { errno = EOVERFLOW; return -1; }                                    /* the count of the output does not fit in an int */
   return (int) s->n;
 }
 int __modlib_vformat (void (*out) (int, void *), void *ctx, const char *fmt, va_list ap)

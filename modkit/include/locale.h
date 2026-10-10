@@ -1,6 +1,9 @@
 /* locale.h - the "C" locale only: setlocale accepts "C", "POSIX" and "" and nothing else. */
 #ifndef _LOCALE_H
 #define _LOCALE_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stddef.h>
 #define LC_ALL		0
 #define LC_COLLATE	1
@@ -16,4 +19,7 @@ struct lconv
 };
 extern char *setlocale (int category, const char *locale);
 extern struct lconv *localeconv (void);
+#ifdef __cplusplus
+}
+#endif
 #endif

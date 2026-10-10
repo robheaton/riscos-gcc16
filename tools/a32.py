@@ -122,6 +122,7 @@ class Cpu:
                 bits = (0x40 if (w >> 6) & 1 else 0) | (0x80 if (w >> 7) & 1 else 0)
                 self.cpsr_ctl = self.cpsr_ctl & ~bits if imod == 2 else self.cpsr_ctl | bits
             return
+        if w == 0xF57FF01F: self.excl = None; return                           # CLREX
         cc = w >> 28
         if not self.cond(cc): return
         top = (w >> 25) & 7
@@ -139,6 +140,26 @@ class Cpu:
             imm = ((w >> 4) & 0xF000) | (w & 0xFFF); rd = (w >> 12) & 15
             if (w & 0x0FF00000) == 0x03000000: self.r[rd] = imm
             else: self.r[rd] = (self.r[rd] & 0xFFFF) | (imm << 16)
+            return
+        if top == 0 and (w & 0x0F800FF0) == 0x01800F90 or top == 0 and (w & 0x0F800FFF) == 0x01800F9F:      # LDREX / STREX and the B, H, D forms (ARMv6, v6K): one processor, one monitor
+            size = {0: 4, 1: 8, 2: 1, 3: 2}[(w >> 21) & 3]; rn = (w >> 16) & 15; rd = (w >> 12) & 15; addr = self.reg(rn)
+            if addr & (size - 1 if size < 8 else 7): raise Fault("unaligned exclusive access %08x" % addr)
+            if (w >> 20) & 1:                                                 # LDREX*: load and open the monitor
+                if size == 4: self.r[rd] = self.rd32(addr)
+                elif size == 1: self.r[rd] = self.rd8(addr)
+                elif size == 2: self.r[rd] = self.rd8(addr) | (self.rd8(addr + 1) << 8)
+                else: self.r[rd] = self.rd32(addr); self.r[rd + 1] = self.rd32(addr + 4)
+                self.excl = (addr, size)
+            else:                                                             # STREX* Rd, Rm, [Rn]: stores when the monitor is open for this address; Rd = 0 for done, 1 for not done
+                rm = w & 15; ok = getattr(self, "excl", None) == (addr, size)
+                if ok:
+                    v = self.reg(rm)
+                    if size == 4: self.wr32(addr, v)
+                    elif size == 1: self.wr8(addr, v & 0xFF)
+                    elif size == 2: self.wr8(addr, v & 0xFF); self.wr8(addr + 1, (v >> 8) & 0xFF)
+                    else: self.wr32(addr, v); self.wr32(addr + 4, self.reg(rm + 1))
+                self.r[(w >> 12) & 15] = 0 if ok else 1
+                self.excl = None
             return
         if top == 0 and (w & 0x0F8000F0) == 0x00800090:                       # UMULL / UMLAL / SMULL / SMLAL
             rdhi = (w >> 16) & 15; rdlo = (w >> 12) & 15; rs = (w >> 8) & 15; rm = w & 15
@@ -292,6 +313,8 @@ class Cpu:
             if off & 0x800000: off -= 1 << 24
             if (w >> 24) & 1: self.r[14] = self.r[15]
             self.r[15] = (pc + 8 + (off << 2)) & M
+        elif (w & 0x0FFF0FFF) in (0x0E070F9A, 0x0E070FBA, 0x0E070F94):      # the ARMv6 barriers: MCR p15, 0, Rt, c7, c10, 4 (DSB) and c10, 5 (DMB), c7, c5, 4 (the prefetch flush, ISB): one CPU, nothing to wait for
+            pass
         elif top == 7 and (w >> 24) & 1:
             self.swi_hook(self, w & 0xFFFFFF)
         else:

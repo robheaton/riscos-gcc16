@@ -1,7 +1,10 @@
-/* stdlib.h - the general utilities of the C library (libmodkit.a): memory from the RMA, numbers (integers only: there is no strtod), qsort, rand, atexit / exit / abort, getenv.  getenv reads a RISC OS
+/* stdlib.h - the general utilities of the C library (libmodkit.a): memory from the RMA, numbers (strtol ... and strtod / strtof / strtold / atof, which are exact and correctly rounded: lib/strtod.c; long double is double), qsort, rand, atexit / exit / abort, getenv.  getenv reads a RISC OS
    system variable.  exit () in a module that is not "runnable" stops with an error instead (there is no program to end). */
 #ifndef _STDLIB_H
 #define _STDLIB_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stddef.h>
 #ifndef NULL
 #define NULL ((void *) 0)
@@ -22,6 +25,10 @@ extern long long atoll (const char *s);
 extern long strtol (const char *s, char **end, int base);
 extern unsigned long strtoul (const char *s, char **end, int base);
 extern long long strtoll (const char *s, char **end, int base);
+extern double strtod (const char *s, char **end);
+extern float strtof (const char *s, char **end);
+extern long double strtold (const char *s, char **end);
+extern double atof (const char *s);
 extern unsigned long long strtoull (const char *s, char **end, int base);
 extern int abs (int v);
 extern long labs (long v);
@@ -38,4 +45,18 @@ extern int atexit (void (*fn) (void));
 extern void exit (int status) __attribute__ ((noreturn));
 extern void _Exit (int status) __attribute__ ((noreturn));
 extern void abort (void) __attribute__ ((noreturn));
+#ifdef __cplusplus
+/* declared for libstdc++'s <cstdlib>, which has a using-declaration for each of them; the library does not define them: a call is an undefined reference at the link */
+extern int system (const char *cmd);
+extern int mblen (const char *s, size_t n);
+extern int mbtowc (wchar_t *pwc, const char *s, size_t n);
+extern int wctomb (char *s, wchar_t wc);
+extern size_t mbstowcs (wchar_t *dst, const char *src, size_t n);
+extern size_t wcstombs (char *dst, const wchar_t *src, size_t n);
+extern void quick_exit (int status) __attribute__ ((noreturn));
+extern int at_quick_exit (void (*f) (void));
+#endif
+#ifdef __cplusplus
+}
+#endif
 #endif

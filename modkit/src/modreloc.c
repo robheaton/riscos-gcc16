@@ -111,7 +111,9 @@ static void convert (const char *elfpath, const char *outpath, int quiet)
         }
     if (nbadsec)
       die ("%s: %d section(s) would be left out of the module because the linker script puts only .text*, .rodata*, .data* and .bss* in .image: %s.  Rename them (objcopy --rename-section NAME=.text.NAME for "
-           "an assembler AREA, or  __attribute__ ((section (\".data.NAME\")))  in C)", elfpath, nbadsec, names);
+           "an assembler AREA, or  __attribute__ ((section (\".data.NAME\")))  in C)%s", elfpath, nbadsec, names,
+           strstr (names, ".got") ? ".  A .got comes from position independent code (-fPIC, or a member of a library that was compiled with it): the code of this tool chain reaches its data through a table at "
+                                    "0x8000 that only a program has, so it cannot be part of a module.  -mmodule code is not position independent; compile the sources again with -mmodule" : "");
   }
 
   /* the relocations that refer to .image */

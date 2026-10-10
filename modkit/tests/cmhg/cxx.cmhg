@@ -1,0 +1,10 @@
+; a module written in C++: the initialisation veneer runs the static constructors first, the finalisation veneer runs the destructors last (tests/cxx)
+title-string:           CxxMod
+help-string:            CxxMod 0.01
+date-string:            09 Oct 2026
+module-is-c-plus-plus:
+initialisation-code:    cxx_init
+finalisation-code:      cxx_final
+command-keyword-table:  cxx_command
+  CxxMod_Run(min-args: 0, max-args: 1, help-text: "*CxxMod_Run [n] works with objects of C++ classes.\n", invalid-syntax: "Syntax: *CxxMod_Run [n]"),
+  CxxMod_Info(min-args: 0, max-args: 0, help-text: "*CxxMod_Info shows what the static constructors did.\n", invalid-syntax: "Syntax: *CxxMod_Info")

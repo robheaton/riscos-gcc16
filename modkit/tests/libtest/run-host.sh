@@ -13,16 +13,17 @@ trap '[ -z "${FSDIR:-}" ] && rm -rf "$FS"' EXIT
 python3 "$HERE/mkrename.py" "$B" "$K/include" >/dev/null
 GCCINC=$(gcc -print-file-name=include)
 SAN="-fsanitize=address,undefined -fno-sanitize-recover=all"
-# every source of lib/ that is not ARM only (heap.c, exit.c, assert.c and start.c use SWIs in inline assembler / need printf / are the start of a runnable module)
-LIBSRC=$(cd "$K/lib" && ls *.c | grep -v -E '^(heap|exit|assert|start)\.c$' | sed 's/\.c$//' | tr "\n" " ")
+# every source of lib/ that is not ARM only (heap.c, exit.c, assert.c and start.c use SWIs in inline assembler / need printf / are the start of a runnable module; cxxrt.c is the C++ runtime of a module: it defines __dso_handle, the host has one; cxxsp.c names a symbol that only a program using make_shared has)
+LIBSRC=$(cd "$K/lib" && ls *.c | grep -v -E '^(heap|exit|assert|start|cxxrt|cxxsp)\.c$' | sed 's/\.c$//' | tr "\n" " ")
 for f in $LIBSRC; do
-  gcc -std=gnu11 -O1 -g -fno-builtin $SAN -Wall -Wextra -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -DMODLIB_HOST -Derrno=mk_errno -nostdinc -I"$K/include" -I"$GCCINC" \
+  case $f in fd_*) NOSH="-fno-sanitize=shift,signed-integer-overflow -fwrapv" ;; *) NOSH="" ;; esac       # Sun's fdlibm shifts and adds signed words as two's complement (fdlibm.h asks for -fwrapv)
+  gcc -std=gnu11 -O1 -g -fno-builtin $SAN $NOSH -Wall -Wextra -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast -DMODLIB_HOST -Derrno=mk_errno -nostdinc -I"$K/include" -I"$GCCINC" \
       -include "$B/mk_rename.h" -c "$K/lib/$f.c" -o "$B/$f.o"
 done
 gcc -std=gnu11 -O1 -g $SAN -c "$HERE/hosthooks.c" -o "$B/hosthooks.o"
 gcc -std=gnu11 -O1 -g -fno-builtin $SAN -Wall -Wno-unused-function -DT_HOSTLIB -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -I"$B" -idirafter "$K/include" -c "$HERE/libtest.c" -o "$B/libtest-hostlib.o"
-gcc $SAN -o "$B/libtest-hostlib" "$B/libtest-hostlib.o" "$B/hosthooks.o" $(for f in $LIBSRC; do echo "$B/$f.o"; done)
-gcc -std=gnu11 -O1 -g -fno-builtin -Wall -Wno-unused-function -DT_ORACLE -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -o "$B/libtest-oracle" "$HERE/libtest.c"
+gcc $SAN -o "$B/libtest-hostlib" "$B/libtest-hostlib.o" "$B/hosthooks.o" $(for f in $LIBSRC; do echo "$B/$f.o"; done) -lm
+gcc -std=gnu11 -O1 -g -fno-builtin -Wall -Wno-unused-function -DT_ORACLE -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -o "$B/libtest-oracle" "$HERE/libtest.c" -lm
 V=""; [ -n "${VERBOSE:-}" ] && V="-v"
 "$B/libtest-oracle" $V > "$B/oracle.out" 2>&1 || true
 "$B/libtest-hostlib" $V > "$B/hostlib.out" 2>&1 || { echo "the library build stopped:"; tail -5 "$B/hostlib.out"; }
