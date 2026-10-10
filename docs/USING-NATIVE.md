@@ -149,7 +149,7 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 
 ## Modules (`-mmodule`, `cmunge`), new in 16.2.0-14
 
-Relocatable modules with the small C library of the module kit (about 275 functions, `stdio` files and floating point among them; 16.2.0-14 had 30; no UnixLib), built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
+Relocatable modules with the small C library of the module kit (about 320 functions, `stdio` files and floating point among them; 16.2.0-14 had 30; no UnixLib), built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
 
 ```
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg     the CMHG file (cmhg/header or cmhg.module: any name): the module header and its veneers (o.header) and the C header (h.header)

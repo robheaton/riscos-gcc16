@@ -243,7 +243,10 @@ MODLIB_17 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a i
 MODLIB_18 = (MODLIB_17 + "  New in 16.2.0-18: mkoslib put only the R0 constant of an OSLib comment (Calls SWI N with R1 |= 3) into a veneer, so 617 of the OSLib veneers were wrong, and a parameter called r, e or flags made a\n"
              "  veneer that did not compile; modreloc relocated the word of an undefined weak reference and of an absolute symbol: all fixed.  cmunge takes swi-decoding-code:, a function of its own for a SWI, the options\n"
              "  private-word:, carry-capable: and error-capable: of the veneers, handler: and no-handler: in the command table, and module-is-not-reentrant:.")
-MODULES = MODULES.replace("%%MODLIB%%", MODLIB_18 if int(REL) >= 18 else MODLIB_17 if int(REL) >= 17 else MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
+MODLIB_19 = (MODLIB_18.replace("about 275 functions (16.2.0-16 had about 165", "about 320 functions (16.2.0-18 had about 275, 16.2.0-16 had about 165") +
+             "  New in 16.2.0-19: cmunge -zbase and -apcs 3/32; mkoslib makes the non-X OSLib functions and --library (OSLib itself is not part of the package: libOSLib32.a is made from your own copy of its headers); BSD sockets for\n"
+             "  modules (sys/socket.h, netinet/in.h, arpa/inet.h, netdb.h ...: socket, bind, accept, select, gethostbyname ...); __modlib_stack_left () says how much of the kernel's 32 KB SVC stack is left.")
+MODULES = MODULES.replace("%%MODLIB%%", MODLIB_19 if int(REL) >= 19 else MODLIB_18 if int(REL) >= 18 else MODLIB_17 if int(REL) >= 17 else MODLIB_16 if int(REL) >= 16 else MODLIB_15 if int(REL) >= 15 else MODLIB_14)
 if int(REL) >= 15:                                                    # the words that were true of the small kit of 16.2.0-14 only (REL 14 stays byte for byte as it was released)
     for old, new_ in (
         ("as with GCCSDK 4.7.4, without a C library\n", "as with GCCSDK 4.7.4, without UnixLib or the Shared C Library\n"),

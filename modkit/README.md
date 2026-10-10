@@ -1,6 +1,6 @@
 # modkit
 
-Build RISC OS **relocatable modules** with the GCC 16 EABI cross compiler, with no UnixLib or Shared C Library, with the commands of GCCSDK 4.7.4 (`gcc -mmodule`, `cmunge`; since 16.2.0-14). Experimental, for small and medium C and C++ modules for now (a C library of about 275 functions of its own, with `stdio` files and floating point, and C++ without exceptions, RTTI, streams or threads: [what can and cannot be built](../docs/MODULES.md#what-can-be-built-today-and-what-cannot)). See [docs/MODULES.md](../docs/MODULES.md) for what it is, how to build the example (`examples/tickmod`), what was proven on hardware, and the limits.
+Build RISC OS **relocatable modules** with the GCC 16 EABI cross compiler, with no UnixLib or Shared C Library, with the commands of GCCSDK 4.7.4 (`gcc -mmodule`, `cmunge`; since 16.2.0-14). Experimental, for small and medium C and C++ modules for now (a C library of about 320 functions of its own, with `stdio` files and floating point, and C++ without exceptions, RTTI, streams or threads: [what can and cannot be built](../docs/MODULES.md#what-can-be-built-today-and-what-cannot)). See [docs/MODULES.md](../docs/MODULES.md) for what it is, how to build the example (`examples/tickmod`), what was proven on hardware, and the limits.
 
 | Folder | |
 |---|---|

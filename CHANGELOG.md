@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased (after v16.2.0-18): modkit matches GCCSDK 4.7.4 more closely: `-zbase`, `-lOSLib32` with the non-X functions, BSD sockets
+## v16.2.0-19: 2026-10-10, modkit: `-zbase`, the non-X OSLib functions and `-lOSLib32`, BSD sockets for modules, and the stack of a module
+
+| Asset | Version |
+|---|---|
+| native compiler `Gcc16` | 16.2.0-19 |
+| runtime `SharedLibs-C-armeabihf` | 16.2.0-13 (unchanged) |
+| runtime `SharedLibs-C++-armeabihf` | 16.2.0-5 (unchanged) |
+| runtime `SharedLibs-Fortran-armeabihf` | 16.2.0-2 (unchanged) |
+| self-test `Gcc16SelfTest` | 16.2.0-19 |
+| Linux cross compiler | 16.2.0-19 |
+| optional `SharedULibFix` (the fixed SharedUnixLibrary) | 1.16-vforkfix3 (unchanged) |
+
+New since 16.2.0-18: the module kit (`modkit`, which `gcc -mmodule`, `cmunge` and `mkoslib` use), its tests and the programs in `tools/`. The native `Gcc16` and the Linux cross compiler carry the new kit.
 
 * **`cmunge -zbase` and `-apcs 3/32`** (C and Python versions): `-zbase` makes `Image__RO_Base` (a constant that holds `Image$$RO$$Base`) and declares it in the header, as GCCSDK's CMunge does; the example modules of 4.7.4 use it. `-apcs 3/32` and `-apcs 32` are accepted (they changed nothing here).
 * **`-lOSLib32` links unchanged.** `mkoslib` also makes the **non-X functions** of OSLib (`os_cli`, `os_read_var_val` ...: the result is the register that the `Returns:` line of OSLib's comment names, and an error is raised with `OS_GenerateError` through the new `__modlib_raise`), and `mkoslib --library DIR` writes a C file for every function it can make. `modkit/bin/mkoslib-lib.sh`, which `install-modkit.sh` runs when `OSLIB` is set, builds `libOSLib32.a` from them (4,268 veneers; 367 Toolbox calls that are messages and 34 functions that do not compile with OSLib's types are left out), puts the headers in the tool chain (`include/oslib`) and links them for `-mmodule`. The archive carries weak copies of the SWI helpers, so an ordinary program can link it too. **Not shipped:** OSLib is GPL version 1 or later with an exception for linking, so the released tool chains contain neither OSLib's headers nor `libOSLib32.a`; the generator is shipped, and anyone who has OSLib makes the library with `OSLIB=<folder with oslib/> modkit/bin/mkoslib-lib.sh <tool chain>` (or `install-modkit.sh` with `OSLIB` set).
@@ -9,6 +21,8 @@
 * `swisnums.h` has the SWI names `DDEUtils_ThrowbackSend` and the 17 SWIs of the SysLog module that the Shared C Library's `swis.h` has and the RISC OS sources do not (969 SWIs).
 * The four official examples of 4.7.4 (`Examples/Module/Simple`, `NoSCL`, `ResourceFS`, `FS`) build with their own Makefiles (`modkit/tests/test-gccsdk-examples.py`).
 * Tests: `test-ctools.py` compares the non-X functions, `--library` and `-zbase` (1,209 checks in the quick run); new `sim-oslib.py`, `sim-sockets.py` and `test-gccsdk-examples.py`; the model of the kernel has `OS_GenerateError`, more `Socket_*` SWIs and `Resolver_GetHostByName`.
+* Not changed: the compiler, binutils, UnixLib, the C, C++ and Fortran runtimes and `SharedULibFix`; `Gcc16` 16.2.0-19 needs `SharedLibs-C-armeabihf` 16.2.0-13 or later, as 16.2.0-14 to -18 did.
+* Checked on the Raspberry Pi with the packages of this release, installed with PackMan: the self-test (twelve of twelve checks in 32 seconds; its module check builds, loads and runs a small module with the kit, natively), the regression run of eight suites (the self-test and seven more: 54 summary lines, the same as in the runs of 16.2.0-18, 16.2.0-17, 16.2.0-16 and 16.2.0-13, none failing), the network module built on the Pi by the commands of its GCCSDK 4.7.4 makefile (4 seconds; byte for byte the module that the Linux tarball makes, 23,024 bytes; loaded and run through 39 network checks, a 500 KB transfer and a soak of 300 commands among them), and `RomCmp`, the 1,400 lines of C of the ROM-comparison program, built on the Pi (7 seconds; byte for byte its cross build, 72,328 bytes), loaded, run against the ROM's modules (545 checks, 0 failed) and its 9,820 lines of results compared with those of 8 October: none different. The sockets, the non-X OSLib veneers and the stack check of this release were run on the Pi on 10 October, before the release, with the modules `SockHw` (53 checks on the loopback address, and an echo server that a client on another machine used) and `StkLeft` (see the first items). The build instructions ([docs/BUILDING.md](docs/BUILDING.md)) were run again in an empty home directory, and the packages and the tarball are the output of that run.
 
 ## v16.2.0-18: 2026-10-10, modkit: three faults of the kit fixed, the rest of the CMHG options, and 38 of the 66 C modules of the RISC OS Open sources build
 

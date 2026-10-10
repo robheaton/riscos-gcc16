@@ -3,8 +3,8 @@
 You only need this to change the tool chain or to rebuild it. To **use** it, install the [packages](INSTALL-RISCOS.md) or the [cross compiler tarball](CROSS-COMPILER.md).
 
 > **Status of these instructions.** They are the scripts that built the released binaries, on one machine (Ubuntu 26.04, host GCC 15.2, 22 cores) in September and October 2026.
-Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). All eight steps took 32 minutes (step 7, the Linux tarball, was run a second time, because its command still named the previous release); no check stopped the run.
-> **The `Gcc16` and `Gcc16SelfTest` packages and the Linux tarball on the releases page are the output of that run**, and the packages are the files that were installed and tested on the Raspberry Pi. Compared with the `Gcc16` package of 16.2.0-17, 1111 of its 1135 files are byte for byte the same and 11 more are static libraries whose members are the same (only the timestamps inside differ); the others are the module kit (`cmunge`, `mkoslib`, `modreloc`, `libmodkit-core.a`, `module.ld`, and one more header, `uchar.h`), the `ReadMe`, `!Boot`, `!Run`, `RiscPkg/Control` and `RiscPkg/Copyright`, and the two compilers `cc1` and `cc1plus`, which differ only in a 16-byte checksum.
+Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). All eight steps took 30 minutes in the run that is described here; a first attempt had stopped in step 3, because the copy of the prerequisite sources had lost its file times and `make` tried to regenerate them (copy them with `cp -a`), and was started again from the beginning; no check stopped the second run.
+> **The `Gcc16` and `Gcc16SelfTest` packages and the Linux tarball on the releases page are the output of that run**, and the packages are the files that were installed and tested on the Raspberry Pi. Compared with the `Gcc16` package of 16.2.0-18, 1113 of its 1136 files are byte for byte the same and 11 more are static libraries whose members are the same (only the timestamps inside differ); the others are the module kit (`cmunge`, `mkoslib`, `libmodkit-core.a`, `kernel.h`, `swisnums.h`, and eleven new headers in `sys`, `netinet` and `arpa` and `netdb.h` and `syslog.h`), the `ReadMe`, `!Boot`, `!Run`, `RiscPkg/Control` and `RiscPkg/Copyright`, and the two compilers `cc1` and `cc1plus`, which differ only in a 16-byte checksum.
 
 ## What gets built
 
@@ -117,8 +117,8 @@ B=~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts
 $B/build-binutils-native.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils-native ~/gccsdk-next/binutils-native-install   # as, ld, ar, nm ... for RISC OS (8 MB stacks)
 ~/gccsdk-next/recipe/make-4.4.1-riscos/scripts/build-make.sh                                                                           # GNU make 4.4.1 for RISC OS -> make-riscos/install/bin/make
 $R/make-native-tree.sh ~/gccsdk-next/native-tree ~/gccsdk-next/native-stage3-lto ~/gccsdk-next/binutils-native-install ~/gccsdk-next/make-riscos/install/bin/make
-PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 18                                           # Gcc16_16.2.0-18_arm.zip
-PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 18                                                                    # Gcc16SelfTest_16.2.0-18_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 19                                           # Gcc16_16.2.0-19_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 19                                                                    # Gcc16SelfTest_16.2.0-19_arm.zip
 ```
 
 `make-native-tree.sh` and `build-native-lto.sh` take their stage directories as arguments or defaults (read their headers); the LTO build uses `recipe/gcc-16.2.0-riscos/data/no-plugin-ld` so that configure accepts a native `ld` without plugin support.
@@ -128,15 +128,15 @@ What the native build needed, each point learned on the hardware, is in `recipe/
 ## 8. The Linux tarball and the release
 
 ```bash
-$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-18 <a README file>
+$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-19 <a README file>
 ```
 
-It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-18-x86_64-linux.tar.xz`. Check the result the way the release was checked:
+It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-19-x86_64-linux.tar.xz`. Check the result the way the release was checked:
 
 ```bash
 cd ~/gccsdk-next/release
-tar -xf riscos-gcc16-cross-16.2.0-18-x86_64-linux.tar.xz
-~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-18-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
+tar -xf riscos-gcc16-cross-16.2.0-19-x86_64-linux.tar.xz
+~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-19-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
 ```
 
 ## Changing something

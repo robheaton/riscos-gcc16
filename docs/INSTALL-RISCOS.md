@@ -17,8 +17,8 @@ This page installs the compiler that runs **on RISC OS**. For the Linux cross co
 Download from the [releases page](https://github.com/robheaton/riscos-gcc16/releases) (check them against `SHA256SUMS` if you can):
 
 * `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` (always needed)
-* `Gcc16_16.2.0-18_arm.zip` (the compiler)
-* `Gcc16SelfTest_16.2.0-18_arm.zip` (optional: a self-test of the installation, see section 3, "Check it")
+* `Gcc16_16.2.0-19_arm.zip` (the compiler)
+* `Gcc16SelfTest_16.2.0-19_arm.zip` (optional: a self-test of the installation, see section 3, "Check it")
 * `SharedULibFix_1.16-vforkfix3_arm.zip` (optional: a fixed SharedUnixLibrary module, which **replaces a system module**: see "The fixed SharedUnixLibrary" below before you install it)
 * `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip` and `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` (optional: only for programs that link libstdc++ or libgfortran dynamically, which is the cross compiler's default; the native compiler links them statically)
 
@@ -34,7 +34,7 @@ A package zip must have the file type **Zip (&A91)**. If it arrives as Text or D
 ## 2. Install
 
 1. **Drag `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` onto the PackMan icon on the icon bar** and confirm the install.
-2. **Drag `Gcc16_16.2.0-18_arm.zip` onto the PackMan icon** and confirm. PackMan insists on this order, because `Gcc16` depends on `SharedLibs-C-armeabihf` 16.2.0-13 or later.
+2. **Drag `Gcc16_16.2.0-19_arm.zip` onto the PackMan icon** and confirm. PackMan insists on this order, because `Gcc16` depends on `SharedLibs-C-armeabihf` 16.2.0-13 or later.
 3. Optionally do the same for the C++ and Fortran runtime zips.
 
    `SharedLibs-C-armeabihf` 16.2.0-13 **takes the place of** GCCSDK's own package of that name (10.2.0-1): it has the same set of files, with `libunixlib` and `libm` (UnixLib) rebuilt and fixed. Programs built with GCCSDK's 10.2.0 compilers keep working on it (checked with a C++ and a thread test).
@@ -74,7 +74,7 @@ The stock SharedUnixLibrary 1.16 that RISC OS ships has bugs that show when a pr
 ## Upgrading, going back, removing
 
 * **Upgrade:** drag the newer zips onto PackMan the same way (runtime first), then reboot.
-* **Go back:** install the older package from its release (remove the newer one first in PackMan if it refuses to go back), then reboot. `Gcc16` 16.2.0-18 needs a runtime of 16.2.0-13 or later (so do 16.2.0-13 to -16; `Gcc16` 16.2.0-12 needs 16.2.0-12 or later, and 16.2.0-8 to -11 need 16.2.0-10 or later).
+* **Go back:** install the older package from its release (remove the newer one first in PackMan if it refuses to go back), then reboot. `Gcc16` 16.2.0-19 needs a runtime of 16.2.0-13 or later (so do 16.2.0-13 to -16; `Gcc16` 16.2.0-12 needs 16.2.0-12 or later, and 16.2.0-8 to -11 need 16.2.0-10 or later).
 * **Remove:** remove `Gcc16` in PackMan. `SharedLibs-C-armeabihf` is the runtime of **every** program built by this tool chain (and of other EABI programs): remove it only if nothing needs it.
 
 ## If something goes wrong

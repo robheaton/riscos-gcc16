@@ -1,0 +1,5 @@
+title-string:           ModSock
+help-string:            ModSock 0.01
+date-string:            10 Oct 2026
+command-keyword-table:  modsock_cmd
+  ModSock_Go(min-args: 0, max-args: 0, help-text: "*ModSock_Go\n", invalid-syntax: "Syntax: *ModSock_Go")
