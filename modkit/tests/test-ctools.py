@@ -156,6 +156,57 @@ for i in range(N):
     refused += bool(pf)
 print("cmunge: %d generated files compared (%d made a header, %d were refused by both)" % (N, N - refused, refused))
 
+# ---- the CMHG options of 16.2.0-18: handler options (private-word:, carry-capable:, error-capable:), Name/function in the SWI table, swi-decoding-code, handler: / no-handler: / "-" in the command table,
+#      module-is-not-reentrant:  (generated files; some are wrong on purpose and must be refused by both)
+def gen_cmhg3(rng):
+    title = rng.choice(NAMES); lines = []
+    L = lambda k, v: lines.append(k + ": " + v)
+    L("title-string", title); L("help-string", title + " " + rng.choice(VERS[:6])); L("date-string", "10 Oct 2026")
+    if rng.random() < .5: L("initialisation-code", rng.choice(IDENT))
+    if rng.random() < .3: L("module-is-not-reentrant", "")
+    if rng.random() < .8:
+        L("swi-chunk-base-number", num(rng, rng.choice([0x43380, 0x58C80, 0x58D00, 0x400C0])))
+        names = rng.sample(["A", "B", "Start", "Stop", "Get_Status", "Z9"], rng.randint(1, 5))
+        names = [n + ("/fn_" + n.lower() if rng.random() < .5 else "") for n in names]
+        L("swi-decoding-table", rng.choice([title, "Pfx"]) + " " + rng.choice([" ", ", "]).join(names))
+        if rng.random() < .6 or not any("/" in n for n in names): L("swi-handler-code", "swi_h")
+    if rng.random() < .4: L("swi-decoding-code", rng.choice(["dec_f", "dec_n/dec_s"]))
+    for kind, allowed in (("generic-veneers", ["(private-word: r%d)" % rng.randint(0, 12), "(carry-capable:)", "(private-word: R4, carry-capable:)", "(carry-capable: , private-word: r12)", "()", ""]),
+                          ("vector-handlers", ["(error-capable:)", "(error-capable: )", "()", ""]), ("irq-handlers", ["()", "", ""])):
+        if rng.random() < .5:
+            ents = []
+            for i in range(rng.randint(1, 3)):
+                e = "%s_e%d" % (kind[:3], i)
+                if rng.random() < .5: e += "/%s_h%d" % (kind[:3], i)
+                ents.append(e + rng.choice(["", " ", "  "]) + rng.choice(allowed))
+            L(kind, rng.choice([", ", " ", ",\n    "]).join(ents))
+    if rng.random() < .3: L("event-handler", "ev_e/ev_h" + "".join(" " + num(rng, rng.randint(0, 31)) for _ in range(rng.choice([0, 1, 2]))))
+    if rng.random() < .8:
+        cmds = []
+        table = rng.choice(["tbl", "tbl", "-"])
+        for i in range(rng.randint(1, 4)):
+            opts = ["min-args: 0", "max-args: 1"]
+            r = rng.random()
+            if r < .35: opts.append("handler: cmd_fn%d" % i)
+            elif r < .55: opts.append("no-handler:")
+            if rng.random() < .5: opts.append("help-text: \"*C%d\\n\"" % i)
+            rng.shuffle(opts)
+            cmds.append("C%d(%s)" % (i, ", ".join(opts)))
+        L("command-keyword-table", table + rng.choice(["\n     ", " "]) + ",\n     ".join(cmds))
+    return "\n".join(lines) + "\n"
+
+rng = random.Random(20261010)
+N3 = 60 if QUICK else 300
+refused = 0
+for j in range(N3):
+    text = gen_cmhg3(rng)
+    p = os.path.join(W, "gen%d.cmhg" % (N + j))
+    open(p, "w", newline="").write(text)
+    refused += bool(compare_cmhg(p, "generated (options) %d" % j))
+print("cmunge: %d generated files with the options of the veneers, the SWI table and the commands compared (%d made a header, %d were refused by both)" % (N3, N3 - refused, refused))
+N_BASE = N
+N += N3
+
 # ---- the same files against the real CMunge (GCCSDK's), when it is there: what the module header says must be the same.  The real one refuses what it does not know and adds the date of the day to a help
 # string that has no date-string, so those files are left out of the comparison.
 REAL_CMUNGE = os.environ.get("REAL_CMUNGE", os.path.expanduser("~/gccsdk/cross/bin/cmunge"))
@@ -182,13 +233,14 @@ if os.path.exists(REAL_CMUNGE):
         rm = run([os.path.join(BIN, "cmunge"), "-tgcc", "-32bit", "-s", d + "/m.s", "-d", d + "/m.h", p])
         rr = run([REAL_CMUNGE, "-tgcc", "-32bit", "-znoscl", "-s", d + "/r.s", "-d", d + "/r.h", p])
         if rm.returncode or rr.returncode:
-            skipped += 1; k = "mine refuses: " + rm.stderr.strip().split("\n")[0][:80] if rm.returncode else "real refuses: " + rr.stderr.strip().split("\n")[0][:80]; why[k] = why.get(k, 0) + 1; continue
+            skipped += 1; k = ("mine refuses: " + rm.stderr.strip().split("\n")[0][:80] if rm.returncode else "real refuses: " + rr.stderr.strip().split("\n")[0][:80]) + (" [options]" if i >= N_BASE else ""); why[k] = why.get(k, 0) + 1; continue
         try:
             n = sum(1 for l in open(d + "/m.s").read().split("\n") if l.startswith("\t.word\tcmd") and "@ code" in l)
             a = cmhgdiff.decode(cmhgdiff.flat(d + "/m.s", tcdir, d, "m"), n); b = cmhgdiff.decode(cmhgdiff.flat(d + "/r.s", tcdir, d, "r"), n)
         except subprocess.CalledProcessError:
             skipped += 1; continue
         compared += 1
+        if i >= N_BASE: compared_options = globals().get("compared_options", 0) + 1; globals()["compared_options"] = compared_options
         same = True
         for k in a:
             if k == "commands":
@@ -196,7 +248,7 @@ if os.path.exists(REAL_CMUNGE):
             elif a[k] != b[k]:
                 same = False
         check(same, "generated %d: the module header differs from the real CMunge's (%s)" % (i, {k: (a[k], b[k]) for k in a if k != "commands" and a[k] != b[k]} or [(x, y) for x, y in zip(a["commands"], b["commands"]) if x != y][:1]))
-    print("cmunge: %d generated files against the real CMunge (%d left out)" % (compared, skipped))
+    print("cmunge: %d generated files against the real CMunge (%d left out); %d of them have the options of the veneers, the SWI table and the commands" % (compared, skipped, globals().get("compared_options", 0)))
     for k, v in sorted(why.items(), key=lambda kv: -kv[1]): print("    %4d  %s" % (v, k))
 else:
     print("cmunge: the real CMunge (%s) is not there: not compared" % REAL_CMUNGE)
@@ -236,6 +288,25 @@ BAD = {
     "unbalanced parenthesis": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: (0x100\nswi-handler-code: h\n",
     "number out of range": "title-string: T\nhelp-string: T 1.00\nservice-call-handler: h 0x100000000\n",
     "negative number": "title-string: T\nhelp-string: T 1.00\nservice-call-handler: h (0-1)\n",
+    "private-word in irq-handlers": "title-string: T\nhelp-string: T 1.00\nirq-handlers: i/h (private-word: r1)\n",
+    "carry-capable in vector-handlers": "title-string: T\nhelp-string: T 1.00\nvector-handlers: v/h (carry-capable:)\n",
+    "error-capable in generic-veneers": "title-string: T\nhelp-string: T 1.00\ngeneric-veneers: g/h (error-capable:)\n",
+    "private-word register 13": "title-string: T\nhelp-string: T 1.00\ngeneric-veneers: g/h (private-word: r13)\n",
+    "private-word that is no register": "title-string: T\nhelp-string: T 1.00\ngeneric-veneers: g/h (private-word: 4)\n",
+    "private-word twice": "title-string: T\nhelp-string: T 1.00\ngeneric-veneers: g/h (private-word: r1, private-word: r2)\n",
+    "unknown handler option": "title-string: T\nhelp-string: T 1.00\ngeneric-veneers: g/h (frobnicate:)\n",
+    "handler options not closed": "title-string: T\nhelp-string: T 1.00\ngeneric-veneers: g/h (carry-capable:\n",
+    "swi-decoding-code twice": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100\nswi-handler-code: h\nswi-decoding-code: a\nswi-decoding-code: b\n",
+    "swi-decoding-code with two words": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100\nswi-handler-code: h\nswi-decoding-code: a b\n",
+    "swi-decoding-code without a chunk": "title-string: T\nhelp-string: T 1.00\nswi-decoding-code: a\n",
+    "SWI function that is no name": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100\nswi-decoding-table: T A/1b\n",
+    "SWI function with parameters": "title-string: T\nhelp-string: T 1.00\nswi-chunk-base-number: 0x100\nswi-decoding-table: T A/f(x)\n",
+    "handler: without a name": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(handler:)\n",
+    "handler: twice": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(handler: a, handler: b)\n",
+    "handler: with no-handler:": "title-string: T\nhelp-string: T 1.00\ncommand-keyword-table: h\n  C(handler: a, no-handler:)\n",
+    "module-is-runnable: simple-app:": "title-string: T\nhelp-string: T 1.00\nmodule-is-runnable: simple-app:\n",
+    "module-is-c-plus-plus with a value": "title-string: T\nhelp-string: T 1.00\nmodule-is-c-plus-plus: yes\n",
+    "module-is-not-reentrant with a value": "title-string: T\nhelp-string: T 1.00\nmodule-is-not-reentrant: yes\n",
 }
 # what each refusal must say (so that a file is not refused for another reason than the one under test)
 WHY = {"unknown keyword": "frobnicate", "no title": "title-string", "no help": "help-string", "bad escape": "escape", "unterminated string": "string", "empty command table": "no commands",
@@ -245,8 +316,16 @@ WHY = {"unknown keyword": "frobnicate", "no title": "title-string", "no help": "
        "swi decoding table without a chunk": "needs a swi-chunk-base-number", "swi chunk 0": "not a SWI chunk", "swi chunk not a multiple of 64": "not a SWI chunk", "swi chunk with the X bit": "X bit",
        "indented first line": "", "not a key line": "", "number expected": "a number was expected",
        "swi-handler-code with options": "needs one function name", "initialisation-code with a second word": "needs one function name", "library-enter-code": "Shared C Library",
-       "library-initialisation-code": "Shared C Library", "event-handler with options": "handler options", "event-handler without a name": "needs the name", "event number that is not a number": "is not a number",
-       "division by zero": "division by zero", "unbalanced parenthesis": "is not a number", "number out of range": "out of range", "negative number": "out of range"}
+       "library-initialisation-code": "Shared C Library", "event-handler with options": "cannot be passed parameters", "event-handler without a name": "needs the name", "event number that is not a number": "is not a number",
+       "division by zero": "division by zero", "unbalanced parenthesis": "is not a number", "number out of range": "out of range", "negative number": "out of range",
+       "private-word in irq-handlers": "private-word argument not permitted", "carry-capable in vector-handlers": "carry-capable argument not permitted", "error-capable in generic-veneers": "error-capable argument not permitted",
+       "private-word register 13": "r0-r12", "private-word that is no register": "must be a register", "private-word twice": "supplied twice", "unknown handler option": "Unknown argument in handler",
+       "handler options not closed": "Ran out", "swi-decoding-code twice": "Only supply one swi-decoding-code", "swi-decoding-code with two words": "needs one function name, or NAME/HANDLER",
+       "swi-decoding-code without a chunk": "needs a swi-chunk-base-number", "SWI function that is no name": "is not a function name", "SWI function with parameters": "cannot be passed parameters",
+       "handler: without a name": "needs the name of a function", "handler: twice": "Only supply one handler", "handler: with no-handler:": "mutually exclusive",
+       "module-is-runnable: simple-app:": "title-string: T\nhelp-string: T 1.00\nmodule-is-runnable: simple-app:\n",
+    "module-is-c-plus-plus with a value": "title-string: T\nhelp-string: T 1.00\nmodule-is-c-plus-plus: yes\n",
+    "module-is-not-reentrant with a value": "takes no value", "module-is-runnable: simple-app:": "simple-app", "module-is-c-plus-plus with a value": "takes no value"}
 for name, text in BAD.items():
     p = os.path.join(W, "bad.cmhg"); open(p, "w").write(text)
     pf = compare_cmhg(p, "refused: " + name, expect_fail=True)

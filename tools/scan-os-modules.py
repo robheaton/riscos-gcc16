@@ -38,8 +38,8 @@ KNOWN = {
 CATEGORY = {f: cat for cat, names in KNOWN.items() for f in names.split()}
 # directives of CMHG that modkit's cmunge (modkit/src/cmunge.c) implements today
 CMHG_OK = set("title-string help-string date-string initialisation-code finalisation-code service-call-handler command-keyword-table swi-chunk-base-number swi-decoding-table swi-handler-code "
-              "irq-handlers vector-handlers generic-veneers event-handler module-is-runnable international-help-file".split())
-CMHG_OPT_OK = set("min-args max-args gstrans-map help-text invalid-syntax international add-syntax configure status fs-command".split())
+              "irq-handlers vector-handlers generic-veneers event-handler module-is-runnable international-help-file swi-decoding-code module-is-not-reentrant module-is-c-plus-plus".split())
+CMHG_OPT_OK = set("min-args max-args gstrans-map help-text invalid-syntax international add-syntax configure status fs-command handler no-handler".split())
 CMHG_DIRECTIVES = set("""title-string help-string date-string initialisation-code finalisation-code service-call-handler command-keyword-table swi-chunk-base-number swi-decoding-table swi-handler-code
 irq-handlers vector-handlers generic-veneers event-handler international-help-file module-is-runnable library-enter-code library-initialisation-code module-is-not-reentrant module-is-c-plus-plus
 vector-traps pdriver-handler no-handler-for-help-and-syntax""".split())

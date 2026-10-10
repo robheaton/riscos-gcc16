@@ -10,7 +10,7 @@ Accepted and without effect (the model has nothing to switch): -tgcc, -32bit, -z
 (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zbase, -zerrors,
 -zoslib, -blank, -x<type>, -depend) is refused with a message, not ignored: a module that needs it would be built wrong.
 
-The CMHG language that is supported (anything else is an error, nothing is dropped silently):
+The CMHG language that is supported (anything else is an error, nothing is dropped silently; CMunge's own error-base:, error-identifiers:, pdriver-handler:, vector-traps: and module-is-runnable: simple-app: are not supported):
   title-string:, help-string: (name and version), date-string:        the module's name, help line (title <tab> version (date)) and the Module_* macros of the C header
   initialisation-code: FN          _kernel_oserror *FN (const char *tail, int podule_base, void *pw)
   finalisation-code: FN            _kernel_oserror *FN (int fatal, int podule_base, void *pw)
@@ -21,7 +21,13 @@ The CMHG language that is supported (anything else is an error, nothing is dropp
   international-help-file: "NAME"  the Messages file (as MessageTrans names it, e.g. "Resources:$.Resources.Foo.Messages"; adjacent strings are joined) that the international: texts come from; header word 11,
                                    and #define Module_MessagesFile in the C header
   swi-chunk-base-number: N, swi-decoding-table: PREFIX NAME ..., swi-handler-code: FN     _kernel_oserror *FN (int swi_offset, _kernel_swi_regs *r, void *pw)
+                                   a name can have a function of its own, NAME/FN, with the same arguments (the other SWIs go to swi-handler-code, which may then be left out)
+  swi-decoding-code: FN            int FN (_kernel_swi_regs *r, void *pw): OS_SWINumberFromString / OS_SWINumberToString for the chunk (r0 - r3 as the kernel gives them), or NAME/NUMBER: two functions
+                                   int NAME (const char *name, void *pw) and int NUMBER (int number, char *buffer, int offset, int limit, void *pw); needs a swi-chunk-base-number:
+  command table:                   command-keyword-table: -  has no handler of the table; a command can have  handler: FN  or  no-handler:  (no code at all: a command that only has a help text)
   irq-handlers:, vector-handlers:, generic-veneers: ENTRY/FN, ...     int FN (_kernel_swi_regs *r, void *pw)
+  options of the veneers, ENTRY/FN (options):   generic-veneers: private-word: rN (the function gets rN, not r12, and r12 is kept for the caller), carry-capable: (FN may return VENEER_SETCARRY, 2: return with C set and V
+                                   clear); vector-handlers: error-capable: (FN may return VECTOR_ERROR (error): claim the vector, V set, r0 = the error); irq-handlers: none.  module-is-not-reentrant: is accepted (no effect)
   module-is-c-plus-plus:           the module is written in C++ (compile with -fno-exceptions -fno-rtti): the initialisation veneer calls libmodkit's __modlib_cxx_init (the static constructors) before the
                                    initialisation code, the finalisation veneer calls __modlib_cxx_fini (the destructors of the static objects and .fini_array) after the finalisation code (lib/cxxrt.c)
   module-is-runnable:              the module has a start entry: *RMRun Module args (OS_Module Enter) calls it in USER mode; it takes the top of the application memory (OS_GetEnv) as its stack and calls
@@ -44,16 +50,20 @@ typedef struct
   int fs_command, status_cmd, international, add_syntax;      /* the flags of the information word: bits 31, 30 (status / configure), 28; add-syntax joins the two texts */
   unsigned char *help; size_t helplen; int has_help;
   unsigned char *syntax; size_t synlen; int has_syntax;
+  char *handler; int nohandler;                                                /* handler: FN (a function of its own), no-handler: (no code) */
 } Cmd;
 
-typedef struct { char *kind, *entry, *handler; unsigned *ev; int nev; } Veneer;      /* ev: the event numbers that an event-handler accepts */
+typedef struct { char *kind, *entry, *handler; unsigned *ev; int nev; int pw, carry, errc; } Veneer;      /* ev: the event numbers that an event-handler accepts */
 
 typedef struct
 {
   char *title, *help, *date, *init, *final, *service;
   unsigned *svc; int nsvc;
   Cmd *cmds; int ncmds; char *cmd_handler;
-  unsigned swi_chunk; char *swi_prefix; char **swi_names; int nswi; char *swi_handler;
+  unsigned swi_chunk; char *swi_prefix; char **swi_names; char **swi_handlers; int nswi; char *swi_handler;
+  char *swi_dec, *swi_dec2;                                 /* swi-decoding-code: FN, or NAME/NUMBER (the name to number and the number to name functions) */
+  int swi_notable;                                          /* swi-decoding-code without a swi-decoding-table: the header has no table, the kernel asks the code in both directions */
+  int notreent;                                             /* module-is-not-reentrant: (accepted, no effect) */
   Veneer *ven; int nven;
   int runnable;
   int cxx;                                                  /* module-is-c-plus-plus: */
@@ -280,6 +290,12 @@ static void depth_and_last (const char *s, int *depth, int *last)
 static int handler_only (const char *s)
 {
   while (is_space ((unsigned char) *s)) s++;
+  if (*s == '-')                                            /* "-": the table has no handler of its own */
+    {
+      s++;
+      while (is_space ((unsigned char) *s)) s++;
+      return *s == 0;
+    }
   if (!(is_alpha ((unsigned char) *s) || *s == '_')) return 0;
   while (is_word ((unsigned char) *s)) s++;
   while (is_space ((unsigned char) *s)) s++;
@@ -457,9 +473,17 @@ static void parse_command_table (const char *rest, Module *m)
   int n = 0;
   while (pos < len && is_space ((unsigned char) rest[pos])) pos++;
   k = pos;
-  if (!(is_alpha ((unsigned char) rest[k]) || rest[k] == '_')) cmhg_error ("command-keyword-table: needs the name of the handler function");
-  while (is_word ((unsigned char) rest[k])) k++;
-  m->cmd_handler = xstrndup (rest + pos, k - pos);
+  if (rest[k] == '-' && !(is_word ((unsigned char) rest[k + 1]) || rest[k + 1] == '$' || rest[k + 1] == '%'))
+    {
+      m->cmd_handler = NULL;                                  /* "-": every command has a function of its own, or none */
+      k++;
+    }
+  else
+    {
+      if (!(is_alpha ((unsigned char) rest[k]) || rest[k] == '_')) cmhg_error ("command-keyword-table: needs the name of the handler function (or - when every command has its own handler: or none)");
+      while (is_word ((unsigned char) rest[k])) k++;
+      m->cmd_handler = xstrndup (rest + pos, k - pos);
+    }
   pos = k;
   while (pos < len && is_space ((unsigned char) rest[pos])) pos++;
   m->cmds = NULL;
@@ -534,6 +558,16 @@ static void parse_command_table (const char *rest, Module *m)
               else if (strcmp (key, "add-syntax") == 0) c->add_syntax = 1;
               else if (strcmp (key, "configure") == 0 || strcmp (key, "status") == 0) c->status_cmd = 1;
               else if (strcmp (key, "fs-command") == 0) c->fs_command = 1;
+              else if (strcmp (key, "no-handler") == 0) c->nohandler = 1;
+              else if (strcmp (key, "handler") == 0)
+                {
+                  size_t e = pos;
+                  if (!(is_alpha ((unsigned char) rest[e]) || rest[e] == '_')) cmhg_error ("handler: needs the name of a function in command %s", c->name);
+                  if (c->handler) cmhg_error ("Only supply one handler: field in command %s", c->name);
+                  while (is_word ((unsigned char) rest[e])) e++;
+                  c->handler = xstrndup (rest + pos, e - pos);
+                  pos = e;
+                }
               else if (strcmp (key, "help-text") == 0)
                 {
                   c->help = parse_string_literals (rest, &pos, &c->helplen);
@@ -552,6 +586,8 @@ static void parse_command_table (const char *rest, Module *m)
           if (c->gstrans > 255) cmhg_error ("gstrans-map: may only describe 8 bits in command %s", c->name);
           if (c->add_syntax && c->international) cmhg_error ("add-syntax: and international: are mutually exclusive in command %s", c->name);
         }
+      if (c->nohandler && c->handler) cmhg_error ("no-handler: and handler: are mutually exclusive in command %s", c->name);
+      if (!m->cmd_handler && !c->handler) c->nohandler = 1;          /* (CMunge: a command with nothing to call has no handler) */
     }
   if (!n) cmhg_error ("the command-keyword-table has no commands");
   m->ncmds = n;
@@ -576,7 +612,77 @@ static Veneer *add_veneer (Module *m, const char *kind, const char *entry, const
   v->kind = xstrdup (kind);
   v->entry = xstrdup (entry);
   v->handler = xstrdup (handler);
+  v->pw = 12;
   return v;
+}
+
+/* irq-handlers: / vector-handlers: / generic-veneers:   ENTRY[/HANDLER][(options)] ...   The options that CMunge allows: private-word: rN and carry-capable: for generic-veneers, error-capable: for vector-handlers, none for irq-handlers */
+static void parse_handlers (Module *m, const char *key, const char *r)
+{
+  int allow_pw = strcmp (key, "generic-veneers") == 0, allow_carry = allow_pw, allow_err = strcmp (key, "vector-handlers") == 0;
+  size_t pos = 0, len = strlen (r);
+  for (;;)
+    {
+      size_t k, e;
+      char *entry, *handler;
+      Veneer *v;
+      int have_pw = 0, have_carry = 0, have_err = 0;
+      while (pos < len && (is_space ((unsigned char) r[pos]) || r[pos] == ',')) pos++;
+      if (pos >= len) break;
+      k = pos;
+      if (!(is_alpha ((unsigned char) r[k]) || r[k] == '_')) cmhg_error ("%s: a function name was expected near '%.30s'", key, r + pos);
+      while (is_word ((unsigned char) r[k])) k++;
+      entry = xstrndup (r + pos, k - pos);
+      pos = k;
+      if (r[pos] == '/' && (is_alpha ((unsigned char) r[pos + 1]) || r[pos + 1] == '_'))
+        {
+          e = pos + 1;
+          while (is_word ((unsigned char) r[e])) e++;
+          handler = xstrndup (r + pos + 1, e - pos - 1);
+          pos = e;
+        }
+      else
+        {
+          Buf hb;                                                     /* CMunge: the handler of NAME is NAME_handler */
+          buf_init (&hb);
+          buf_adds (&hb, entry);
+          buf_adds (&hb, "_handler");
+          handler = hb.s;
+        }
+      while (pos < len && is_space ((unsigned char) r[pos])) pos++;
+      v = add_veneer (m, key, entry, handler);
+      free (entry); free (handler);
+      if (pos < len && r[pos] == '(')
+        {
+          pos++;
+          for (;;)
+            {
+              const char *opt;
+              while (pos < len && (is_space ((unsigned char) r[pos]) || r[pos] == ',')) pos++;
+              if (pos >= len) cmhg_error ("%s: Ran out of file when parsing handler details!", key);
+              if (r[pos] == ')') { pos++; break; }
+              if (strncmp (r + pos, "private-word:", 13) == 0) opt = "private-word", pos += 13;
+              else if (strncmp (r + pos, "carry-capable:", 14) == 0) opt = "carry-capable", pos += 14;
+              else if (strncmp (r + pos, "error-capable:", 14) == 0) opt = "error-capable", pos += 14;
+              else cmhg_error ("%s: Unknown argument in handler: %.30s", key, r + pos);
+              while (pos < len && is_space ((unsigned char) r[pos])) pos++;
+              if (strcmp (opt, "private-word") == 0 ? !allow_pw : strcmp (opt, "carry-capable") == 0 ? !allow_carry : !allow_err) cmhg_error ("%s: %s argument not permitted", key, opt);
+              if (strcmp (opt, "private-word") == 0 ? have_pw : strcmp (opt, "carry-capable") == 0 ? have_carry : have_err) cmhg_error ("%s: %s supplied twice!", key, opt);
+              if (strcmp (opt, "private-word") == 0)
+                {
+                  unsigned n = 0;
+                  if (!((r[pos] == 'r' || r[pos] == 'R') && isdigit ((unsigned char) r[pos + 1]))) cmhg_error ("%s: private-word value must be a register!", key);
+                  pos++;
+                  while (isdigit ((unsigned char) r[pos])) { if (n < 1000) n = n * 10 + (unsigned) (r[pos] - '0'); pos++; }
+                  if (n > 12) cmhg_error ("%s: private-word register must be r0-r12!", key);
+                  v->pw = (int) n; have_pw = 1;
+                }
+              else if (strcmp (opt, "carry-capable") == 0) { v->carry = 1; have_carry = 1; }
+              else { v->errc = 1; have_err = 1; }
+            }
+          while (pos < len && is_space ((unsigned char) r[pos])) pos++;
+        }
+    }
 }
 
 static void parse_cmhg (const char *text, Module *m)
@@ -619,29 +725,56 @@ static void parse_cmhg (const char *text, Module *m)
           if (np < 1) cmhg_error ("swi-decoding-table: needs the prefix");
           m->swi_prefix = strip_quotes (w[0]);
           m->swi_names = np > 1 ? xmalloc (sizeof (char *) * (size_t) (np - 1)) : NULL;
-          for (k = 1; k < np; k++) m->swi_names[k - 1] = strip_quotes (w[k]);
+          m->swi_handlers = np > 1 ? xmalloc (sizeof (char *) * (size_t) (np - 1)) : NULL;
+          if (strchr (r, '(')) cmhg_error ("swi-decoding-table: SWI handlers cannot be passed parameters");
+          for (k = 1; k < np; k++)
+            {
+              char *nm = strip_quotes (w[k]), *slash = strchr (nm, '/');
+              m->swi_handlers[k - 1] = NULL;
+              if (slash)
+                {
+                  char *q;
+                  *slash = 0;
+                  q = slash + 1;
+                  if (!(is_alpha ((unsigned char) *q) || *q == '_')) cmhg_error ("swi-decoding-table: '%s' is not a function name", q);
+                  for (; *q; q++) if (!is_word ((unsigned char) *q)) cmhg_error ("swi-decoding-table: '%s' is not a function name", slash + 1);
+                  m->swi_handlers[k - 1] = xstrdup (slash + 1);
+                }
+              m->swi_names[k - 1] = nm;
+            }
           m->nswi = np - 1;
         }
       else if (strcmp (key, "swi-handler-code") == 0) m->swi_handler = one_name (key, r);
+      else if (strcmp (key, "swi-decoding-code") == 0)
+        {
+          int np;
+          char **w;
+          char *slash, *q;
+          if (m->swi_dec) cmhg_error ("Only supply one swi-decoding-code!");
+          w = split_words (r, 1, &np);                                    /* FN, or NAME/NUMBER: the name to number and the number to name functions */
+          if (np != 1) cmhg_error ("swi-decoding-code: needs one function name, or NAME/HANDLER (the name to number function and the number to name function)");
+          slash = strchr (w[0], '/');
+          if (slash) { *slash = 0; q = slash + 1; }
+          else q = NULL;
+          if (!(is_alpha ((unsigned char) w[0][0]) || w[0][0] == '_')) cmhg_error ("swi-decoding-code: needs one function name, or NAME/HANDLER (the name to number function and the number to name function)");
+          { const char *c; for (c = w[0]; *c; c++) if (!is_word ((unsigned char) *c)) cmhg_error ("swi-decoding-code: needs one function name, or NAME/HANDLER (the name to number function and the number to name function)"); }
+          if (q)
+            {
+              const char *c;
+              if (!(is_alpha ((unsigned char) *q) || *q == '_')) cmhg_error ("swi-decoding-code: needs one function name, or NAME/HANDLER (the name to number function and the number to name function)");
+              for (c = q; *c; c++) if (!is_word ((unsigned char) *c)) cmhg_error ("swi-decoding-code: needs one function name, or NAME/HANDLER (the name to number function and the number to name function)");
+            }
+          m->swi_dec = w[0];
+          m->swi_dec2 = q ? xstrdup (q) : NULL;
+        }
+      else if (strcmp (key, "module-is-not-reentrant") == 0)
+        {
+          if (*r) cmhg_error ("module-is-not-reentrant: takes no value");
+          m->notreent = 1;
+        }
       else if (strcmp (key, "irq-handlers") == 0 || strcmp (key, "vector-handlers") == 0 || strcmp (key, "generic-veneers") == 0)
         {
-          int np, k;
-          char **w = split_words (r, 1, &np);
-          if (strchr (r, '(')) cmhg_error ("%s: handler options such as private-word: and carry-capable: are not supported", key);
-          for (k = 0; k < np; k++)
-            {
-              char *slash = strchr (w[k], '/');
-              if (slash) { *slash = 0; add_veneer (m, key, w[k], slash + 1); }
-              else
-                {
-                  Buf hb;                                                     /* CMunge: the handler of NAME is NAME_handler */
-                  buf_init (&hb);
-                  buf_adds (&hb, w[k]);
-                  buf_adds (&hb, "_handler");
-                  add_veneer (m, key, w[k], hb.s);
-                  free (hb.s);
-                }
-            }
+          parse_handlers (m, key, r);
         }
       else if (strcmp (key, "event-handler") == 0)
         {
@@ -651,7 +784,16 @@ static void parse_cmhg (const char *text, Module *m)
           char *slash;
           Veneer *v;
           if (np < 1) cmhg_error ("event-handler: needs the name of the handler function");
-          if (strchr (r, ':')) cmhg_error ("%s: handler options are not supported", key);                /* (the event numbers may be in parentheses: the preprocessor made them) */
+          {                                                               /* (the event numbers may be in parentheses: the preprocessor made them) */
+            const char *c;
+            for (c = r; *c; c++)
+              if (*c == '(')
+                {
+                  const char *d = c + 1;
+                  while (is_space ((unsigned char) *d)) d++;
+                  if (isalpha ((unsigned char) *d)) cmhg_error ("Event handlers cannot be passed parameters");
+                }
+          }
           slash = strchr (w[0], '/');
           if (slash)
             {
@@ -673,8 +815,16 @@ static void parse_cmhg (const char *text, Module *m)
               v->ev[v->nev++] = parse_int (w[k]);
             }
         }
-      else if (strcmp (key, "module-is-runnable") == 0) m->runnable = 1;
-      else if (strcmp (key, "module-is-c-plus-plus") == 0) m->cxx = 1;
+      else if (strcmp (key, "module-is-runnable") == 0)
+        {
+          if (*r) cmhg_error ("module-is-runnable: takes no value here (CMunge's simple-app: is not supported)");
+          m->runnable = 1;
+        }
+      else if (strcmp (key, "module-is-c-plus-plus") == 0)
+        {
+          if (*r) cmhg_error ("module-is-c-plus-plus: takes no value");
+          m->cxx = 1;
+        }
       else if (strcmp (key, "international-help-file") == 0)
         {
           size_t pos = 0;
@@ -687,10 +837,16 @@ static void parse_cmhg (const char *text, Module *m)
   if (!m->title || !*m->title) cmhg_error ("title-string: is missing");
   if (!m->help || !*m->help) cmhg_error ("help-string: is missing");
   /* the SWIs of a module: a chunk, a handler and a decoding table go together (CMunge: a prefix of the module's title when there is no table) */
-  if (m->swi_handler && !m->swi_chunk) cmhg_error ("swi-handler-code: needs a swi-chunk-base-number:");
-  if (m->swi_chunk && !m->swi_handler) cmhg_error ("swi-chunk-base-number: needs a swi-handler-code:");
-  if (m->swi_prefix && !m->swi_chunk) cmhg_error ("swi-decoding-table: needs a swi-chunk-base-number:");
-  if (m->swi_handler && !m->swi_prefix) m->swi_prefix = xstrdup (m->title);
+  {
+    int per_swi = 0, k;
+    for (k = 0; k < m->nswi; k++) if (m->swi_handlers[k]) per_swi = 1;
+    if ((m->swi_handler || per_swi) && !m->swi_chunk) cmhg_error ("swi-handler-code: needs a swi-chunk-base-number:");
+    if (m->swi_chunk && !m->swi_handler && !per_swi) cmhg_error ("swi-chunk-base-number: needs a swi-handler-code:");
+    if (m->swi_prefix && !m->swi_chunk) cmhg_error ("swi-decoding-table: needs a swi-chunk-base-number:");
+    if (m->swi_dec && !m->swi_chunk) cmhg_error ("swi-decoding-code: needs a swi-chunk-base-number:");
+    m->swi_notable = m->swi_dec != NULL && m->swi_prefix == NULL;
+    if ((m->swi_handler || per_swi) && !m->swi_prefix) m->swi_prefix = xstrdup (m->title);
+  }
 }
 
 /* ---------------------------------------------------------------- the generators */
@@ -815,6 +971,14 @@ static unsigned representable (unsigned i)
   return i & mask;
 }
 
+/* swi-decoding-table: Name/function - is there a function of its own for one of the SWIs? */
+static int any_swi_function (const Module *m)
+{
+  int i;
+  for (i = 0; i < m->nswi; i++) if (m->swi_handlers[i]) return 1;
+  return 0;
+}
+
 static int cmp_unsigned (const void *a, const void *b)
 {
   unsigned x = *(const unsigned *) a, y = *(const unsigned *) b;
@@ -825,14 +989,17 @@ static char *generate_asm (const Module *m, const char *src)
 {
   Out o;
   char *helpline, *hb;
-  int has_svc = m->service != NULL, has_swi = m->swi_handler != NULL, i, k;
+  int per_swi = 0;
+  int has_svc = m->service != NULL, has_swi, i, k;
   int ncmds = m->ncmds;
   unsigned *nums = NULL;
   int nn = 0;
   int share = 0;                                          /* the decoding table of the SWIs is the title string when the SWI prefix is the title (as it was) */
 
+  per_swi = any_swi_function (m);
+  has_swi = m->swi_handler != NULL || per_swi;
   helpline = help_line (m);
-  if (has_swi && m->swi_prefix && strlen (m->swi_prefix) == strlen (m->title))
+  if (has_swi && m->swi_prefix && !m->swi_notable && strlen (m->swi_prefix) == strlen (m->title))
     {
       share = 1;
       for (k = 0; m->swi_prefix[k]; k++) if (tolower ((unsigned char) m->swi_prefix[k]) != tolower ((unsigned char) m->title[k])) share = 0;
@@ -851,8 +1018,8 @@ static char *generate_asm (const Module *m, const char *src)
   A (&o, "\t.word\t%s", ncmds ? "cmdtab - _start" : "0");
   A (&o, "\t.word\t%s\t\t\t@ SWI chunk base", hx (has_swi ? m->swi_chunk : 0));
   A (&o, "\t.word\t%s", has_swi ? "swi_entry - _start" : "0");
-  A (&o, "\t.word\t%s", share ? "title - _start\t\t@ the decoding table shares the title string" : has_swi && m->swi_prefix ? "swi_table - _start" : "0");
-  A (&o, "\t.word\t0\t\t\t\t@ SWI decoding code\n\t.word\t%s\n\t.word\tflags - _start", m->mfile ? "msgfile - _start\t\t@ messages file (international-help-file)" : "0\t\t\t\t@ messages file");
+  A (&o, "\t.word\t%s", share ? "title - _start\t\t@ the decoding table shares the title string" : has_swi && m->swi_prefix && !m->swi_notable ? "swi_table - _start" : "0");
+  A (&o, "\t.word\t%s\n\t.word\t%s\n\t.word\tflags - _start", m->swi_dec ? "swi_decode - _start\t\t@ SWI decoding code" : "0\t\t\t\t@ SWI decoding code", m->mfile ? "msgfile - _start\t\t@ messages file (international-help-file)" : "0\t\t\t\t@ messages file");
   A (&o, "title:\n\t.asciz\t\"%s\"", m->title);
   if (share)
     {
@@ -868,7 +1035,7 @@ static char *generate_asm (const Module *m, const char *src)
       A (&o, "msgfile:\n%s\n\t.byte\t0", s);
       free (s);
     }
-  if (has_swi && m->swi_prefix && !share)
+  if (has_swi && m->swi_prefix && !share && !m->swi_notable)
     {
       A (&o, "swi_table:\n\t.asciz\t\"%s\"", m->swi_prefix);
       for (i = 0; i < m->nswi; i++) A (&o, "\t.asciz\t\"%s\"", m->swi_names[i]);
@@ -896,7 +1063,8 @@ static char *generate_asm (const Module *m, const char *src)
           unsigned info = c->min | (c->gstrans << 8) | (c->max << 16) | ((unsigned) c->fs_command << 31) | ((unsigned) c->status_cmd << 30) | ((unsigned) c->international << 28);
           char buf[64];
           A (&o, "\t.asciz\t\"%s\"\n\t.align\t2", c->name);
-          A (&o, "\t.word\tcmd%d - _start\t\t@ code", i);
+          if (c->nohandler) A (&o, "\t.word\t0\t\t\t\t@ no handler (no-handler:)");
+          else A (&o, "\t.word\tcmd%d - _start\t\t@ code", i);
           A (&o, "\t.word\t%s\t\t\t@ min %u, max %u parameters", hx (info), c->min, c->max);
           if (c->has_syntax) { sprintf (buf, "is%d - _start", i); A (&o, "\t.word\t%s", buf); }
           else A (&o, "\t.word\t0\t\t\t\t@ no invalid syntax line");
@@ -938,13 +1106,45 @@ static char *generate_asm (const Module *m, const char *src)
              "\t.balign\t4\nstart:\n\tmov\tr4, r0\n\tswi\tOS_GetEnv\n\tbic\tsp, r1, #7\n\tmov\tr0, r4\n\tadrl\tr1, title\n\tbl\t__modlib_start");
     }
   /* commands */
-  if (ncmds)
-    {
-      A (&o, "%s", "");
-      for (i = 0; i < ncmds; i++) A (&o, "cmd%d:\n\tmov\tr2, #%d\n\tb\tcmd_common", i, i);
-      A (&o, "cmd_common:\t\t\t\t\t@ r0 = argument string, r1 = number of parameters, r2 = the number of the command, r12 = private word\n\tstmfd\tsp!, {r4-r11, lr}\n\tmov\tr3, r12\n\tmov\tr5, r0\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4", m->cmd_handler);
+  {
+    const char **hl = xmalloc (sizeof (char *) * (size_t) (ncmds + 1));
+    int nh = 0, j, nhandled = 0;
+    for (i = 0; i < ncmds; i++)
+      {
+        const Cmd *c = &m->cmds[i];
+        const char *h;
+        if (c->nohandler) continue;
+        nhandled++;
+        h = c->handler ? c->handler : m->cmd_handler;
+        for (j = 0; j < nh; j++) if (strcmp (hl[j], h) == 0) break;
+        if (j == nh) hl[nh++] = h;
+      }
+    if (nhandled)
+      {
+        char lab[2][32];
+        A (&o, "%s", "");
+        for (i = 0; i < ncmds; i++)
+          {
+            const Cmd *c = &m->cmds[i];
+            const char *h;
+            if (c->nohandler) continue;
+            h = c->handler ? c->handler : m->cmd_handler;
+            if (m->cmd_handler && strcmp (h, m->cmd_handler) == 0) strcpy (lab[0], "cmd_common");
+            else { for (j = 0; strcmp (hl[j], h) != 0; j++) ; sprintf (lab[0], "cmd_h%d", j); }
+            A (&o, "cmd%d:\n\tmov\tr2, #%d\n\tb\t%s", i, i, lab[0]);
+          }
+        for (j = 0; j < nh; j++)
+          {
+            if (m->cmd_handler && strcmp (hl[j], m->cmd_handler) == 0) strcpy (lab[1], "cmd_common");
+            else sprintf (lab[1], "cmd_h%d", j);
+            A (&o, "%s:%s\n\tstmfd\tsp!, {r4-r11, lr}\n\tmov\tr3, r12\n\tmov\tr5, r0\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4%s", lab[1],
+               j == 0 ? "\t\t\t\t\t@ r0 = argument string, r1 = number of parameters, r2 = the number of the command, r12 = private word" : "", hl[j], j < nh - 1 ? "\n\tb\tcmd_ret" : "");
+          }
+        if (nh > 1) A (&o, "cmd_ret:");
       A (&o, "\tcmp\tr0, #0\n\tbeq\tcmd_ok\n\tcmp\tr0, r5\t\t\t\t@ the handler gave back the argument string: help_PRINT_BUFFER\n\tbeq\tcmd_ok\n\tcmn\tr0, #1\t\t\t\t@ configure_BAD_OPTION (-1): V set with r0 = 0, as CMunge's veneer returns it\n\tmoveq\tr0, #0\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\t\t\t@ V set: an error, r0 = the error block\n\tldmfd\tsp!, {r4-r11, pc}\ncmd_ok:\tmov\tr0, #0\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r4-r11, pc}");
-    }
+      }
+    free (hl);
+  }
   /* service calls */
   if (has_svc)
     {
@@ -1001,12 +1201,38 @@ static char *generate_asm (const Module *m, const char *src)
   if (has_swi)
     {
       A (&o, "%s", "");
-      A (&o, "swi_entry:\t\t\t\t\t@ r11 = SWI number - chunk base, r0 - r9 = the SWI's registers, r12 = private word\n\tstmfd\tsp!, {r0-r9, lr}\n\tmov\tr0, r11\n\tmov\tr1, sp\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tswi_err\n\tldmfd\tsp!, {r0-r9, pc}\nswi_err:\n\tadd\tsp, sp, #4\n\tcmn\tr0, #1\t\t\t\t\t@ error_BAD_SWI (-1)?\n\tbeq\tswi_bad\nswi_err2:\n\tldmfd\tsp!, {r1-r9, lr}\n\tmsr\tcpsr_f, #0x10000000\n\tmov\tpc, lr\nswi_bad:\t\t\t\t\t\t@ the error of the system for a SWI that is not in the module, made as CMunge's veneer makes it: SWI value out of range for module <title>\n\tadr\tr0, swi_bad_block\n\tmov\tr1, #0\n\tmov\tr2, #0\n\tadrl\tr4, title\n\tswi\t0x61506\t\t\t\t\t@ XMessageTrans_ErrorLookup: r0 -> the error, V set\n\tb\tswi_err2\nswi_bad_block:\n\t.word\t0x1e6\n\t.asciz\t\"BadSWI\"\n\t.balign\t4", m->swi_handler);
+      Buf swi_call;
+      buf_init (&swi_call);
+      if (per_swi)                                                /* swi-decoding-table: Name/function ...: the SWI's own function (the same arguments as swi-handler-code's); the other SWIs go to swi-handler-code, or are not known (error_BAD_SWI) */
+        {
+          const char *dflt = m->swi_handler ? m->swi_handler : "swi_unknown";
+          buf_printf (&swi_call, "\tadrl\tlr, swi_ret\t\t\t\t@ the functions below return here\n\tcmp\tr0, #%d\n\taddlo\tpc, pc, r0, lsl #2\n\tb\t%s\n", m->nswi, dflt);
+          for (i = 0; i < m->nswi; i++) buf_printf (&swi_call, "\tb\t%s\n", m->swi_handlers[i] ? m->swi_handlers[i] : dflt);
+          if (!m->swi_handler) buf_adds (&swi_call, "swi_unknown:\n\tmvn\tr0, #0\t\t\t\t\t@ error_BAD_SWI\n");
+          buf_adds (&swi_call, "swi_ret:\n");
+        }
+      else buf_printf (&swi_call, "\tbl\t%s\n", m->swi_handler);
+      A (&o, "swi_entry:\t\t\t\t\t@ r11 = SWI number - chunk base, r0 - r9 = the SWI's registers, r12 = private word\n\tstmfd\tsp!, {r0-r9, lr}\n\tmov\tr0, r11\n\tmov\tr1, sp\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n%s\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tswi_err\n\tldmfd\tsp!, {r0-r9, pc}\nswi_err:\n\tadd\tsp, sp, #4\n\tcmn\tr0, #1\t\t\t\t\t@ error_BAD_SWI (-1)?\n\tbeq\tswi_bad\nswi_err2:\n\tldmfd\tsp!, {r1-r9, lr}\n\tmsr\tcpsr_f, #0x10000000\n\tmov\tpc, lr\nswi_bad:\t\t\t\t\t\t@ the error of the system for a SWI that is not in the module, made as CMunge's veneer makes it: SWI value out of range for module <title>\n\tadr\tr0, swi_bad_block\n\tmov\tr1, #0\n\tmov\tr2, #0\n\tadrl\tr4, title\n\tswi\t0x61506\t\t\t\t\t@ XMessageTrans_ErrorLookup: r0 -> the error, V set\n\tb\tswi_err2\nswi_bad_block:\n\t.word\t0x1e6\n\t.asciz\t\"BadSWI\"\n\t.balign\t4", swi_call.s);
+      free (swi_call.s);
+    }
+  /* swi-decoding-code */
+  if (m->swi_dec)
+    {
+      A (&o, "%s", "");
+      if (!m->swi_dec2)
+        A (&o, "swi_decode:\t\t\t\t\t@ swi-decoding-code FN: int FN (_kernel_swi_regs *r, void *pw) gets r0 - r3 as the kernel gave them (r0 < 0: r1 = the whole name with its prefix, answer the offset in r0; else r0 = the offset, r1 = buffer, r2 = where to write the whole name, r3 = the limit, answer the new r2)\n"
+               "\tstmfd\tsp!, {r0-r3, r4, lr}\n\tmov\tr0, sp\n\tmov\tr1, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tbl\t%s\n\tmov\tsp, r4\n\tldmfd\tsp!, {r0-r3, r4, pc}", m->swi_dec);
+      else
+        A (&o, "swi_decode:\t\t\t\t\t@ swi-decoding-code NAME/NUMBER: int NAME (const char *name, void *pw) for a name (r0 < 0), int NUMBER (int number, char *buffer, int offset, int limit, void *pw) for a number\n"
+               "\tstmfd\tsp!, {r0-r3, r4, lr}\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n\tcmp\tr0, #0\n\tbge\tswi_decode_num\n\tmov\tr0, r1\n\tmov\tr1, r12\n\tbl\t%s\n\tmov\tsp, r4\n\tstr\tr0, [sp]\t\t\t\t@ r0 = the offset in the chunk\n\tldmfd\tsp!, {r0-r3, r4, pc}\n"
+               "swi_decode_num:\n\tsub\tsp, sp, #8\n\tstr\tr12, [sp]\t\t\t\t@ the private word is the fifth argument\n\tbl\t%s\n\tadd\tsp, sp, #8\n\tmov\tsp, r4\n\tstr\tr0, [sp, #8]\t\t\t@ r2 = the new offset in the buffer\n\tldmfd\tsp!, {r0-r3, r4, pc}", m->swi_dec, m->swi_dec2);
     }
   /* vector / IRQ / generic veneers */
   for (i = 0; i < m->nven; i++)
     {
       const Veneer *v = &m->ven[i];
+      char top[8], movs[200];
+      int generic = strcmp (v->kind, "generic-veneers") == 0;
       A (&o, "%s", "");
       A (&o, "\t.global\t%s\n%s:\t\t\t\t\t\t@ %s: r12 = private word; for a vector lr = the pass-on address and the kernel stacked the claim address", v->entry, v->entry, v->kind);
       if (v->nev)                                       /* an event-handler: events that are not in the list go on at once */
@@ -1015,10 +1241,20 @@ static char *generate_asm (const Module *m, const char *src)
           for (e = 0; e < v->nev; e++) A (&o, "\t%s\tr0, #%u", e == 0 ? "teq" : "teqne", v->ev[e]);
           A (&o, "\tmovne\tpc, lr");
         }
-      A (&o, "\tstmfd\tsp!, {r0-r11, lr}\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7");
-      if (strcmp (v->kind, "generic-veneers") == 0)
-        /* as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value */
-        A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tcmp\tr0, #0\n\tstrne\tr0, [sp]\t\t\t@ the error block goes back into r0\n\torrne\tr6, r6, #0x10000000\t\t@ and V is set\n\tmsr\tcpsr_f, r6\n\tldmfd\tsp!, {r0-r11, pc}", v->handler);
+      strcpy (top, v->pw != 12 ? "r12" : "r11");              /* private-word: rN - the handler gets rN, and r12 is kept for the caller */
+      if (v->pw == 12) strcpy (movs, "\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n");
+      else sprintf (movs, "\tmov\tr1, r%d\t\t\t\t@ the private word is in r%d (private-word:)\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n", v->pw, v->pw);
+      A (&o, "\tstmfd\tsp!, {r0-%s, lr}\n%s\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7", top, movs);
+      if (generic)
+        {
+          /* as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value;
+             carry-capable: 2 = return with C set (and V clear), the registers as the handler left them */
+          const char *err = v->carry ? "\tcmp\tr0, #2\n\torreq\tr6, r6, #0x20000000\t\t@ 2: C set\n\tbiceq\tr6, r6, #0x10000000\t\t@ and V clear\n\tcmpne\tr0, #0\n" : "\tcmp\tr0, #0\n";
+          A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n%s\tstrne\tr0, [sp]\t\t\t@ the error block goes back into r0\n\torrne\tr6, r6, #0x10000000\t\t@ and V is set\n\tmsr\tcpsr_f, r6\n\tldmfd\tsp!, {r0-%s, pc}", v->handler, err, top);
+        }
+      else if (v->errc)
+        /* error-capable: 0 = claim, 1 = pass on, anything else is a pointer to an error block: claim with V set and r0 = the block */
+        A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #1\n\tbhi\t%s_err\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr\n%s_err:\n\tstr\tr0, [sp]\t\t\t\t@ the error block goes back into r0\n\torr\tr12, r12, #0x10000000\t\t@ V set\n\tldmfd\tsp!, {r0-r11, lr}\n\tldr\tlr, [sp], #4\t\t\t@ and the vector is claimed\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr", v->handler, v->entry, v->entry);
       else
         A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr", v->handler);
     }
@@ -1061,16 +1297,41 @@ static char *generate_h (const Module *m, const char *src)
   if (m->final) A (&o, "_kernel_oserror *%s (int fatal, int podule_base, void *pw);", m->final);
   if (m->ncmds)
     {
-      A (&o, "_kernel_oserror *%s (const char *arg_string, int argc, int number, void *pw);", m->cmd_handler);
+      int j, k;
+      for (i = -1; i < m->ncmds; i++)                       /* the table's handler, then the commands' own functions, each once */
+        {
+          const char *fn = i < 0 ? m->cmd_handler : m->cmds[i].handler;
+          if (!fn) continue;
+          for (j = -1; j < i; j++)
+            {
+              const char *g = j < 0 ? m->cmd_handler : m->cmds[j].handler;
+              if (g && strcmp (g, fn) == 0) break;
+            }
+          k = j < i;
+          if (!k) A (&o, "_kernel_oserror *%s (const char *arg_string, int argc, int number, void *pw);", fn);
+        }
       A (&o, "#define help_PRINT_BUFFER\t\t((_kernel_oserror *) arg_string)\n#define arg_CONFIGURE_SYNTAX\t\t((char *) 0)\n#define arg_STATUS\t\t\t((char *) 1)\n#define configure_BAD_OPTION\t\t((_kernel_oserror *) -1)\n#define configure_NUMBER_NEEDED\t\t((_kernel_oserror *) 1)\n#define configure_TOO_LARGE\t\t((_kernel_oserror *) 2)\n#define configure_TOO_MANY_PARAMS\t((_kernel_oserror *) 3)\n");
       A (&o, "/* Command numbers, as passed to the command handler function */");
       for (i = 0; i < m->ncmds; i++) A (&o, "#undef CMD_%s\n#define CMD_%s (%d)", m->cmds[i].name, m->cmds[i].name, i);
       A (&o, "%s", "");
     }
   if (m->service) A (&o, "void %s (int service_number, _kernel_swi_regs *r, void *pw);", m->service);
-  if (m->swi_handler)
+  if (m->swi_dec)
     {
-      A (&o, "_kernel_oserror *%s (int swi_offset, _kernel_swi_regs *r, void *pw);", m->swi_handler);
+      if (!m->swi_dec2) A (&o, "int %s (_kernel_swi_regs *r, void *pw);", m->swi_dec);
+      else A (&o, "int %s (const char *name, void *pw);\nint %s (int number, char *buffer, int offset, int limit, void *pw);", m->swi_dec, m->swi_dec2);
+    }
+  if (m->swi_handler || any_swi_function (m))
+    {
+      if (m->swi_handler) A (&o, "_kernel_oserror *%s (int swi_offset, _kernel_swi_regs *r, void *pw);", m->swi_handler);
+      {
+        const char **fns = xmalloc (sizeof (char *) * (size_t) (m->nswi + 1));
+        int nf = 0, j;
+        for (i = 0; i < m->nswi; i++) if (m->swi_handlers[i]) fns[nf++] = m->swi_handlers[i];
+        for (i = 0; i < nf; i++) for (j = i + 1; j < nf; j++) if (strcmp (fns[j], fns[i]) < 0) { const char *t = fns[i]; fns[i] = fns[j]; fns[j] = t; }
+        for (i = 0; i < nf; i++) if (i == 0 || strcmp (fns[i], fns[i - 1]) != 0) A (&o, "_kernel_oserror *%s (int swi_offset, _kernel_swi_regs *r, void *pw);", fns[i]);
+        free (fns);
+      }
       A (&o, "#define Module_SWIChunk\t\t%s", hx (m->swi_chunk));
       A (&o, "\n/* SWI number definitions (as CMunge writes them) */\n#define %s_00 (%s)", m->swi_prefix, hx (m->swi_chunk));
       for (i = 0; i < m->nswi; i++)
@@ -1084,7 +1345,19 @@ static char *generate_h (const Module *m, const char *src)
     }
   for (i = 0; i < m->nven; i++)
     A (&o, "extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);", m->ven[i].entry, strcmp (m->ven[i].kind, "generic-veneers") == 0 ? "_kernel_oserror *" : "int", m->ven[i].handler);        /* (CMunge: a generic handler returns an error) */
-  if (m->nven) A (&o, "\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)");
+  {
+    int any_carry = 0, any_err = 0;
+    for (i = 0; i < m->nven; i++)
+      {
+        if (strcmp (m->ven[i].kind, "generic-veneers") == 0 && m->ven[i].carry) any_carry = 1;
+        if (m->ven[i].errc) any_err = 1;
+      }
+    if (any_carry)
+      A (&o, "\n/* VENEER_SETCARRY can be returned from a generic veneer's function that is carry-capable: return with C set, all other registers as the function left them */\n#define VENEER_SETCARRY ((_kernel_oserror *) 2)");
+    if (m->nven) A (&o, "\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)");
+    if (m->nven && any_err)
+      A (&o, "\n/* VECTOR_ERROR (err) can be returned from a vector handler that is error-capable: claim the vector and return with V set and r0 = the error block */\n#define VECTOR_ERROR(err) ((int) (err))");
+  }
   A (&o, "\n#ifdef __cplusplus\n}\n#endif\n#endif");
   buf_addc (&o.b, '\n');
   free (h.name); free (h.version); free (h.rest); free (guard.s);

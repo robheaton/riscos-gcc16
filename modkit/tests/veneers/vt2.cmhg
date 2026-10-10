@@ -1,0 +1,24 @@
+; Vt2: the CMHG directives and options that vt.cmhg does not use: a SWI with its own function, swi-decoding-code, the options of the veneers (private-word:, carry-capable:, error-capable:),
+; the commands with their own function (handler:), without one (no-handler:), and module-is-not-reentrant
+title-string:           Vt2
+help-string:            Vt2 1.00
+date-string:            10 Oct 2026
+
+module-is-not-reentrant:
+initialisation-code:    vt2_init
+
+swi-chunk-base-number:  0x58D00
+swi-decoding-table:     V2 One/v2_one Two Three/v2_three
+swi-handler-code:       v2_swi
+swi-decoding-code:      v2_dec
+
+; private-word: r4 (the kernel's callers have the module's private word in r4), carry-capable: (a function may answer with VENEER_SETCARRY), both together with the private word in r0
+generic-veneers:        pw_a/pw_a_handler (private-word: r4), cc_a/cc_a_handler (carry-capable:),
+                        both_a/both_a_handler (private-word: r0, carry-capable:), plain_a/plain_a_handler
+vector-handlers:        vec_e/vec_e_handler (error-capable:), vec_n/vec_n_handler
+
+command-keyword-table: v2_table
+  V2_Table(min-args: 0, max-args: 0, help-text: "*V2_Table uses the handler of the table\n"),
+  V2_Own(min-args: 0, max-args: 0, handler: v2_own, help-text: "*V2_Own has a function of its own\n"),
+  V2_Help(no-handler:, help-text: "*V2_Help only has a help text\n"),
+  V2_Own2(min-args: 0, max-args: 0, handler: v2_own2)

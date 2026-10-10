@@ -1,0 +1,13 @@
+; CmhgE: swi-decoding-code NAME/NUMBER on the machine: two functions, the name to number one and the number to name one; no table of names (CmhgD has the one function form).
+; (pack/module42; the same C file, cmhgd.c, built with -DPAIR)
+title-string:           CmhgE
+help-string:            CmhgE 1.00
+date-string:            10 Oct 2026
+
+initialisation-code:    ce_init
+swi-chunk-base-number:  0x58E40
+swi-handler-code:       ce_swi
+swi-decoding-code:      ce_n2n/ce_n2s
+
+command-keyword-table: ce_table
+  CmhgE_Test(min-args: 0, max-args: 0, help-text: "*CmhgE_Test asks the kernel for the names of the module's SWIs.\n", invalid-syntax: "Syntax: *CmhgE_Test")

@@ -32,7 +32,7 @@ def cstr(img, off):
     return img[off:img.index(0, off)].decode("latin-1")
 
 
-def decode(img, ncmds):
+def decode(img, ncmds=None):
     w = lambda off: struct.unpack_from("<I", img, off)[0]
     h = [w(4 * i) for i in range(13)]
     d = {"start": h[0] != 0, "init": h[1] != 0, "final": h[2] != 0, "service": h[3] != 0, "title": cstr(img, h[4]), "help": cstr(img, h[5]),
@@ -45,8 +45,10 @@ def decode(img, ncmds):
     d["swi names"] = names
     cmds = []
     k = h[6]
-    for _ in range(ncmds if h[6] else 0):
-        name = cstr(img, k); k += (len(name) + 1 + 3) & ~3
+    for _ in range(256 if h[6] else 0):
+        name = cstr(img, k)
+        if not name: break                                                        # (the table ends with a zero word: commands without a handler are not counted by the caller)
+        k += (len(name) + 1 + 3) & ~3
         code, info, syn, hlp = (w(k + 4 * i) for i in range(4)); k += 16
         cmds.append({"name": name, "code": code != 0, "min": info & 255, "gstrans": (info >> 8) & 255, "max": (info >> 16) & 255, "flags": info >> 24, "syntax": cstr(img, syn), "help": cstr(img, hlp)})
     d["commands"] = cmds

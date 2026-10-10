@@ -1,0 +1,13 @@
+; Vt3: swi-decoding-code with two functions (the name to number one, the number to name one) beside a SWI chunk with no table of names, a command table without a handler of its own (-)
+title-string:           Vt3
+help-string:            Vt3 1.00
+date-string:            10 Oct 2026
+
+initialisation-code:    vt3_init
+swi-chunk-base-number:  0x58D40
+swi-handler-code:       v3_swi
+swi-decoding-code:      v3_n2n/v3_n2s
+
+command-keyword-table: -
+  V3_Own(min-args: 0, max-args: 0, handler: v3_own),
+  V3_Nothing(min-args: 0, max-args: 0)

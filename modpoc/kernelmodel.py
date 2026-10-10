@@ -180,7 +180,7 @@ class Kernel:
         a = cmd_ptr + j; argtext = cmd[j:]
         for m in self.modules:
             for (cname, code, mn, mx, syn, hlp) in m.commands:
-                if cname.lower() == name.lower():
+                if cname.lower() == name.lower() and code != 0:                       # (the kernel: an execute offset of 0 is "not a command", for a command with no-handler:; it looks on)
                     words = self.count_params(argtext)
                     if words < mn or words > mx:
                         cpu.r[0] = self.error_block(0x1E0, cstr(m.data, syn)); cpu.v = 1; return

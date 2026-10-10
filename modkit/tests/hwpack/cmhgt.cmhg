@@ -1,0 +1,23 @@
+; CmhgT: the CMHG options of 16.2.0-18 on the machine: a function of its own for a SWI, handler: and no-handler: in the command table, the options of the generic veneers and the vector veneers
+; (pack/module42 of the work area; the simulation is tests/sim-cmhg2.py and tests/sim-cmhgt.py)
+title-string:           CmhgT
+help-string:            CmhgT 1.00
+date-string:            10 Oct 2026
+
+initialisation-code:    ct_init
+module-is-not-reentrant:
+
+swi-chunk-base-number:  0x58DC0
+swi-decoding-table:     CmhgT One/ct_one Two Three/ct_three
+swi-handler-code:       ct_swi
+
+generic-veneers:        ct_pw/ct_pw_handler (private-word: r4), ct_cc/ct_cc_handler (carry-capable:),
+                        ct_both/ct_both_handler (private-word: r0, carry-capable:), ct_plain/ct_plain_handler
+vector-handlers:        ct_vec/ct_vec_handler (error-capable:), ct_vecn/ct_vecn_handler
+
+command-keyword-table: ct_table
+  CmhgT_Test(min-args: 0, max-args: 0, help-text: "*CmhgT_Test checks everything in SVC mode.\n", invalid-syntax: "Syntax: *CmhgT_Test"),
+  CmhgT_Table(min-args: 0, max-args: 0, help-text: "*CmhgT_Table is handled by the function of the table.\n"),
+  CmhgT_Own(min-args: 0, max-args: 0, handler: ct_own, help-text: "*CmhgT_Own has a function of its own.\n"),
+  CmhgT_Help(no-handler:, help-text: "*CmhgT_Help has a help text and no code.\n"),
+  CmhgT_Try(min-args: 1, max-args: 255, help-text: "*CmhgT_Try <command> runs the command and prints the error that it gives.\n", invalid-syntax: "Syntax: *CmhgT_Try <command>")
