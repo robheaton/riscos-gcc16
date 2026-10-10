@@ -12,6 +12,9 @@ The non-X functions (socket_creat) are not made; a module that uses them is told
   OSLIB_INCLUDE_DIR defaults to $OSLIB/oslib when the environment variable OSLIB is set, else ~/gccsdk/env/include/oslib."""
 import argparse, glob, os, re, sys
 
+class MkErr(Exception):
+    pass
+
 def declared(incdir, cache={}):
     """{name: (file, text, offset)} of the X-functions that the OSLib headers of INCDIR declare"""
     if not cache:
@@ -22,7 +25,7 @@ def declared(incdir, cache={}):
 
 def find_decl(incdir, name):
     cache = declared(incdir)
-    if name not in cache: sys.exit("mkoslib: %s is not declared in the OSLib headers of %s" % (name, incdir))
+    if name not in cache: raise MkErr("mkoslib: %s is not declared in the OSLib headers of %s" % (name, incdir))
     return cache[name]
 
 def undefined_in(objects):
@@ -79,6 +82,41 @@ def hdr_entries(incdir, header, swi):
         return entry, exit_, blocks
     return {}, {}, []
 
+def is_nonx(incdir, name):
+    """True when NAME is the non-X form (os_cli) of a declared X-function (xos_cli)"""
+    cache = declared(incdir)
+    return name not in cache and "x" + name in cache
+
+def parse_nonx(incdir, name):
+    """the non-X function NAME: the X-function's data, but the parameters and the result of the non-X declaration; an output that is for the X version only has no parameter, the result is the register that the
+    'Returns:' line names (R0 ... R8 or psr), the type of the result is the one of the declaration; an error calls  __modlib_raise"""
+    d = parse(incdir, "x" + name)
+    f, txt, pos = find_decl(incdir, "x" + name)
+    end = txt.index(";", pos)
+    m = re.match(r"\s*(?:extern|__swi \(0x[0-9A-Fa-f]+\)) ([^;(]+?)\s?\b%s \(([^;]*)\);" % re.escape(name), txt[end + 1:end + 3000])
+    if not m: raise MkErr("mkoslib: %s: no declaration of the non-X function follows the X-function" % name)
+    rtype = re.sub(r"\s+", " ", m.group(1)).strip()
+    plist = re.sub(r"\s+", " ", m.group(2)).strip()
+    params = []
+    if plist != "void":
+        for p in split_params(plist):
+            mm = re.match(r"^(.*?)(\w+)$", p.strip())
+            params.append((mm.group(1).strip(), mm.group(2), p))
+    xnames = {p[1] for p in d["params"]}
+    for p in params:
+        if p[1] not in xnames: raise MkErr("mkoslib: %s: the parameter %r is not one of the X-function's" % (name, p[1]))
+    cstart = txt.rfind("/* ------", 0, pos); cend = txt.index("*/", cstart)
+    mr = re.search(r"^[ *]*Returns:\s+(R(\d+)|psr) \(non-X version only\)\s*$", txt[cstart:cend], re.M)
+    ret = None
+    if mr: ret = 16 if mr.group(1) == "psr" else int(mr.group(2))
+    if rtype == "void":
+        if ret is not None: raise MkErr("mkoslib: %s: it returns void, and the comment says it returns %s" % (name, mr.group(1)))
+    elif ret is None: raise MkErr("mkoslib: %s: it returns %s, and the comment has no 'Returns:' line" % (name, rtype))
+    d = dict(d); d["name"] = name; d["params"] = params; d["nonx"] = True; d["rtype"] = rtype; d["ret"] = ret
+    # the outputs that are not parameters of the non-X function are for the X version only
+    d["outputs"] = {pn: reg for pn, reg in d["outputs"].items() if pn in {p[1] for p in params}}
+    return d
+
 def parse(incdir, name):
     f, txt, pos = find_decl(incdir, name)
     cstart = txt.rfind("/* ------", 0, pos); cend = txt.index("*/", cstart)
@@ -102,16 +140,16 @@ def parse(incdir, name):
         elif mo: outputs[mo.group(1)] = int(mo.group(2))
         elif mp: outputs[mp.group(1)] = 16
         elif re.search(r"value of R\d+ on (entry|exit)", line) or re.search(r"\bR\d+ (= |\|= )", line.split("Calls SWI")[0] if "Calls SWI" in line else ""):
-            sys.exit("mkoslib: %s: the comment line %r is not a pattern that mkoslib knows" % (name, line))
+            raise MkErr("mkoslib: %s: the comment line %r is not a pattern that mkoslib knows" % (name, line))
     ms = re.search(r"Calls SWI (0x[0-9A-Fa-f]+)", comment)
-    if not ms: sys.exit("mkoslib: %s: no 'Calls SWI' in its comment" % name)
+    if not ms: raise MkErr("mkoslib: %s: no 'Calls SWI' in its comment" % name)
     # "with R0 = 0x4", "with R1 |= 0x3, R3 = 0x0", "with R0 = 0x1, R1 += 0x2": constants put into registers after the inputs (up to 16.2.0-17 only R0 was understood and the others were dropped)
     ops = []
     rest = comment[ms.end():].split("\n")[0].rstrip()
     if rest.startswith(" with "):
         for item in rest[6:].rstrip(".").split(", "):
             mo = re.fullmatch(r"R(\d) (=|\|=|\+=) (0x[0-9A-Fa-f]+)", item)
-            if not mo: sys.exit("mkoslib: %s: the comment part %r is not a pattern that mkoslib knows" % (name, item))
+            if not mo: raise MkErr("mkoslib: %s: the comment part %r is not a pattern that mkoslib knows" % (name, item))
             ops.append((int(mo.group(1)), mo.group(2), int(mo.group(3), 16)))
     swi = int(ms.group(1), 16)
     # parameters that the comment gives no register: the Hdr file of OSLib has the table of the SWI (and "name - component N": the parameters that go into a block of words, whose address is the register of the "sequence of" entry)
@@ -127,67 +165,105 @@ def parse(incdir, name):
             if pn in hin: inputs[pn] = hin[pn][0]
             elif pn in hout: outputs[pn] = hout[pn][0]
         if comps:
-            if len(blocks) != 1: sys.exit("mkoslib: %s: the parameters %s are components of a block, but the Hdr file of OSLib does not show one block (%d)" % (name, ", ".join(sorted(comps)), len(blocks)))
+            if len(blocks) != 1: raise MkErr("mkoslib: %s: the parameters %s are components of a block, but the Hdr file of OSLib does not show one block (%d)" % (name, ", ".join(sorted(comps)), len(blocks)))
             block = (blocks[0][0], [pn for pn, k in sorted(comps.items(), key=lambda kv: kv[1])])
     return dict(name=name, header=os.path.basename(f), params=params, inputs=inputs, outputs=outputs, swi=swi, ops=ops, comment=comment, block=block)
 
+def one(d):
+    """the C text of the veneer of D (the dict of parse or parse_nonx)"""
+    name = d["name"]; nonx = d.get("nonx", False)
+    sig = ", ".join(p[2] for p in d["params"]) or "void"
+    flags = 16 in d["outputs"].values() or d.get("ret") == 16
+    L = ["%s%s%s (%s)\n{" % (d["rtype"], "" if d["rtype"].endswith("*") else " ", name, sig) if nonx else "os_error *%s (%s)\n{" % (name, sig), "  unsigned _r[10] = { 0 };"] + (["  unsigned _flags = 0;"] if flags else [])
+    known = {p[1]: p for p in d["params"]}
+    if d["block"]:
+        breg, bnames = d["block"]
+        for pn in bnames:
+            L.append("  _Static_assert (sizeof (%s) == 4, \"%s is not a word\");" % (known[pn][0].strip(), pn))
+        L.append("  unsigned _blk[%d] = { %s };" % (len(bnames), ", ".join("(unsigned) %s" % pn for pn in bnames)))
+        L.append("  _r[%d] = (unsigned) _blk;" % breg)
+    for pn, reg in sorted(d["inputs"].items(), key=lambda kv: kv[1]):
+        if pn not in known: raise MkErr("mkoslib: %s: the comment names an input %r that is not a parameter" % (name, pn))
+        L.append("  _r[%d] = (unsigned) %s;" % (reg, pn))
+    for reg, op, val in d["ops"]: L.append("  _r[%d] %s %#x;" % (reg, op, val))
+    L.append("  os_error *_e = (os_error *) %s (%#x, _r%s);" % ("__modlib_xswif" if flags else "__modlib_xswi", 0x20000 | d["swi"], ", &_flags" if flags else ""))
+    if nonx: L.append("  if (_e)\n    __modlib_raise (_e);")
+    outs = []
+    for pn, reg in sorted(d["outputs"].items(), key=lambda kv: kv[1]):
+        if pn not in known: raise MkErr("mkoslib: %s: the comment names an output %r that is not a parameter" % (name, pn))
+        ptype = known[pn][0].strip()
+        if not ptype.endswith("*"): raise MkErr("mkoslib: %s: output %r is not a pointer parameter (%s)" % (name, pn, ptype))
+        pointee = ptype[:-1].strip()
+        outs.append("    if (%s) *%s = (%s) %s;" % (pn, pn, pointee, "_flags" if reg == 16 else "_r[%d]" % reg))
+    if outs and not nonx: L.append("  if (!_e)\n    {\n" + "\n".join(outs) + "\n    }")
+    elif outs: L += [o[2:] for o in outs]
+    if nonx and d["rtype"] != "void": L.append("  return (%s) %s;" % (d["rtype"], "_flags" if d["ret"] == 16 else "_r[%d]" % d["ret"]))
+    elif not nonx: L.append("  return _e;")
+    L.append("}")
+    for p in d["params"]:
+        if p[1] not in d["inputs"] and p[1] not in d["outputs"] and not (d["block"] and p[1] in d["block"][1]):
+            raise MkErr("mkoslib: %s: the parameter %r has no register in the comment" % (name, p[1]))
+    return "\n".join(L)
+
 def generate(funcs, incdir):
-    heads = []; body = []; uses_flags = False
+    heads = []; body = []; uses_flags = False; uses_raise = False
     for name in funcs:
-        d = parse(incdir, name)
+        d = parse_nonx(incdir, name) if is_nonx(incdir, name) else parse(incdir, name)
+        text = one(d)
         if d["header"] not in heads: heads.append(d["header"])
-        sig = ", ".join(p[2] for p in d["params"]) or "void"
-        flags = 16 in d["outputs"].values()
-        uses_flags = uses_flags or flags
-        L = ["os_error *%s (%s)\n{" % (name, sig), "  unsigned _r[10] = { 0 };"] + (["  unsigned _flags = 0;"] if flags else [])
-        known = {p[1]: p for p in d["params"]}
-        if d["block"]:
-            breg, bnames = d["block"]
-            for pn in bnames:
-                L.append("  _Static_assert (sizeof (%s) == 4, \"%s is not a word\");" % (known[pn][0].strip(), pn))
-            L.append("  unsigned _blk[%d] = { %s };" % (len(bnames), ", ".join("(unsigned) %s" % pn for pn in bnames)))
-            L.append("  _r[%d] = (unsigned) _blk;" % breg)
-        for pn, reg in sorted(d["inputs"].items(), key=lambda kv: kv[1]):
-            if pn not in known: sys.exit("mkoslib: %s: the comment names an input %r that is not a parameter" % (name, pn))
-            L.append("  _r[%d] = (unsigned) %s;" % (reg, pn))
-        for reg, op, val in d["ops"]: L.append("  _r[%d] %s %#x;" % (reg, op, val))
-        L.append("  os_error *_e = (os_error *) %s (%#x, _r%s);" % ("__modlib_xswif" if flags else "__modlib_xswi", 0x20000 | d["swi"], ", &_flags" if flags else ""))
-        outs = []
-        for pn, reg in sorted(d["outputs"].items(), key=lambda kv: kv[1]):
-            if pn not in known: sys.exit("mkoslib: %s: the comment names an output %r that is not a parameter" % (name, pn))
-            ptype = known[pn][0].strip()
-            if not ptype.endswith("*"): sys.exit("mkoslib: %s: output %r is not a pointer parameter (%s)" % (name, pn, ptype))
-            pointee = ptype[:-1].strip()
-            outs.append("    if (%s) *%s = (%s) %s;" % (pn, pn, pointee, "_flags" if reg == 16 else "_r[%d]" % reg))
-        if outs: L.append("  if (!_e)\n    {\n" + "\n".join(outs) + "\n    }")
-        L.append("  return _e;\n}")
-        for p in d["params"]:
-            if p[1] not in d["inputs"] and p[1] not in d["outputs"] and not (d["block"] and p[1] in d["block"][1]):
-                sys.exit("mkoslib: %s: the parameter %r has no register in the comment" % (name, p[1]))
-        body.append("\n".join(L))
+        uses_flags = uses_flags or "__modlib_xswif" in text
+        uses_raise = uses_raise or d.get("nonx", False)
+        body.append(text)
     head = "/* Generated by mkoslib.py from the OSLib headers.  DO NOT EDIT. */\n"
     head += "#include \"kernel.h\"\n" + "".join('#include "oslib/%s"\n' % h for h in heads)
     head += "\nextern _kernel_oserror *__modlib_xswi (unsigned swi_x, unsigned *regs);\n"
     if uses_flags: head += "extern _kernel_oserror *__modlib_xswif (unsigned swi_x, unsigned *regs, unsigned *flags);\n"
+    if uses_raise: head += "extern void __modlib_raise (const void *e);\n"
     head += "\n"
     return head + "\n\n".join(body) + "\n"
+
+def library(incdir, outdir):
+    """one C file per OSLib function (X and non-X) that can be made, in OUTDIR; returns (made, [(name, reason)]) - the library libOSLib32.a is these files compiled, one object each"""
+    os.makedirs(outdir, exist_ok=True)
+    made, skipped = [], []
+    for x in sorted(declared(incdir)):
+        for name in (x, x[1:]):
+            try:
+                d = parse_nonx(incdir, name) if name != x else parse(incdir, x)
+                text = generate([name], incdir)
+            except MkErr as e:
+                skipped.append((name, str(e)))
+                continue
+            open(os.path.join(outdir, name + ".c"), "w").write(text)
+            made.append(name)
+    return made, skipped
 
 def main():
     default_inc = os.path.join(os.environ["OSLIB"], "oslib") if os.environ.get("OSLIB") else os.path.expanduser("~/gccsdk/env/include/oslib")
     ap = argparse.ArgumentParser(description="C veneers of OSLib functions for a modkit module")
     ap.add_argument("-I", dest="inc", default=default_inc, help="the oslib folder of OSLib's headers (default: %(default)s)")
-    ap.add_argument("-o", dest="out", required=True)
-    ap.add_argument("--from-objects", nargs="+", metavar="OBJ", help="make the veneers of the OSLib X-functions that these object files use")
-    ap.add_argument("funcs", nargs="*", help="functions to make (xos_cli ...)")
+    ap.add_argument("-o", dest="out")
+    ap.add_argument("--from-objects", nargs="+", metavar="OBJ", help="make the veneers of the OSLib functions (X and non-X) that these object files use")
+    ap.add_argument("--library", metavar="DIR", help="make a C file for every OSLib function that can be made (X and non-X) in DIR, for libOSLib32.a")
+    ap.add_argument("funcs", nargs="*", help="functions to make (xos_cli, os_cli ...)")
     a = ap.parse_args()
-    funcs = list(a.funcs)
-    if a.from_objects:
-        decl = declared(a.inc)
-        used = [n for n in undefined_in(a.from_objects) if n in decl]
-        funcs += [n for n in used if n not in funcs]
-    if not funcs and not a.from_objects:
-        sys.exit("mkoslib: no function to make (name them, or give --from-objects)")
-    open(a.out, "w").write(generate(funcs, a.inc) if funcs else "/* Generated by mkoslib.py: the objects use no OSLib function. */\n")
+    try:
+        if a.library:
+            made, skipped = library(a.inc, a.library)
+            for n, why in skipped: print("skipped %s: %s" % (n, why.replace("mkoslib: ", "")), file=sys.stderr)
+            print("%s: %d functions made, %d skipped" % (a.library, len(made), len(skipped)))
+            return
+        if not a.out: ap.error("-o is required")
+        funcs = list(a.funcs)
+        if a.from_objects:
+            decl = declared(a.inc)
+            used = [n for n in undefined_in(a.from_objects) if n in decl or "x" + n in decl]
+            funcs += [n for n in used if n not in funcs]
+        if not funcs and not a.from_objects:
+            sys.exit("mkoslib: no function to make (name them, or give --from-objects)")
+        open(a.out, "w").write(generate(funcs, a.inc) if funcs else "/* Generated by mkoslib.py: the objects use no OSLib function. */\n")
+    except MkErr as e:
+        sys.exit(str(e))
     print("%s: %d veneers: %s" % (a.out, len(funcs), " ".join(funcs)))
 if __name__ == "__main__":
     main()

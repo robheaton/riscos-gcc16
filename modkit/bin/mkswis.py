@@ -110,6 +110,13 @@ def collect(src):
     return swis, files
 
 
+# names that the SharedCLibrary's swis.h has and the sources spell otherwise or do not have (no Apache-licensed header of the sources defines them): DDEUtils_ThrowbackSend (the header says
+# ThrowbackSent) and the SWIs of the SysLog module (chunk &4C880, documented with the module); the numbers are those of the SWI chunks
+EXTRA = {"DDEUtils_ThrowbackSend": 0x42588}
+for _i, _n in enumerate("LogMessage GetLogLevel FlushLog SetLogLevel LogUnstamped Indent UnIndent NoIndent OpenSessionLog CloseSessionLog LogData".split()): EXTRA["SysLog_" + _n] = 0x4C880 + _i
+for _n, _v in (("ReadErrorMessage", 0x8C), ("LogComplete", 0x8D), ("IRQMode", 0x8E), ("LogCharacter", 0x8F), ("Control", 0x90), ("Enumerate", 0x91)): EXTRA["SysLog_" + _n] = 0x4C800 + _v
+
+
 def main():
     args = sys.argv[1:]
     out = None
@@ -123,6 +130,7 @@ def main():
     if os.path.isdir(os.path.join(src, "Sources")):
         src = os.path.join(src, "Sources")
     swis, files = collect(src)
+    for _n, _v in EXTRA.items(): swis.setdefault(_n, _v)
     L = ["/* swisnums.h - the SWI numbers of the RISC OS Open sources: %d SWIs from %d assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them." % (len(swis), files),
          "   Made by modkit/bin/mkswis.py from the hdr/ folders of https://gitlab.riscosopen.org/RiscOS/Sources (Apache License 2.0, Copyright Castle Technology Ltd and RISC OS Open Ltd and others).  DO NOT EDIT. */",
          "#ifndef _SWISNUMS_H", "#define _SWISNUMS_H", ""]

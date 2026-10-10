@@ -1,0 +1,13 @@
+; SockHw: BSD sockets (modkit's sys/socket.h on the Internet module) and OSLib (libOSLib32.a, X and non-X functions) on the machine
+; (pack/module45 of the work area; the simulations are tests/sim-sockets.py and tests/sim-oslib.py)
+title-string:           SockHw
+help-string:            SockHw 1.00
+date-string:            10 Oct 2026
+
+finalisation-code:      sh_final
+
+command-keyword-table: sh_table
+  SockHw_Test(min-args: 0, max-args: 0, help-text: "*SockHw_Test checks the socket calls on the loopback address, the name functions and the OSLib veneers.\n", invalid-syntax: "Syntax: *SockHw_Test"),
+  SockHw_Raise(min-args: 0, max-args: 0, help-text: "*SockHw_Raise calls a non-X OSLib function that fails: the error must end the command.\n", invalid-syntax: "Syntax: *SockHw_Raise"),
+  SockHw_Try(min-args: 0, max-args: 0, help-text: "*SockHw_Try runs *SockHw_Raise and prints the error that it gives.\n", invalid-syntax: "Syntax: *SockHw_Try"),
+  SockHw_Serve(min-args: 0, max-args: 1, help-text: "*SockHw_Serve [seconds] echoes in capitals what a client sends to port 6000 (60 seconds by default).\n", invalid-syntax: "Syntax: *SockHw_Serve [seconds]")

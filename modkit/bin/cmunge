@@ -7,8 +7,9 @@ The command line of GCCSDK's CMunge 0.xx (what its makefiles use: cmunge -tgcc -
   -o FILE   the object: the generated assembler source assembled for ARMv6 (arm-riscos-gnueabihf-gcc, the one next to this script or on PATH; CMUNGE_CC overrides it)
   -s FILE   the generated assembler source (kept)          -d FILE   the C header (Module_Title, CMD_<name>, ... and the prototypes of your handlers)
   -p, -px   run the C preprocessor over the file first (-D, -U and -I go to it); the included files are processed as part of the text in both modes
+  -zbase    Image__RO_Base: a constant that holds Image$$RO$$Base, declared in the header (GCCSDK 4.7.4's CMunge; its examples use it)
 Accepted and without effect, because the model has nothing to switch: -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of
-anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zbase, -zerrors,
+anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zerrors,
 -zoslib, -blank, -x<type>, -depend) is refused with a message instead of being ignored: a module that needs it would be built wrong.
 What of the CMHG language is supported: bin/mkmodhdr.py.  The RISC OS numbers come from the RISC OS Open sources: set RISCOS_SOURCES to a checkout (see modkit/README.md)."""
 import os, shutil, subprocess, sys, tempfile
@@ -16,7 +17,7 @@ import os, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.realpath(__file__))        # where mkmodhdr.py is (also when this is called through the link <tc>/bin/cmunge)
 BINDIR = os.path.dirname(os.path.abspath(__file__))        # the folder it was called from: <tc>/bin when it is the link
 NOOP = {"-tgcc", "-32bit", "-znoscl", "-throwback", "-cmhg"}
-REFUSED = {"-tnorcroft": "the Norcroft toolchain", "-tlcc": "the LCC toolchain", "-26bit": "26 bit code", "-zbase": "Image__RO_Base", "-zerrors": "-zerrors (errors and veneers only)",
+REFUSED = {"-tnorcroft": "the Norcroft toolchain", "-tlcc": "the LCC toolchain", "-26bit": "26 bit code", "-zerrors": "-zerrors (errors and veneers only)",
            "-zoslib": "-zoslib (OSLib types in the header)", "-blank": "-blank", "-h": None}
 
 
@@ -35,7 +36,7 @@ def find_cc():
     die("no arm-riscos-gnueabihf-gcc: put it on PATH or set CMUNGE_CC")
 
 
-APCS_HARMLESS = {"32bit", "nofp", "fp", "fpe2", "fpe3", "fpregargs", "nofpregargs", "swst", "noswst", "nonreent"}
+APCS_HARMLESS = {"32", "32bit", "nofp", "fp", "fpe2", "fpe3", "fpregargs", "nofpregargs", "swst", "noswst", "nonreent"}
 
 
 def check_apcs(spec):
@@ -55,12 +56,15 @@ def check_apcs(spec):
 def main(argv):
     out_o = out_s = out_h = infile = None
     pre = False
+    base = False
     cpp = []
     i = 0
     while i < len(argv):
         a = argv[i]
         if a in NOOP:
             pass
+        elif a == "-zbase":
+            base = True                                                      # Image__RO_Base: the address of the module (a word in the module, and extern const int Image__RO_Base in the header)
         elif a == "-apcs":
             i += 1
             if i >= len(argv):
@@ -110,7 +114,7 @@ def main(argv):
                 sys.stderr.write(r.stderr.decode("latin-1")); die("the preprocessor failed on %s" % infile)
             open(src, "wb").write(r.stdout)                                  # bytes: the files are RISC OS text (Latin-1), not UTF-8
         asm = out_s or os.path.join(tmp, "module.s")
-        cmd = [sys.executable, os.path.join(HERE, "mkmodhdr.py"), "-s", asm]
+        cmd = [sys.executable, os.path.join(HERE, "mkmodhdr.py"), "-s", asm] + (["--base"] if base else [])
         if out_h:
             cmd += ["-d", out_h]
         cmd.append(src)

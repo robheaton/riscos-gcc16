@@ -36,3 +36,12 @@ __modlib_xswif:
 	moveq	r0, #0				@ no error: 0
 	ldmfd	sp!, {r1, r2, r4-r11, pc}
 	.size	__modlib_xswif, . - __modlib_xswif
+
+@ __modlib_raise (const _kernel_oserror *e): what a non-X OSLib function does with the error of its SWI - OS_GenerateError (the error handler of the caller takes it; it does not return).
+	.global	__modlib_raise
+	.type	__modlib_raise, %function
+__modlib_raise:
+	stmfd	sp!, {lr}			@ (a SWI from SVC mode changes r14_svc)
+	swi	0x2B				@ OS_GenerateError (r0 = the error block)
+	ldmfd	sp!, {pc}
+	.size	__modlib_raise, . - __modlib_raise

@@ -1,4 +1,4 @@
-/* swisnums.h - the SWI numbers of the RISC OS Open sources: 951 SWIs from 69 assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them.
+/* swisnums.h - the SWI numbers of the RISC OS Open sources: 969 SWIs from 69 assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them.
    Made by modkit/bin/mkswis.py from the hdr/ folders of https://gitlab.riscosopen.org/RiscOS/Sources (Apache License 2.0, Copyright Castle Technology Ltd and RISC OS Open Ltd and others).  DO NOT EDIT. */
 #ifndef _SWISNUMS_H
 #define _SWISNUMS_H
@@ -2459,6 +2459,10 @@
 #define DDEUtils_ThrowbackStart 0x42587
 #undef XDDEUtils_ThrowbackStart
 #define XDDEUtils_ThrowbackStart 0x62587
+#undef DDEUtils_ThrowbackSend
+#define DDEUtils_ThrowbackSend 0x42588
+#undef XDDEUtils_ThrowbackSend
+#define XDDEUtils_ThrowbackSend 0x62588
 #undef DDEUtils_ThrowbackSent
 #define DDEUtils_ThrowbackSent 0x42588
 #undef XDDEUtils_ThrowbackSent
@@ -3167,6 +3171,74 @@
 #define InverseTable_SpriteTable 0x4BF41
 #undef XInverseTable_SpriteTable
 #define XInverseTable_SpriteTable 0x6BF41
+#undef SysLog_LogMessage
+#define SysLog_LogMessage 0x4C880
+#undef XSysLog_LogMessage
+#define XSysLog_LogMessage 0x6C880
+#undef SysLog_GetLogLevel
+#define SysLog_GetLogLevel 0x4C881
+#undef XSysLog_GetLogLevel
+#define XSysLog_GetLogLevel 0x6C881
+#undef SysLog_FlushLog
+#define SysLog_FlushLog 0x4C882
+#undef XSysLog_FlushLog
+#define XSysLog_FlushLog 0x6C882
+#undef SysLog_SetLogLevel
+#define SysLog_SetLogLevel 0x4C883
+#undef XSysLog_SetLogLevel
+#define XSysLog_SetLogLevel 0x6C883
+#undef SysLog_LogUnstamped
+#define SysLog_LogUnstamped 0x4C884
+#undef XSysLog_LogUnstamped
+#define XSysLog_LogUnstamped 0x6C884
+#undef SysLog_Indent
+#define SysLog_Indent 0x4C885
+#undef XSysLog_Indent
+#define XSysLog_Indent 0x6C885
+#undef SysLog_UnIndent
+#define SysLog_UnIndent 0x4C886
+#undef XSysLog_UnIndent
+#define XSysLog_UnIndent 0x6C886
+#undef SysLog_NoIndent
+#define SysLog_NoIndent 0x4C887
+#undef XSysLog_NoIndent
+#define XSysLog_NoIndent 0x6C887
+#undef SysLog_OpenSessionLog
+#define SysLog_OpenSessionLog 0x4C888
+#undef XSysLog_OpenSessionLog
+#define XSysLog_OpenSessionLog 0x6C888
+#undef SysLog_CloseSessionLog
+#define SysLog_CloseSessionLog 0x4C889
+#undef XSysLog_CloseSessionLog
+#define XSysLog_CloseSessionLog 0x6C889
+#undef SysLog_LogData
+#define SysLog_LogData 0x4C88A
+#undef XSysLog_LogData
+#define XSysLog_LogData 0x6C88A
+#undef SysLog_ReadErrorMessage
+#define SysLog_ReadErrorMessage 0x4C88C
+#undef XSysLog_ReadErrorMessage
+#define XSysLog_ReadErrorMessage 0x6C88C
+#undef SysLog_LogComplete
+#define SysLog_LogComplete 0x4C88D
+#undef XSysLog_LogComplete
+#define XSysLog_LogComplete 0x6C88D
+#undef SysLog_IRQMode
+#define SysLog_IRQMode 0x4C88E
+#undef XSysLog_IRQMode
+#define XSysLog_IRQMode 0x6C88E
+#undef SysLog_LogCharacter
+#define SysLog_LogCharacter 0x4C88F
+#undef XSysLog_LogCharacter
+#define XSysLog_LogCharacter 0x6C88F
+#undef SysLog_Control
+#define SysLog_Control 0x4C890
+#undef XSysLog_Control
+#define XSysLog_Control 0x6C890
+#undef SysLog_Enumerate
+#define SysLog_Enumerate 0x4C891
+#undef XSysLog_Enumerate
+#define XSysLog_Enumerate 0x6C891
 #undef URI_Version
 #define URI_Version 0x4E380
 #undef XURI_Version

@@ -19,7 +19,7 @@ HOSTCC=${HOSTCC:-cc}
 [ -x "$CC" ] && [ -d "$K/lib" ] && [ -d "$K/src" ] || { echo "install-modkit: $TC is not a tool chain or $K is not modkit" >&2; exit 1; }
 VER=$("$CC" -dumpversion)
 INC=$TC/lib/gcc/$T/$VER/include-modkit
-rm -rf "$INC" && mkdir -p "$INC" && cp "$K"/include/*.h "$INC/"
+rm -rf "$INC" && mkdir -p "$INC" && cp -r "$K"/include/. "$INC/"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 # the library of the module: built with the compiler of the tool chain, -mmodule
 # every lib/*.c (one object each: a module only gets the objects that it uses) and lib/*.S
@@ -57,7 +57,12 @@ ln -sf ../../bin/$T-modreloc "$TC/$T/bin/modreloc"
 S=$TC/share/riscos-modkit
 rm -rf "$S" && mkdir -p "$S/lib" "$S/include" "$S/include-cxx"
 cp "$K"/lib/*.c "$K"/lib/*.S "$K"/lib/*.h "$K"/lib/module.ld "$S/lib/"
-cp "$K"/include/*.h "$S/include/"
+cp -r "$K"/include/. "$S/include/"
 cp -r "$K"/include-cxx/. "$S/include-cxx/"
 cp "$K/module.mk" "$S/module.mk"
+# libOSLib32.a and OSLib's headers (-lOSLib32 as with GCCSDK 4.7.4), when the OSLib headers are there ($OSLIB/oslib, else ~/gccsdk/env/include/oslib; OSLIB_HEADERS=none: not at all)
+OH=${OSLIB:+$OSLIB/oslib}; OH=${OH:-$HOME/gccsdk/env/include/oslib}
+if [ "${OSLIB_HEADERS:-}" != none ] && [ -f "$OH/os.h" ]; then
+  bash "$K/bin/mkoslib-lib.sh" "$TC" "$OH"
+else echo "install-modkit: no OSLib headers found (set OSLIB): no libOSLib32.a"; fi
 echo "modkit installed in $TC (gcc $VER): libmodkit-core.a $(stat -c %s "$TC/$T/lib/libmodkit-core.a") bytes (+ libgcc-mod.a $(stat -c %s "$TC/$T/lib/libgcc-mod.a") bytes, and libmodkit.a: the script that names both), cmunge, $T-modreloc, $T-mkoslib"

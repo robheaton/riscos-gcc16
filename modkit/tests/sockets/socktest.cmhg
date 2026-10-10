@@ -1,0 +1,8 @@
+title-string:           SockTest
+help-string:            SockTest 0.01
+date-string:            10 Oct 2026
+finalisation-code:      st_final
+command-keyword-table:  st_command
+  SockTest_Server(min-args: 0, max-args: 0, help-text: "*SockTest_Server accepts a connection on port 6000, echoes what it reads in capitals, and closes it.\n", invalid-syntax: "Syntax: *SockTest_Server"),
+  SockTest_Errors(min-args: 0, max-args: 0, help-text: "*SockTest_Errors makes calls that fail and shows errno and the Internet module's message.\n", invalid-syntax: "Syntax: *SockTest_Errors"),
+  SockTest_Names(min-args: 0, max-args: 0, help-text: "*SockTest_Names tests inet_addr, inet_ntoa, gethostbyname, getservbyname ...\n", invalid-syntax: "Syntax: *SockTest_Names")

@@ -60,7 +60,7 @@ class Net:
 class RiscosModel(Kernel):
     def __init__(self, **kw):
         super().__init__(**kw)
-        self.vectors = {}; self.callbacks = []; self.net = Net(); self.files = {}; self.handles = {}; self.next_fh = 0x100
+        self.vectors = {}; self.callbacks = []; self.generated = []; self.net = Net(); self.files = {}; self.handles = {}; self.next_fh = 0x100
         self.spool_path = None; self.spool_buf = bytearray(); self.cli_log = []; self.problems = []; self.wimp_started = []; self.swi_log = []
         self.stack_low = {}                                                  # per context: the lowest sp seen while the module's code ran (stack use)
         self._ctx = None; self.mono = 0; self.irq_hook = None; self.tick_log = []
@@ -88,6 +88,8 @@ class RiscosModel(Kernel):
             if (cpu.r[1], cpu.r[2]) in lst: lst.remove((cpu.r[1], cpu.r[2])); cpu.v = 0
             else: cpu.r[0] = self.error_block(0x1E4, "Vector not claimed"); cpu.v = 1
             return
+        if n == 0x2B:                                                                                                                  # OS_GenerateError: recorded (the real kernel passes the error to the error handler of the caller)
+            self.generated.append((self.cpu.rd32(cpu.r[0]), self.read_cstr(cpu.r[0] + 4))); cpu.v = 1; return
         if n == 0x42: self.mono += 1; cpu.r[0] = self.mono; cpu.v = 0; return                                                          # OS_ReadMonotonicTime: one cs per call
         if n == 0x23: self.read_var_val(cpu); return                                                                                   # OS_ReadVarVal
         if n == 0x54: self.callbacks.append((cpu.r[0], cpu.r[1])); cpu.v = 0; return                                                  # OS_AddCallBack
@@ -99,6 +101,19 @@ class RiscosModel(Kernel):
         if n == 0x08: self.os_file(cpu); return
         if n == 0x0D: self.os_find(cpu); return
         if n == 0x0C: self.os_gbpb(cpu); return
+        if n == 0x46000:                                                                                                               # Resolver_GetHostByName: R1 -> name; R0 = error number, R1 -> host details
+            name = self.read_cstr(cpu.r[1]); base = 0x00490000
+            if name == "example.test":
+                addrs = [bytes([93, 184, 216, 34]), bytes([93, 184, 216, 35])]
+                nm = name.encode() + b"\0"
+                lay = struct.pack("<5I", base + 0x40, base + 0x30, 2, 4, base + 0x20) + b""
+                mem = bytearray(0x100); mem[0:20] = lay
+                mem[0x20:0x28] = struct.pack("<2I", base + 0x60, base + 0x64); mem[0x28:0x2C] = bytes(4)
+                mem[0x30:0x34] = bytes(4); mem[0x40:0x40 + len(nm)] = nm; mem[0x60:0x64] = addrs[0]; mem[0x64:0x68] = addrs[1]
+                for i, b in enumerate(mem): cpu.wr8(base + i, b)
+                cpu.r[0] = 0; cpu.r[1] = base
+            else: cpu.r[0] = 1; cpu.r[1] = 0
+            cpu.v = 0; return
         if n == 0x400DE:                                                                                                               # Wimp_StartTask
             self.wimp_started.append(self.read_cstr(cpu.r[0])); cpu.r[0] = 0x8123; cpu.v = 0; return
         super().swi_hook(cpu, swi)
@@ -239,11 +254,32 @@ class RiscosModel(Kernel):
             if s not in net.sockets: err(9); return
             if n == 0x41202: net.listener = s; net.sockets[s] = "listening"
             cpu.v = 0
-        elif n == 0x41203:                                               # accept
+        elif n in (0x41203, 0x4121B):                                    # accept (4121B: Accept_1, with the BSD 4.4 sockaddr: a length byte first)
             if s != net.listener: err(22); return
             if not net.pending: err(EWOULDBLOCK); return
             net.pending = False; h = net.next_handle; net.next_handle += 1; net.sockets[h] = "conn"; net.conn = h; cpu.r[0] = h; cpu.v = 0
-        elif n == 0x41205:                                               # recv
+            if n == 0x4121B and cpu.r[1]:                                # the peer: 198.51.100.9 port 4321, as sockaddr_in {len 16, family 2, port (network order), address, zeros}
+                for i, b in enumerate(bytes([16, 2, 0x10, 0xE1, 198, 51, 100, 9]) + bytes(8)): cpu.wr8(cpu.r[1] + i, b)
+                for i, b in enumerate(struct.pack("<I", 16)): cpu.wr8(cpu.r[2] + i, b)
+        elif n == 0x41211:                                               # select: nfds, read, write, except sets (bit n of word n/32), timeout: the sockets that are ready
+            nready = 0
+            for reg, kind in ((1, "r"), (2, "w"), (3, "x")):
+                p = cpu.r[reg]
+                if not p: continue
+                words = [cpu.rd32(p + 4 * i) for i in range((cpu.r[0] + 31) // 32)]
+                for i in range(cpu.r[0]):
+                    if words[i // 32] >> (i % 32) & 1:
+                        ready = (kind == "r" and ((i == net.listener and net.pending) or (i == net.conn and (bool(net.to_module) or net.client_closed)))) or (kind == "w" and i == net.conn)
+                        if not ready: words[i // 32] &= ~(1 << (i % 32))
+                        else: nready += 1
+                for i, w in enumerate(words):
+                    for j, b in enumerate(struct.pack("<I", w)): cpu.wr8(p + 4 * i + j, b)
+            cpu.r[0] = nready; cpu.v = 0
+        elif n in (0x41205, 0x41213, 0x4120B, 0x4120D):                  # recv, read (the same here), shutdown, getsockopt
+            if n == 0x4120B: cpu.v = 0; return
+            if n == 0x4120D:
+                for i, b in enumerate(struct.pack("<I", 0)): cpu.wr8(cpu.r[3] + i, b)
+                cpu.v = 0; return
             if s != net.conn: err(9); return
             buf, ln = cpu.r[1], cpu.r[2]
             if net.to_module:
@@ -252,10 +288,16 @@ class RiscosModel(Kernel):
                 del net.to_module[:k]; cpu.r[0] = k; cpu.v = 0
             elif net.client_closed: cpu.r[0] = 0; cpu.v = 0
             else: err(EWOULDBLOCK)
-        elif n == 0x41208:                                               # send
+        elif n in (0x41208, 0x41214):                                    # send, write
             if s != net.conn: err(9); return
             buf, ln = cpu.r[1], cpu.r[2]
             net.to_client += bytes(cpu.rd8(buf + i) for i in range(ln)); cpu.r[0] = ln; cpu.v = 0
+        elif n in (0x4121F, 0x41220):                                    # getpeername_1, getsockname_1: sockaddr_in 198.51.100.9:4321 / 198.51.100.1:6000
+            if s not in net.sockets: err(9); return
+            addr = bytes([16, 2, 0x10, 0xE1, 198, 51, 100, 9]) if n == 0x4121F else bytes([16, 2, 0x17, 0x70, 198, 51, 100, 1])
+            for i, b in enumerate(addr + bytes(8)): cpu.wr8(cpu.r[1] + i, b)
+            for i, b in enumerate(struct.pack("<I", 16)): cpu.wr8(cpu.r[2] + i, b)
+            cpu.v = 0
         elif n == 0x41210:                                               # close
             net.sockets.pop(s, None)
             if s == net.conn: net.conn = None; net.client_closed = False

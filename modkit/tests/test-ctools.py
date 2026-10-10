@@ -357,12 +357,12 @@ for defs in ([], ["-DBIG"], ["-D", "BIG=1"], ["-UBIG"], ["-DBIG", "-UBIG"]):
         r = run(cmd + ["-tgcc", "-32bit", "-p"] + defs + ["-s", d + "/o.s", "-d", d + "/o.h", "-o", d + "/o.o", pp])
         out[tool] = (r.returncode, open(d + "/o.s", "rb").read() if os.path.exists(d + "/o.s") else None, open(d + "/o.h", "rb").read() if os.path.exists(d + "/o.h") else None, os.path.exists(d + "/o.o") and os.path.getsize(d + "/o.o") > 100)
     check(out["py"] == out["c"] and out["c"][0] == 0, "-p %s: %s" % (defs, "different" if out["py"] != out["c"] else "failed"))
-for opt in (["-zbase"], ["-zoslib"], ["-tnorcroft"], ["-26bit"], ["-x", "h"], ["-apcs", "26"], ["-apcs", "3/reent"], ["-apcs", "3/26bit"], ["-apcs", "3/bogus"], ["-apcs"], ["-bogus"], ["-depend", "x"]):
+for opt in (["-zoslib"], ["-tnorcroft"], ["-26bit"], ["-x", "h"], ["-apcs", "26"], ["-apcs", "3/reent"], ["-apcs", "3/26bit"], ["-apcs", "3/bogus"], ["-apcs"], ["-bogus"], ["-depend", "x"]):
     rp = run([os.path.join(KIT, "bin", "cmunge")] + opt + ["-d", os.path.join(W, "x.h"), real[0]])
     rc = run([os.path.join(BIN, "cmunge")] + opt + ["-d", os.path.join(W, "x.h"), real[0]])
     check(rp.returncode != 0 and rc.returncode != 0, "cmunge %s is refused by both (py %d, c %d)" % (" ".join(opt), rp.returncode, rc.returncode))
 
-for opt in (["-apcs", "3"], ["-apcs", "3/nofpregargs"], ["-apcs", "3/32bit/fpe3/nonreent/swst"], ["-apcs", "32/nofp"]):             # accepted, and without effect on the output
+for opt in (["-apcs", "3"], ["-apcs", "3/32"], ["-apcs", "32"], ["-apcs", "3/nofpregargs"], ["-apcs", "3/32bit/fpe3/nonreent/swst"], ["-apcs", "32/nofp"]):             # accepted, and without effect on the output
     outs = []
     for cmd in ([sys.executable, os.path.join(KIT, "bin", "cmunge")], [os.path.join(BIN, "cmunge")]):
         d = tempfile.mkdtemp(dir=W)
@@ -371,6 +371,18 @@ for opt in (["-apcs", "3"], ["-apcs", "3/nofpregargs"], ["-apcs", "3/32bit/fpe3/
     base = tempfile.mkdtemp(dir=W)
     run([os.path.join(BIN, "cmunge"), "-tgcc", "-32bit", "-s", base + "/o.s", "-d", base + "/o.h", real[0]])
     check(outs[0][0] == 0 and outs[1][0] == 0 and outs[0][1] == outs[1][1] == open(base + "/o.s", "rb").read(), "cmunge %s is accepted by both and changes nothing" % " ".join(opt))
+
+# -zbase (GCCSDK 4.7.4's CMunge): Image__RO_Base, a constant that holds Image$$RO$$Base, and its declaration in the header
+zo = []
+for cmd in ([sys.executable, os.path.join(KIT, "bin", "cmunge")], [os.path.join(BIN, "cmunge")]):
+    d = tempfile.mkdtemp(dir=W)
+    r = run(cmd + ["-tgcc", "-32bit", "-zbase", "-s", d + "/o.s", "-d", d + "/o.h", real[0]])
+    zo.append((r.returncode, open(d + "/o.s", "rb").read() if os.path.exists(d + "/o.s") else None, open(d + "/o.h", "rb").read() if os.path.exists(d + "/o.h") else None))
+check(zo[0][0] == 0 and zo[1][0] == 0 and zo[0] == zo[1], "cmunge -zbase: the same output from both")
+check(zo[1][1] is not None and b"Image__RO_Base:\n\t.word\tImage$$RO$$Base" in zo[1][1] and zo[1][2] is not None and b"extern const int Image__RO_Base;" in zo[1][2], "cmunge -zbase: Image__RO_Base is made and declared")
+nb = tempfile.mkdtemp(dir=W)
+run([os.path.join(BIN, "cmunge"), "-tgcc", "-32bit", "-s", nb + "/o.s", "-d", nb + "/o.h", real[0]])
+check(b"Image__RO_Base" not in open(nb + "/o.s", "rb").read() and b"Image__RO_Base" not in open(nb + "/o.h", "rb").read(), "cmunge without -zbase: no Image__RO_Base")
 
 # ================================================================ the headers: strict ISO C declares only ISO C names
 print("headers")
@@ -493,7 +505,9 @@ names = []
 for f in sorted(glob.glob(os.path.join(INC, "*.h"))):
     for m in re.finditer(r"^extern os_error \*(x\w+) \(", open(f, encoding="latin-1").read(), re.M): names.append(m.group(1))
 names = sorted(set(names))
-print("  %d X functions in the OSLib headers of %s" % (len(names), INC))
+xnames = names
+names = sorted(set(xnames) | {n[1:] for n in xnames})                      # the X functions and the ones that raise the error (xos_cli, os_cli)
+print("  %d X functions in the OSLib headers of %s (%d with the non-X ones)" % (len(xnames), INC, len(names)))
 sample = names if not QUICK else names[::12]
 refused_py = refused_c = 0
 n_same = 0
@@ -501,7 +515,7 @@ made_names = []
 for n in sample:
     try:
         py = mk.generate([n], INC); pyfail = False
-    except SystemExit:
+    except (SystemExit, mk.MkErr):
         py = None; pyfail = True
     o = os.path.join(W, "o.c")
     if os.path.exists(o): os.remove(o)
@@ -520,6 +534,7 @@ print("  one function at a time: %d made identically, Python refuses %d, C refus
 # 18 of the 2150 do not compile whatever the locals are called (15: an output that is an aggregate type of OSLib, 2: a pointer type that does not fit, 1: a header that declares a function twice) - they stop
 # the module that uses them at compile time
 KNOWN_NOT_COMPILING = set("xadfsdiscop64_format_track xadfsdiscop64_read_id xadfsdiscop64_read_sectors xadfsdiscop64_read_sectors_via_cache xadfsdiscop64_read_track xadfsdiscop64_restore xadfsdiscop64_seek xadfsdiscop64_specify xadfsdiscop64_verify xadfsdiscop64_write_sectors xadfsdiscop64_write_track xinversetable_sprite_table_for_sprite xos_change_redirection xpci_hardware_address xpci_ram_alloc xscrolllist_set_colour xtextarea_set_colour xtextgadgets_redraw_all".split())
+KNOWN_NOT_COMPILING |= {x[1:] for x in KNOWN_NOT_COMPILING}
 nbatch = 0
 for b in range(0, len(made_names), 5):
     n = made_names[b]
@@ -531,6 +546,17 @@ for b in range(0, len(made_names), 5):
     err = [l for l in r.stderr.split("\n") if "error" in l]
     check(r.returncode == 0 or n in KNOWN_NOT_COMPILING, "the veneer %s does not compile: %s" % (n, (err or [r.stderr])[0][-200:]))
 print("  %d of %d veneers compile one by one" % (nbatch, len(made_names) // 5 + 1))
+# --library: a file for every function that can be made (X and non-X), the same files from both tools
+pl, cl = os.path.join(W, "lib-py"), os.path.join(W, "lib-c")
+for d_ in (pl, cl): shutil.rmtree(d_, ignore_errors=True)
+made_py, skipped_py = mk.library(INC, pl)
+rl = run([os.path.join(BIN, "mkoslib"), "-I", INC, "--library", cl])
+check(rl.returncode == 0, "mkoslib --library: %s" % rl.stderr.strip()[-100:])
+fp, fc = sorted(os.listdir(pl)), sorted(os.listdir(cl))
+check(fp == fc, "mkoslib --library: the same %d functions (Python %d, C %d)%s" % (len(fp), len(fp), len(fc), "" if fp == fc else ": " + str(sorted(set(fp) ^ set(fc))[:5])))
+diff_ = [f for f in fp if f in fc and open(os.path.join(pl, f), "rb").read() != open(os.path.join(cl, f), "rb").read()]
+check(not diff_, "mkoslib --library: the files are byte for byte the same %s" % diff_[:3])
+print("  --library: %d files, %d functions skipped by Python" % (len(fp), len(skipped_py)))
 # the constants of "Calls SWI N with R1 |= 0x3, R3 = 0x0" are put into their registers (16.2.0-17 and earlier dropped every one but R0's)
 for fn, want in (("xadfsdiscop_read_track", ["_r[1] |= 0x3;"]), ("xos_read_var_val_size", None), ("xos_change_environment", None)):
     o = os.path.join(W, "const.c")
@@ -554,7 +580,7 @@ ok_names = []
 for n in sample[:400]:
     try:
         mk.generate([n], INC); ok_names.append(n)
-    except SystemExit: pass
+    except (SystemExit, mk.MkErr): pass
 rg = random.Random(7)
 for i in range(30):
     grp = rg.sample(ok_names, rg.randint(2, 12))
@@ -567,6 +593,18 @@ for e in sorted(glob.glob(os.path.join(D, "*", "s0.o"))) + [os.path.join(KIT, "e
     po, co = os.path.join(W, "fo_py.c"), os.path.join(W, "fo_c.c")
     rp = run([sys.executable, os.path.join(KIT, "bin", "mkoslib.py"), "-I", INC, "-o", po, "--from-objects", e]); rc = run([os.path.join(BIN, "mkoslib"), "-I", INC, "-o", co, "--from-objects", e])
     check(rp.returncode == 0 and rc.returncode == 0 and same_files(po, co), "mkoslib --from-objects %s" % os.path.relpath(e, W))
+
+# --from-objects with non-X functions (os_cli, os_read_var_val) and the X ones
+src = os.path.join(W, "nonx.c")
+open(src, "w").write("#include <oslib/os.h>\nint f (char *b) { int used; os_cli (b); xos_cli (b); return os_read_var_val (b, b, 4, 0, os_VARTYPE_STRING, &used, 0) + (int) os_read_monotonic_time (); }\n")
+rr = run([GCC, "-mmodule", "-c", "-I" + os.path.dirname(INC.rstrip("/")), src, "-o", os.path.join(W, "nonx.o")])
+if rr.returncode: check(False, "the test program with non-X OSLib calls does not compile: %s" % rr.stderr[-200:])
+else:
+    po, co = os.path.join(W, "nx_py.c"), os.path.join(W, "nx_c.c")
+    rp = run([sys.executable, os.path.join(KIT, "bin", "mkoslib.py"), "-I", INC, "-o", po, "--from-objects", os.path.join(W, "nonx.o")]); rc = run([os.path.join(BIN, "mkoslib"), "-I", INC, "-o", co, "--from-objects", os.path.join(W, "nonx.o")])
+    check(rp.returncode == 0 and rc.returncode == 0 and same_files(po, co), "mkoslib --from-objects: the non-X functions (%s)" % (rp.stderr + rc.stderr)[-150:])
+    txt = open(co).read() if rc.returncode == 0 else ""
+    check(all(("%s (" % f) in txt for f in ("os_cli", "xos_cli", "os_read_var_val", "os_read_monotonic_time")) and "__modlib_raise (_e)" in txt, "the veneers of os_cli, xos_cli, os_read_var_val and os_read_monotonic_time are in it")
 
 shutil.rmtree(W, ignore_errors=True)
 print("\n%d checks, %d differ" % (checks, fails))

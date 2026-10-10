@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (after v16.2.0-18): modkit matches GCCSDK 4.7.4 more closely: `-zbase`, `-lOSLib32` with the non-X functions, BSD sockets
+
+* **`cmunge -zbase` and `-apcs 3/32`** (C and Python versions): `-zbase` makes `Image__RO_Base` (a constant that holds `Image$$RO$$Base`) and declares it in the header, as GCCSDK's CMunge does; the example modules of 4.7.4 use it. `-apcs 3/32` and `-apcs 32` are accepted (they changed nothing here).
+* **`-lOSLib32` links unchanged.** `mkoslib` also makes the **non-X functions** of OSLib (`os_cli`, `os_read_var_val` ...: the result is the register that the `Returns:` line of OSLib's comment names, and an error is raised with `OS_GenerateError` through the new `__modlib_raise`), and `mkoslib --library DIR` writes a C file for every function it can make. `modkit/bin/mkoslib-lib.sh`, which `install-modkit.sh` runs when OSLib's headers are there, builds `libOSLib32.a` from them (4,268 veneers; 367 Toolbox calls that are messages and 34 functions that do not compile with OSLib's types are left out), puts the headers in the tool chain (`include/oslib`) and links them for `-mmodule`. The archive carries weak copies of the SWI helpers, so an ordinary program can link it too. **Licence:** OSLib is GPL version 1 or later with an exception for linking; whether the headers and the library go into the public tool chain is the maintainer's decision, and the release scripts do not yet include them.
+* **BSD sockets for modules** (`<sys/socket.h>`, `<netinet/in.h>`, `<arpa/inet.h>`, `<netdb.h>`, `<sys/select.h>`, `<sys/ioctl.h>`, `<syslog.h>` constants; `lib/sockets.c`, `lib/netdb.c`): the calls on the Internet module's SWIs, the Shared C Library's names (`socketclose`, `socketread` ...), `gethostbyname` through the Resolver. GCCSDK's SysLogD builds unchanged. Tested on the interpreter with a model of the Internet module (`modkit/tests/sim-sockets.py`); run on the Pi (`pack/module45`: 53 checks, 0 failed). A failing non-X OSLib call ends the whole command line (the kernel's error handler), as with any non-X SWI.
+* `swisnums.h` has the SWI names `DDEUtils_ThrowbackSend` and the 17 SWIs of the SysLog module that the Shared C Library's `swis.h` has and the RISC OS sources do not (969 SWIs).
+* The four official examples of 4.7.4 (`Examples/Module/Simple`, `NoSCL`, `ResourceFS`, `FS`) build with their own Makefiles (`modkit/tests/test-gccsdk-examples.py`).
+* Tests: `test-ctools.py` compares the non-X functions, `--library` and `-zbase` (1,209 checks in the quick run); new `sim-oslib.py`, `sim-sockets.py` and `test-gccsdk-examples.py`; the model of the kernel has `OS_GenerateError`, more `Socket_*` SWIs and `Resolver_GetHostByName`.
+
 ## v16.2.0-18: 2026-10-10, modkit: three faults of the kit fixed, the rest of the CMHG options, and 38 of the 66 C modules of the RISC OS Open sources build
 
 | Asset | Version |

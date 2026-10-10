@@ -14,8 +14,12 @@ The header of a function is found by its name (xosfile_delete is in osfile.h, xw
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <setjmp.h>
 #if !defined (__riscos__)
 #include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #endif
 #include "modcommon.h"
 
@@ -53,10 +57,9 @@ typedef struct { char *dir, *hdr; unsigned char *text; } Cached;
 static Cached *cache;
 static int ncache;
 
-static int try_header (const char *dir, const char *hdr, const char *name, Decl *d)
+static unsigned char *cached_text (const char *dir, const char *hdr)
 {
   int i;
-  size_t pos;
   unsigned char *text = NULL;
   for (i = 0; i < ncache; i++)
     if (strcmp (cache[i].dir, dir) == 0 && strcmp (cache[i].hdr, hdr) == 0) { text = cache[i].text; break; }
@@ -72,6 +75,13 @@ static int try_header (const char *dir, const char *hdr, const char *name, Decl 
       cache[ncache].text = text;                              /* NULL: there is no such header (remembered too) */
       ncache++;
     }
+  return text;
+}
+
+static int try_header (const char *dir, const char *hdr, const char *name, Decl *d)
+{
+  size_t pos;
+  unsigned char *text = cached_text (dir, hdr);
   if (!text) return 0;
   pos = find_in_text ((const char *) text, name);
   if (pos == (size_t) -1) return 0;
@@ -142,6 +152,9 @@ typedef struct
   char *comp[8]; int comp_k[8]; int ncomp;                         /* "w - component 0": parameters that go into a block of words */
   int has_block; int block_reg; char *block_name[8]; int nblock;
   int nops; int op_reg[8]; int op_kind[8]; unsigned op_val[8];     /* "with R1 |= 0x3, R3 = 0x0": kind 0 =, 1 |=, 2 += */
+  int ret_reg;                                                     /* "Returns: R3 (non-X version only)": 3, "psr": 16, none: -1 */
+  const char *dtext; size_t dend;                                  /* the text of the header and the offset of the ';' that ends the X declaration */
+  int nonx; char *rtype;                                           /* a non-X function: the type of its result */
 } Func;
 
 static char *normalise (const char *s, size_t n)             /* Python: re.sub (r"\s+", " ", s) */
@@ -433,48 +446,33 @@ static HdrInfo hdr_entries (const char *dir, const char *header, unsigned swi)
 }
 #endif
 
-static Func parse_func (const char *dir, const char *name)
+/* LINE (after the leading spaces and stars) is  Returns:\s+(R(\d+)|psr) \(non-X version only\)\s*  : *REG is the register (16 for psr) */
+static int match_returns (const char *line, int *reg)
 {
-  Decl d = find_decl (dir, name);
-  Func f;
-  const char *txt = d.text, *cstart = NULL, *cend, *dend, *s, *par, *close;
-  char *comment, *decl, *norm, *plist, *line, *savep;
-  static const char marker[] = "/* ------";
-  size_t csize, k;
-  int i;
-
-  memset (&f, 0, sizeof f);
-  f.name = xstrdup (name);
-  f.header = d.header;
-  /* the comment above the declaration: from the last comment opening of the form slash-star-space-dashes before it to the next end of comment */
-  if (d.pos >= sizeof marker - 1)
+  const char *p = line;
+  static const char pre[] = "Returns:", tail[] = " (non-X version only)";
+  int r = 0;
+  if (strncmp (p, pre, sizeof pre - 1) != 0) return 0;
+  p += sizeof pre - 1;
+  if (!is_space ((unsigned char) *p)) return 0;
+  while (is_space ((unsigned char) *p)) p++;
+  if (strncmp (p, "psr", 3) == 0) { r = 16; p += 3; }
+  else if (p[0] == 'R' && isdigit ((unsigned char) p[1]))
     {
-      size_t idx;
-      for (idx = d.pos - (sizeof marker - 1) + 1; idx-- > 0;)
-        if (strncmp (txt + idx, marker, sizeof marker - 1) == 0) { cstart = txt + idx; break; }
+      p++;
+      while (isdigit ((unsigned char) *p)) r = r * 10 + (*p++ - '0');
     }
-  (void) s;
-  if (!cstart) die ("%s: no comment above its declaration", name);
-  cend = strstr (cstart, "*/");
-  if (!cend) die ("%s: the comment above its declaration is not closed", name);
-  csize = (size_t) (cend - cstart);
-  comment = xstrndup (cstart, csize);
-  dend = strchr (txt + d.pos, ';');
-  if (!dend) die ("%s: the declaration has no ;", name);
-  decl = xstrndup (txt + d.pos, (size_t) (dend - (txt + d.pos)));
-  norm = normalise (decl, strlen (decl));
-  /* extern os_error *NAME (PARAMS) */
-  {
-    static const char pre[] = "extern os_error *";
-    size_t nl = strlen (name);
-    k = strlen (norm);
-    while (k && is_space ((unsigned char) norm[k - 1])) k--;
-    if (strncmp (norm, pre, sizeof pre - 1) != 0 || strncmp (norm + sizeof pre - 1, name, nl) != 0 || strncmp (norm + sizeof pre - 1 + nl, " (", 2) != 0 || k == 0 || norm[k - 1] != ')')
-      die ("%s: cannot read its declaration '%s'", name, norm);
-    par = norm + sizeof pre - 1 + nl + 2;
-    close = norm + k - 1;
-    plist = strip_ws (par, (size_t) (close - par));
-  }
+  else return 0;
+  if (strncmp (p, tail, sizeof tail - 1) != 0) return 0;
+  p += sizeof tail - 1;
+  while (is_space ((unsigned char) *p)) p++;
+  if (*p) return 0;
+  *reg = r;
+  return 1;
+}
+
+static void parse_plist (Func *f, const char *name, const char *plist)
+{
   if (strcmp (plist, "void") != 0)
     {
       Buf cur;
@@ -497,11 +495,11 @@ static Func parse_func (const char *dir, const char *name)
                 while (nstart > 0 && is_word ((unsigned char) p[nstart - 1])) nstart--;
                 if (nstart == pl) die ("%s: cannot read the parameter '%s'", name, p);
                 ty = strip_ws (p, nstart);
-                f.params = xrealloc (f.params, sizeof (Param) * (size_t) (f.nparams + 1));
-                f.params[f.nparams].type = ty;
-                f.params[f.nparams].name = xstrdup (p + nstart);
-                f.params[f.nparams].text = p;
-                f.nparams++;
+                f->params = xrealloc (f->params, sizeof (Param) * (size_t) (f->nparams + 1));
+                f->params[f->nparams].type = ty;
+                f->params[f->nparams].name = xstrdup (p + nstart);
+                f->params[f->nparams].text = p;
+                f->nparams++;
               }
               cur.len = 0; cur.s[0] = 0;
               if (endp) break;
@@ -509,6 +507,58 @@ static Func parse_func (const char *dir, const char *name)
           else buf_addc (&cur, ch);
         }
     }
+}
+
+static int is_nonx (const char *dir, const char *name);
+static Func parse_nonx (const char *dir, const char *name);
+
+static Func parse_func (const char *dir, const char *name)
+{
+  if (is_nonx (dir, name)) return parse_nonx (dir, name);
+  Decl d = find_decl (dir, name);
+  Func f;
+  const char *txt = d.text, *cstart = NULL, *cend, *dend, *s, *par, *close;
+  char *comment, *decl, *norm, *plist, *line, *savep;
+  static const char marker[] = "/* ------";
+  size_t csize, k;
+  int i;
+
+  memset (&f, 0, sizeof f);
+  f.name = xstrdup (name);
+  f.header = d.header;
+  f.ret_reg = -1;
+  f.dtext = txt;
+  /* the comment above the declaration: from the last comment opening of the form slash-star-space-dashes before it to the next end of comment */
+  if (d.pos >= sizeof marker - 1)
+    {
+      size_t idx;
+      for (idx = d.pos - (sizeof marker - 1) + 1; idx-- > 0;)
+        if (strncmp (txt + idx, marker, sizeof marker - 1) == 0) { cstart = txt + idx; break; }
+    }
+  (void) s;
+  if (!cstart) die ("%s: no comment above its declaration", name);
+  cend = strstr (cstart, "*/");
+  if (!cend) die ("%s: the comment above its declaration is not closed", name);
+  csize = (size_t) (cend - cstart);
+  comment = xstrndup (cstart, csize);
+  dend = strchr (txt + d.pos, ';');
+  if (!dend) die ("%s: the declaration has no ;", name);
+  f.dend = (size_t) (dend - txt);
+  decl = xstrndup (txt + d.pos, (size_t) (dend - (txt + d.pos)));
+  norm = normalise (decl, strlen (decl));
+  /* extern os_error *NAME (PARAMS) */
+  {
+    static const char pre[] = "extern os_error *";
+    size_t nl = strlen (name);
+    k = strlen (norm);
+    while (k && is_space ((unsigned char) norm[k - 1])) k--;
+    if (strncmp (norm, pre, sizeof pre - 1) != 0 || strncmp (norm + sizeof pre - 1, name, nl) != 0 || strncmp (norm + sizeof pre - 1 + nl, " (", 2) != 0 || k == 0 || norm[k - 1] != ')')
+      die ("%s: cannot read its declaration '%s'", name, norm);
+    par = norm + sizeof pre - 1 + nl + 2;
+    close = norm + k - 1;
+    plist = strip_ws (par, (size_t) (close - par));
+  }
+  parse_plist (&f, name, plist);
   /* the comment */
   savep = comment;
   for (;;)
@@ -520,6 +570,7 @@ static Func parse_func (const char *dir, const char *name)
       line = xstrndup (savep, ll);
       l = line;
       while (*l == ' ' || *l == '*') l++;
+      if (f.ret_reg < 0) match_returns (l, &f.ret_reg);
       if (match_reg_line (l, "Input:", "entry", 0, &nm, &reg)) set_reg (&f.in, &f.nin, nm, reg);
       else if (match_reg_line (l, "Output:", "exit", 1, &nm, &reg)) set_reg (&f.out, &f.nout, nm, reg);
       else if (match_component (l, &nm, &reg)) { if (f.ncomp < 8) { f.comp[f.ncomp] = xstrdup (nm); f.comp_k[f.ncomp++] = reg; } }
@@ -611,6 +662,85 @@ static Func parse_func (const char *dir, const char *name)
   return f;
 }
 
+/* the non-X function NAME (os_cli): the data of the X function (xos_cli), but the parameters and the result of the declaration of the non-X function that follows it; an output that is for the X version only has
+   no parameter there, the result is the register that the "Returns:" line names, the type of the result is the one of the declaration; an error calls __modlib_raise */
+static Func parse_nonx (const char *dir, const char *name)
+{
+  char *xname = xmalloc (strlen (name) + 2);
+  Func f;
+  const char *p, *q, *rest, *par, *semi;
+  char *slice, *prefix, *plist, *rtype;
+  size_t n, nl = strlen (name), k;
+  int i, j;
+  xname[0] = 'x'; strcpy (xname + 1, name);
+  f = parse_func (dir, xname);
+  free (xname);
+  n = strlen (f.dtext + f.dend + 1);
+  if (n > 2999) n = 2999;
+  slice = xstrndup (f.dtext + f.dend + 1, n);
+  p = slice;
+  while (is_space ((unsigned char) *p)) p++;
+  if (strncmp (p, "extern ", 7) == 0) p += 7;
+  else if (strncmp (p, "__swi (0x", 9) == 0 && isxdigit ((unsigned char) p[9]))
+    {
+      q = p + 9;
+      while (isxdigit ((unsigned char) *q)) q++;
+      if (strncmp (q, ") ", 2) != 0) die ("%s: no declaration of the non-X function follows the X function", name);
+      p = q + 2;
+    }
+  else die ("%s: no declaration of the non-X function follows the X function", name);
+  /* [^;(]+? then an optional white space, the name at a word boundary, " (" */
+  rest = NULL;
+  for (q = p + 1; *q && q[-1] != ';' && q[-1] != '('; q++)
+    if (strncmp (q, name, nl) == 0 && q[nl] == ' ' && q[nl + 1] == '(' && !is_word ((unsigned char) q[-1])) { rest = q; break; }
+  if (!rest) die ("%s: no declaration of the non-X function follows the X function", name);
+  prefix = normalise (p, (size_t) (rest - p));
+  k = strlen (prefix);
+  rtype = strip_ws (prefix, k);
+  free (prefix);
+  par = rest + nl + 2;
+  semi = strchr (par, ';');
+  if (!semi || semi == par || semi[-1] != ')') die ("%s: no declaration of the non-X function follows the X function", name);
+  {
+    char *raw = xstrndup (par, (size_t) (semi - 1 - par));
+    char *norm = normalise (raw, strlen (raw));
+    plist = strip_ws (norm, strlen (norm));
+    free (raw); free (norm);
+  }
+  free (slice);
+  {
+    Func g = f;
+    Reg *keep = NULL;
+    int nkeep = 0;
+    g.params = NULL; g.nparams = 0;
+    parse_plist (&g, name, plist);
+    for (i = 0; i < g.nparams; i++)
+      {
+        int found = 0;
+        for (j = 0; j < f.nparams; j++) if (strcmp (f.params[j].name, g.params[i].name) == 0) found = 1;
+        if (!found) die ("%s: the parameter '%s' is not one of the X function's", name, g.params[i].name);
+      }
+    if (strcmp (rtype, "void") == 0)
+      {
+        if (f.ret_reg >= 0) die ("%s: it returns void, and the comment says it returns a register", name);
+      }
+    else if (f.ret_reg < 0) die ("%s: it returns %s, and the comment has no 'Returns:' line", name, rtype);
+    for (i = 0; i < f.nout; i++)                                    /* the outputs that are not parameters of the non-X function are for the X version only */
+      for (j = 0; j < g.nparams; j++)
+        if (strcmp (f.out[i].name, g.params[j].name) == 0)
+          {
+            keep = xrealloc (keep, sizeof (Reg) * (size_t) (nkeep + 1));
+            keep[nkeep++] = f.out[i];
+            break;
+          }
+    g.out = keep; g.nout = nkeep;
+    g.name = xstrdup (name);
+    g.nonx = 1; g.rtype = rtype;
+    free (plist);
+    return g;
+  }
+}
+
 /* ---------------------------------------------------------------- the veneers */
 static Param *find_param (const Func *f, const char *name)
 {
@@ -641,7 +771,7 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
 {
   Buf out, body;
   char **heads = NULL;
-  int nheads = 0, fi, i, j, flags, uses_flags = 0;
+  int nheads = 0, fi, i, j, flags, uses_flags = 0, uses_raise = 0;
   buf_init (&out); buf_init (&body);
   for (fi = 0; fi < nfuncs; fi++)
     {
@@ -652,11 +782,14 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
       for (i = 0; i < nheads; i++) if (strcmp (heads[i], f.header) == 0) seen = 1;
       if (!seen) { heads = xrealloc (heads, sizeof (char *) * (size_t) (nheads + 1)); heads[nheads++] = f.header; }
       buf_init (&L); buf_init (&outs);
-      buf_printf (&L, "os_error *%s (", f.name);
+      if (f.nonx) buf_printf (&L, "%s%s%s (", f.rtype, f.rtype[0] && f.rtype[strlen (f.rtype) - 1] == '*' ? "" : " ", f.name);
+      else buf_printf (&L, "os_error *%s (", f.name);
       if (!f.nparams) buf_adds (&L, "void");
       for (i = 0; i < f.nparams; i++) { if (i) buf_adds (&L, ", "); buf_adds (&L, f.params[i].text); }
       for (i = 0; i < f.nout; i++) if (f.out[i].reg == 16) flags = 1;
+      if (f.nonx && f.ret_reg == 16) flags = 1;
       uses_flags |= flags;
+      uses_raise |= f.nonx;
       buf_adds (&L, ")\n{\n  unsigned _r[10] = { 0 };\n");
       if (flags) buf_adds (&L, "  unsigned _flags = 0;\n");
       sort_regs (f.in, f.nin);
@@ -682,6 +815,7 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
         }
       for (i = 0; i < f.nops; i++) buf_printf (&L, "  _r[%d] %s %s;\n", f.op_reg[i], f.op_kind[i] == 1 ? "|=" : f.op_kind[i] == 2 ? "+=" : "=", hx (f.op_val[i]));
       buf_printf (&L, "  os_error *_e = (os_error *) %s (%s, _r%s);\n", flags ? "__modlib_xswif" : "__modlib_xswi", hx (0x20000u | f.swi), flags ? ", &_flags" : "");
+      if (f.nonx) buf_adds (&L, "  if (_e)\n    __modlib_raise (_e);\n");
       sort_regs (f.out, f.nout);
       for (i = 0; i < f.nout; i++)
         {
@@ -695,12 +829,22 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
           pointee = strip_ws (ty, tl - 1);
           if (outs.len == 0 && i == 0) {}
           if (i) buf_addc (&outs, '\n');
-          if (f.out[i].reg == 16) buf_printf (&outs, "    if (%s) *%s = (%s) _flags;", f.out[i].name, f.out[i].name, pointee);
-          else buf_printf (&outs, "    if (%s) *%s = (%s) _r[%d];", f.out[i].name, f.out[i].name, pointee, f.out[i].reg);
+          if (f.out[i].reg == 16) buf_printf (&outs, "%sif (%s) *%s = (%s) _flags;", f.nonx ? "  " : "    ", f.out[i].name, f.out[i].name, pointee);
+          else buf_printf (&outs, "%sif (%s) *%s = (%s) _r[%d];", f.nonx ? "  " : "    ", f.out[i].name, f.out[i].name, pointee, f.out[i].reg);
           free (ty); free (pointee);
         }
-      if (f.nout) { buf_adds (&L, "  if (!_e)\n    {\n"); buf_adds (&L, outs.s); buf_adds (&L, "\n    }\n"); }
-      buf_adds (&L, "  return _e;\n}");
+      if (f.nout && f.nonx) { buf_adds (&L, outs.s); buf_adds (&L, "\n"); }
+      else if (f.nout) { buf_adds (&L, "  if (!_e)\n    {\n"); buf_adds (&L, outs.s); buf_adds (&L, "\n    }\n"); }
+      if (!f.nonx) buf_adds (&L, "  return _e;\n}");
+      else
+        {
+          if (strcmp (f.rtype, "void") != 0)
+            {
+              if (f.ret_reg == 16) buf_printf (&L, "  return (%s) _flags;\n", f.rtype);
+              else buf_printf (&L, "  return (%s) _r[%d];\n", f.rtype, f.ret_reg);
+            }
+          buf_adds (&L, "}");
+        }
       for (j = 0; j < f.nparams; j++)
         if (!find_reg (f.in, f.nin, f.params[j].name) && !find_reg (f.out, f.nout, f.params[j].name) && !in_block (&f, f.params[j].name))
           die ("%s: the parameter '%s' has no register in the comment", f.name, f.params[j].name);
@@ -713,6 +857,7 @@ static char *generate (const char *dir, char **funcs, int nfuncs)
   for (i = 0; i < nheads; i++) buf_printf (&out, "#include \"oslib/%s\"\n", heads[i]);
   buf_adds (&out, "\nextern _kernel_oserror *__modlib_xswi (unsigned swi_x, unsigned *regs);\n");
   if (uses_flags) buf_adds (&out, "extern _kernel_oserror *__modlib_xswif (unsigned swi_x, unsigned *regs, unsigned *flags);\n");
+  if (uses_raise) buf_adds (&out, "extern void __modlib_raise (const void *e);\n");
   buf_adds (&out, "\n");
   buf_adds (&out, body.s);
   buf_adds (&out, "\n");
@@ -829,26 +974,131 @@ static int can_make (const char *dir, char *name)
   return ok;
 }
 
+static int declared_somewhere (const char *dir, const char *name);
+static int is_nonx (const char *dir, const char *name)
+{
+  char *x;
+  int r;
+  if (declared_somewhere (dir, name)) return 0;
+  x = xmalloc (strlen (name) + 2);
+  x[0] = 'x'; strcpy (x + 1, name);
+  r = declared_somewhere (dir, x);
+  free (x);
+  return r;
+}
+
 static int declared_somewhere (const char *dir, const char *name)
 {
   Decl d;
   const char *us = strchr (name, '_');
   char *hdr;
-  if (name[0] != 'x' || !us || us <= name + 1) return 0;
-  hdr = xmalloc ((size_t) (us - name) + 4);
-  memcpy (hdr, name + 1, (size_t) (us - name - 1));
-  strcpy (hdr + (us - name - 1), ".h");
-  if (try_header (dir, hdr, name, &d)) { free (hdr); return 1; }
-  free (hdr);
+  if (name[0] != 'x') return 0;
+  if (us && us > name + 1)
+    {
+      hdr = xmalloc ((size_t) (us - name) + 4);
+      memcpy (hdr, name + 1, (size_t) (us - name - 1));
+      strcpy (hdr + (us - name - 1), ".h");
+      if (try_header (dir, hdr, name, &d)) { free (hdr); return 1; }
+      free (hdr);
+    }
 #if !defined (__riscos__)
   if (scan_all (dir, name, &d)) return 1;
 #endif
   return 0;
 }
 
+#if !defined (__riscos__)
+/* every X function that the headers declare: "extern os_error *xNAME (" at the start of a line; sorted by name, each once */
+static void collect_names (const char *dir, char ***names, int *n)
+{
+  DIR *dp = opendir (dir);
+  struct dirent *e;
+  char **hdrs = NULL;
+  int nh = 0, i, k;
+  if (!dp) die ("cannot read the folder %s", dir);
+  while ((e = readdir (dp)) != NULL)
+    {
+      size_t l = strlen (e->d_name);
+      if (l > 2 && strcmp (e->d_name + l - 2, ".h") == 0) { hdrs = xrealloc (hdrs, sizeof (char *) * (size_t) (nh + 1)); hdrs[nh++] = xstrdup (e->d_name); }
+    }
+  closedir (dp);
+  for (i = 0; i < nh; i++)
+    {
+      const char *p = (const char *) cached_text (dir, hdrs[i]);
+      static const char pre[] = "extern os_error *";
+      if (!p) continue;
+      for (;;)
+        {
+          if (strncmp (p, pre, sizeof pre - 1) == 0 && p[sizeof pre - 1] == 'x')
+            {
+              const char *q = p + sizeof pre - 1;
+              const char *w = q + 1;
+              while (is_word ((unsigned char) *w)) w++;
+              if (w > q + 1 && w[0] == ' ' && w[1] == '(')
+                {
+                  char *nm = xstrndup (q, (size_t) (w - q));
+                  for (k = 0; k < *n; k++) if (strcmp ((*names)[k], nm) == 0) break;
+                  if (k < *n) free (nm);
+                  else { *names = xrealloc (*names, sizeof (char *) * (size_t) (*n + 1)); (*names)[(*n)++] = nm; }
+                }
+            }
+          p = strchr (p, '\n');
+          if (!p) break;
+          p++;
+        }
+    }
+  qsort (*names, (size_t) *n, sizeof (char *), cmp_str);
+}
+
+/* the text of the veneer of NAME, or NULL when it cannot be made (die_message says why) */
+static char *try_generate (const char *dir, char *name)
+{
+  jmp_buf jb;
+  char *volatile text = NULL;
+  die_recover = &jb;
+  if (setjmp (jb) == 0)
+    {
+      char *one[1];
+      one[0] = name;
+      text = generate (dir, one, 1);
+    }
+  die_recover = NULL;
+  return text;
+}
+
+/* --library DIR: a C file for every OSLib function (X and non-X) that can be made, DIR/NAME.c, for libOSLib32.a (bin/mkoslib-lib.sh) */
+static int library (const char *inc, const char *outdir)
+{
+  char **names = NULL;
+  int n = 0, i, w, made = 0, skipped = 0;
+  collect_names (inc, &names, &n);
+  if (mkdir (outdir, 0777) != 0 && errno != EEXIST) die ("cannot make the folder %s", outdir);
+  for (i = 0; i < n; i++)
+    for (w = 0; w < 2; w++)
+      {
+        char *name = names[i] + w;
+        char *text = try_generate (inc, name);
+        if (!text) { fprintf (stderr, "skipped %s: %s\n", name, die_message); skipped++; continue; }
+        {
+          Buf path;
+          buf_init (&path);
+          buf_printf (&path, "%s/%s.c", outdir, name);
+          write_file (path.s, text, strlen (text));
+          free (path.s);
+        }
+        free (text);
+        made++;
+      }
+  printf ("%s: %d functions made, %d skipped\n", outdir, made, skipped);
+  return 0;
+}
+#else
+static int library (const char *inc, const char *outdir) { (void) inc; (void) outdir; die ("--library is not available here"); return 1; }
+#endif
+
 static void usage (FILE *f)
 {
-  fputs ("usage: mkoslib [-I OSLIB_INCLUDE_DIR] -o OUT.c [FUNCTION ...] [--from-objects A.o [B.o ...]]\n", f);
+  fputs ("usage: mkoslib [-I OSLIB_INCLUDE_DIR] -o OUT.c [FUNCTION ...] [--from-objects A.o [B.o ...]]\n       mkoslib [-I OSLIB_INCLUDE_DIR] --library DIR\n", f);
 }
 
 int main (int argc, char **argv)
@@ -859,18 +1109,20 @@ int main (int argc, char **argv)
   char **objs = xmalloc (sizeof (char *) * (size_t) (argc + 1));
   int nobjs = 0;
   char *text;
+  const char *libdir = NULL;
   progname = "mkoslib";
   for (i = 1; i < argc; i++)
     {
       if (!strcmp (argv[i], "-I")) { if (++i >= argc) die ("-I needs a folder"); inc = argv[i]; }
       else if (!strcmp (argv[i], "-o")) { if (++i >= argc) die ("-o needs a file name"); outpath = argv[i]; }
       else if (!strcmp (argv[i], "--from-objects")) have_objs = 1;
+      else if (!strcmp (argv[i], "--library")) { if (++i >= argc) die ("--library needs a folder"); libdir = argv[i]; }
       else if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help")) { usage (stdout); return 0; }
       else if (argv[i][0] == '-' && argv[i][1]) { usage (stderr); die ("unknown option %s", argv[i]); }
       else if (have_objs) objs[nobjs++] = argv[i];
       else funcs[nfuncs++] = argv[i];
     }
-  if (!outpath) { usage (stderr); die ("-o OUT.c is required"); }
+  if (!outpath && !libdir) { usage (stderr); die ("-o OUT.c is required"); }
   if (!inc)
     {
       const char *o = getenv ("OSLIB");
@@ -880,6 +1132,7 @@ int main (int argc, char **argv)
       buf_printf (&b, "%s/oslib", o);
       inc = b.s;
     }
+  if (libdir) return library (inc, libdir);
   if (have_objs && !nobjs) die ("--from-objects needs object files");
   if (nobjs)
     {
@@ -905,14 +1158,14 @@ int main (int argc, char **argv)
       for (k = 0; k < nused; k++)
         {
           int dup = 0, j;
-          if (!declared_somewhere (inc, used[k])) continue;
+          if (!declared_somewhere (inc, used[k]) && !is_nonx (inc, used[k])) continue;
           for (j = 0; j < nfuncs; j++) if (strcmp (funcs[j], used[k]) == 0) dup = 1;
           if (!dup) funcs[nfuncs++] = used[k];
         }
       for (k = 0; k < nsoft; k++)
         {
           int dup = 0, j;
-          if (!declared_somewhere (inc, soft[k])) continue;
+          if (!declared_somewhere (inc, soft[k]) && !is_nonx (inc, soft[k])) continue;
           for (j = 0; j < nfuncs; j++) if (strcmp (funcs[j], soft[k]) == 0) dup = 1;
           if (dup) continue;
           if (can_make (inc, soft[k])) funcs[nfuncs++] = soft[k];
