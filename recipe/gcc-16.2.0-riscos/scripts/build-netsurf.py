@@ -8,6 +8,7 @@ usage: build-netsurf.py --toolchain DIR --work DIR [--opt "FLAGS"] [--jobs N] [-
   --opt "FLAGS"     compiler flags for everything that is built from source (default "-O2"), for example
                     "-O2 -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -flto" (with -flto, -ffat-lto-objects is added, and the flags go to the link of NetSurf as well)
   --pgo-dir DIR     profile-guided build: DIR is made by pgo-collect.py from the .gcda files that an instrumented build ("--opt ... -fprofile-generate") wrote on RISC OS
+  --release         a build to hand out: NetSurf compiled with NETSURF_LOG_LEVEL=WARNING (the logging calls below that level are not in the program), and a !Run that sets NetSurf$Logging 0 (docs/NETSURF.md)
   --only STEP       run one step (fetch, hosttools, thirdparty, nslibs, netsurf, pack)
   --no-fetch        do not download anything (the sources must be in src/ already)
 
@@ -22,6 +23,7 @@ ap.add_argument("--work", required=True)
 ap.add_argument("--opt", default="-O2")
 ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
 ap.add_argument("--pgo-dir", help="a folder of profile data made by pgo-collect.py: the build is then profile-guided (-fprofile-use)")
+ap.add_argument("--release", action="store_true", help="a build to hand out: no log (the program logs warnings and errors only, and the !Run says NetSurf$Logging 0), no -v")
 ap.add_argument("--only")
 ap.add_argument("--no-fetch", action="store_true")
 a = ap.parse_args()
@@ -176,7 +178,7 @@ def step_nslibs():
 
 def step_netsurf():
     d = SRC + "/netsurf"
-    open(d + "/Makefile.config", "w").write("# written by build-netsurf.py\nNETSURF_USE_CURL := YES\nNETSURF_USE_OPENSSL := YES\nNETSURF_USE_JPEG := YES\nNETSURF_USE_PNG := YES\nNETSURF_USE_WEBP := NO\nNETSURF_USE_JPEGXL := NO\n"
+    open(d + "/Makefile.config", "w").write(("# written by build-netsurf.py\n" + ("override NETSURF_LOG_LEVEL := WARNING\n" if a.release else "")) + "NETSURF_USE_CURL := YES\nNETSURF_USE_OPENSSL := YES\nNETSURF_USE_JPEG := YES\nNETSURF_USE_PNG := YES\nNETSURF_USE_WEBP := NO\nNETSURF_USE_JPEGXL := NO\n"
                                        "NETSURF_USE_UTF8PROC := NO\nNETSURF_USE_NSPSL := YES\nNETSURF_USE_NSLOG := YES\n")
     e = {"GCCSDK_INSTALL_ENV": ENV, "GCCSDK_INSTALL_CROSSBIN": CROSSBIN}
     if LTO or "-fprofile-generate" in a.opt: e["LDFLAGS"] = a.opt        # the link must know the flags too (-flto, -fprofile-generate ...): NetSurf's Makefile keeps LDFLAGS from the environment
@@ -197,7 +199,12 @@ def step_pack():
     subprocess.run([TBIN + "/" + T + "-strip", "-o", app + "/!RunImage,e1f", appdir + "/!RunImage,e1f"], check=True)
     # !Run: the front end's template, then the slot and the program.  The size of the slot that GCCSDK's makerun works out from the file (5.5 MB) is far too small for a program with UnixLib's heap in its slot
     t = open(d + "/frontends/riscos/scripts/Run", newline="").read()
-    t, n = re.subn(r"WIMPSLOT\nRun <NetSurf\$Dir>\.!RunImage %\*0 2>[^\n]*\n?", "WimpSlot -min 32000k -max 32000k\nRun <NetSurf$Dir>.!RunImage -v %*0 2><NetSurf$Dir>.Log\n", t)
+    if a.release:      # to hand out: logging off (the program then logs warnings and errors only) and the log, as the front end's own !Run has it, in the scrap folder
+        run = "WimpSlot -min 32000k -max 32000k\nRun <NetSurf$Dir>.!RunImage %*0 2><Wimp$ScrapDir>.WWW.NetSurf.Log\n"
+        t = t.replace("Set NetSurf$Logging 1", "Set NetSurf$Logging 0")
+    else:              # for testing: verbose, and the log next to the application where it can be read
+        run = "WimpSlot -min 32000k -max 32000k\nRun <NetSurf$Dir>.!RunImage -v %*0 2><NetSurf$Dir>.Log\n"
+    t, n = re.subn(r"WIMPSLOT\nRun <NetSurf\$Dir>\.!RunImage %\*0 2>[^\n]*\n?", run, t)
     if n != 1: sys.exit("the !Run template of NetSurf has changed: look at frontends/riscos/scripts/Run")
     open(app + "/!Run,feb", "w", newline="").write(t)
     info = ["NetSurf build %s" % sh(["git", "log", "-1", "--format=%h %cs %s"], cwd=d).strip(), "flags: " + a.opt, "toolchain: " + sh([TBIN + "/" + T + "-gcc", "--version"]).splitlines()[0]]

@@ -73,6 +73,18 @@ All the builds printed the same checksums. The JPEG gain is libjpeg-turbo's NEON
 
 For a profile that serves you, browse the way you do. In the test above one session of ten minutes and one run of the benchmark gave the profile of 1,575 object files.
 
+## Handing a build to someone else
+
+A build for other people should be quiet and small. `build-netsurf.py --release` does the following, and `make-netsurf-zip.py` then packs the result:
+
+* **No log.** NetSurf logs at run time, steered by the system variable `NetSurf$Logging` (`1` or unset: verbose; `0`: warnings and errors only), and the front end's own `!Run` sets it to `1`. With `--release` the `!Run` sets `0`, passes no `-v`, and keeps the log where NetSurf's own `!Run` has it, in `<Wimp$ScrapDir>.WWW.NetSurf.Log`. NetSurf is also compiled with `NETSURF_LOG_LEVEL := WARNING`, so the calls that log at INFO (the ones that fill the log of a normal start) are not in the program at all: the strings of those messages are not in the file.
+* **No debug information.** The build uses `-g` and the pack step strips the program (about 9 MB instead of 20 MB; this changes the size of the file, not the speed). Assertions are off (`-DNDEBUG`), and RUfl's own log is off ([RUFL.md](RUFL.md)).
+* **Never the instrumented program.** A build made with `-fprofile-generate` is about twice the size, slower, and writes profile files when it ends: hand out the build made with `--pgo-dir`, or without profile flags.
+* **Kept on purpose:** `-mpoke-function-name` (the name of each function in the code, a word apiece, which gives RISC OS's backtrace of a crash its names), `-funwind-tables`, and the stack probing that this compiler turns on.
+* A profile that was collected with the logging compiled in matches NetSurf's own functions less well once the logging is compiled out (a function whose calls changed has a different control flow, and gcc ignores its profile): the libraries are not affected. For the full gain, collect the profile with an instrumented build that has `--release`'s settings.
+
+`make-netsurf-zip.py OUTDIR ZIP [README]` makes a zip of `out/!NetSurf` (with the RISC OS file types in the zip, as the packages of this project have them), a `ReadMe` and `BUILD-INFO`, ready to unpack on RISC OS. NetSurf is free software under the GNU General Public License version 2: whoever receives the program is entitled to the source (`BUILD-INFO` names every commit and version; this recipe builds it).
+
 ## Not done
 
 `utf8proc`, WebP and JPEG XL are switched off. libjpeg-turbo has no NEON code unless the flags ask for it. NetSurf's own tests were not run. A package for others to install (a `!NetSurf` that is more than a test) is a different job from this one. How the browsers of the builds feel in use was not compared in detail: all three (default, profile-guided, profile-guided with LTO) were run on the Pi and worked, and the profile-guided LTO build seemed the quickest (an impression, not a measurement).
