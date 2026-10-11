@@ -1,0 +1,27 @@
+--- a/src/flex.c	2026-09-06 16:09:33.281010297 +0100
++++ b/src/flex.c	2026-10-11 13:51:10.961240427 +0100
+@@ -860,6 +860,16 @@
+ /* Returns:    previous state                    */
+ /*************************************************/
+ 
++#ifndef __TARGET_SCL__
++/* UnixLib has no _kernel_register_slotextend: only the Shared C Library asks a registered procedure to
++   make room when it extends the heap.  Under UnixLib the heap is not moved by the C library, so there is
++   nothing to register; report "do not budge" (0), and -1 for a dynamic area as below.  */
++extern int flex_set_budge(int newstate)
++{
++    (void) newstate;
++    return flex__area_num ? -1 : 0;
++}
++#else
+ extern int flex_set_budge(int newstate)
+ {
+     _kernel_ExtendProc *oldproc;
+@@ -883,6 +893,7 @@
+     else
+         return (int) oldproc;
+ }
++#endif
+ 
+ 
+ 

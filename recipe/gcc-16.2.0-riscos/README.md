@@ -6,6 +6,7 @@ Nothing under `~/gccsdk` is modified by any of this: it is only read (UnixLib so
 
 ## What is here
     patches-oslib/     five patches for building OSLib from its own sources (scripts/install-oslib.py; docs/OSLIB.md)
+    patches-flexlib/   one patch for building FlexLib for UnixLib (scripts/install-flexlib.py and install-sflib.py; docs/FLEXLIB.md)
     patches/            GCC core: arm backend, config.gcc, dwarf2cfi, ira, libgcc, libgcov, -fstack-clash-protection on by default, and libcpp: `#include "Prefix:Name.h"` as GCCSDK's cross compiler read it (`DeskLib:Core.h`; the cross compiler only, see [DESKLIB.md](../../docs/DESKLIB.md)) (11 patches, ~370 lines)
     new-files/          the RISC OS target files (gcc/config/arm/riscos-elf.h, riscos.opt, t-riscos..., libgcc crt files)
     patches-cxx/        libstdc++ (8 patches: crossconfig, cmath long-double guards, EH personality, timed-wait and hardware_concurrency fixes)

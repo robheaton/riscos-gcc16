@@ -1,0 +1,3 @@
+# Patch for building FlexLib for UnixLib
+
+`flexlib-unixlib.patch` (one hunk in `src/flex.c`) is applied by `scripts/install-flexlib.py` to your checkout of `https://github.com/steve-fryatt/flexlib` (Acorn's FlexLib, as packaged for the GCCSDK by Stephen Fryatt). FlexLib is under the Apache License 2.0 (Copyright 1997 Acorn Computers Ltd) and so is this patch; the library itself is not part of this project. The change: `flex_set_budge` does nothing under UnixLib, because `_kernel_register_slotextend` exists only in the Shared C Library (the old build used `-mlibscl`). See [docs/FLEXLIB.md](../../../docs/FLEXLIB.md).
