@@ -1,5 +1,28 @@
 # Changelog
 
+## v16.2.0-20: 2026-10-11, modkit: CMunge's error blocks and the rest of its options, wide characters and more of the C library, and a guide for moving a module from 4.7.4
+
+| Asset | Version |
+|---|---|
+| native compiler `Gcc16` | 16.2.0-20 |
+| runtime `SharedLibs-C-armeabihf` | 16.2.0-13 (unchanged) |
+| runtime `SharedLibs-C++-armeabihf` | 16.2.0-5 (unchanged) |
+| runtime `SharedLibs-Fortran-armeabihf` | 16.2.0-2 (unchanged) |
+| self-test `Gcc16SelfTest` | 16.2.0-20 |
+| Linux cross compiler | 16.2.0-20 |
+| optional `SharedULibFix` (the fixed SharedUnixLibrary) | 1.16-vforkfix3 (unchanged) |
+
+New since 16.2.0-19: the module kit (`modkit`), two options of the compiler's driver, its tests and a guide. The native `Gcc16` and the Linux cross compiler carry them. The method: the real modules of GCCSDK (the Shared Object Manager, ARMEABISupport and SysLogD) and its four examples were built from their own sources and Makefiles, and every gap that stopped one was closed; the list of what is still missing is in [docs/PORTING-FROM-4.7.4.md](docs/PORTING-FROM-4.7.4.md).
+
+* **`cmunge`: error blocks and more of CMunge's options** (C and Python versions, byte for byte the same, and the header the same as the real CMunge 0.76 makes for the same file). `error-chunk-base-number:` and `error-identifiers:` make the error blocks (`ERROR_BASE`, `extern void __err_NAME (void)` and `#define NAME ((_kernel_oserror *) ...)` in the header); `-zoslib` (OSLib's type names), `-xh` and `-xhdr` (SWI number headers) are accepted; `-depend` gives the same warning as CMunge's; `-apcs` takes CMunge's abbreviations (`nonreent`, `fpe2`, `noswst`, `nofpr` ...); `-zerrors`.
+* **More of the C library** (about 385 functions): `<wchar.h>` and `<wctype.h>` (the whole of C95 except the wide input and output, in the C locale: `mbrtowc`, `wcsrtombs`, `wcstol`, `wcstod`, `wcstok`, `wmemcpy`, `iswalpha`, `towupper`, `wctype` ...), the multibyte functions of `<stdlib.h>`, `system ()`, `gets ()` (before C11), the `long double` functions of `<math.h>`, and the `_kernel_` functions `_kernel_raise_error`, `_kernel_escape_seen`, `_kernel_fpavailable`, `_kernel_command_string` and `_kernel_system`. Tested against glibc (the library test has 22 sections and passes on the host and on the ARM interpreter) and on the Pi (`ErrMod`).
+* **More headers**: `<sys/elf.h>`, `<sys/mman.h>`, `<fcntl.h>` (constants) and `<limits.h>` with the POSIX limits, the way GCCSDK's UnixLib headers have them; `swisnums.h` has 1,143 SWIs (the 174 names of GCCSDK's own list added).
+* **The compiler's driver** accepts `-mlibscl` after `-mmodule` and `-mapcs-32` (GCCSDK 4.7.4 Makefiles pass them). Nothing else in the compiler, binutils or UnixLib changed.
+* **A guide**: [docs/PORTING-FROM-4.7.4.md](docs/PORTING-FROM-4.7.4.md) lists what works as it is, what to change in a Makefile and what is still missing. **A correction:** `docs/MODULES.md` of 16.2.0-19 said that GCCSDK 4.7.4's modules had "software stack checking and extension"; they had not: 4.7.4 compiled module code in SVC and IRQ mode without stack checking (`-mmodule` implies `-mno-apcs-stack-check`), so a module here has the same stack as it had, the kernel's 32 KB SVC stack, with no check.
+* Tests: `test-gccsdk-modules.py` builds the real GCCSDK modules (SOManager 45,980 bytes, ARMEABISupport 39,892, SysLogD 49,648) and checks their module headers; `test-ctools.py` has 7,012 checks in the full run, with the generated CMHG files compared with the real CMunge; `sim-errmod.py`; three new checks in the tarball's smoke test.
+* Not changed: binutils, UnixLib, the C, C++ and Fortran runtimes and `SharedULibFix`; `Gcc16` 16.2.0-20 needs `SharedLibs-C-armeabihf` 16.2.0-13 or later, as 16.2.0-14 to -19 did.
+* Checked on the Raspberry Pi with the packages of this release, installed with PackMan: the self-test (twelve of twelve checks in 32 seconds; its module check builds, loads and runs a small module with the kit, natively), the regression run of eight suites (the self-test and seven more: 54 summary lines, the same as in the runs of 16.2.0-19, 16.2.0-18, 16.2.0-17, 16.2.0-16 and 16.2.0-13, none failing), the network module built on the Pi by the commands of its GCCSDK 4.7.4 makefile (3 seconds; byte for byte the module that the Linux tarball makes, 23,024 bytes; loaded and run through 39 network checks, a 500 KB transfer among them), and `RomCmp`, the 1,400 lines of C of the ROM-comparison program, built on the Pi (72,504 bytes; byte for byte its cross build), loaded and run against the ROM's modules: 545 checks, 0 failed; of its 9,820 lines of results 9,808 are the same as those of 8 October and 12 differ, the names that the machine gives to five file types today (&077, &AF0, &D80, &D83 and &D84); the `RomCmp` of 16.2.0-19, run on the same day, gives the same 12 lines, and its output equals that of the new one, so the difference is the machine's and not the build's. The error blocks and the new library functions were run on the Pi on 10 October, before the release, with the module `ErrMod` (20 checks, 0 failed; see the first items). The build instructions ([docs/BUILDING.md](docs/BUILDING.md)) were run again in an empty home directory, and the packages and the tarball are the output of that run.
+
 ## v16.2.0-19: 2026-10-10, modkit: `-zbase`, the non-X OSLib functions and `-lOSLib32`, BSD sockets for modules, and the stack of a module
 
 | Asset | Version |

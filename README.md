@@ -36,7 +36,7 @@ how each statement was tested, is in [docs/FEATURES.md](docs/FEATURES.md) and [d
 
 ## Quick start: compile on RISC OS
 
-1. Download from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest) `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` and `Gcc16_16.2.0-19_arm.zip` (70 MB).
+1. Download from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest) `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` and `Gcc16_16.2.0-20_arm.zip` (70 MB).
    A zip must have file type Zip (&A91); if it arrives as Text or Data, type `*SetType <file> &A91` in a Task window.
 2. **Drag each zip onto the PackMan icon on the icon bar**, first `SharedLibs-C-armeabihf`, then `Gcc16` (PackMan insists on this order), and confirm the installs.
 3. **Reboot.** (PackMan replaces the files, but the running system keeps the old UnixLib until the machine restarts.)
@@ -64,8 +64,8 @@ The full guide is [docs/INSTALL-RISCOS.md](docs/INSTALL-RISCOS.md) and [docs/USI
 You need Linux x86-64 with glibc 2.38 or newer (Ubuntu 24.04, Debian 13, Fedora 39 or later).
 
 ```bash
-tar -xf riscos-gcc16-cross-16.2.0-19-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-19-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-20-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-20-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc -O2 -o hello,e1f hello.c        # ,e1f gives the file type ELF when the file is copied over a Samba share
 ```
 
@@ -79,17 +79,17 @@ Everything is attached to the [releases page](https://github.com/robheaton/risco
 | File | What it is | Needed for |
 |---|---|---|
 | `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` (2 MB) | the C runtime: UnixLib 5.0 rebuilt with GCC 16 and fixed, loader, libgcc_s | running **any** program from this tool chain |
-| `Gcc16_16.2.0-19_arm.zip` (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
-| `Gcc16SelfTest_16.2.0-19_arm.zip` (19 KB) | the self-test of the native compiler, as `!GCC16Test` | checking an installation |
+| `Gcc16_16.2.0-20_arm.zip` (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
+| `Gcc16SelfTest_16.2.0-20_arm.zip` (19 KB) | the self-test of the native compiler, as `!GCC16Test` | checking an installation |
 | `SharedULibFix_1.16-vforkfix3_arm.zip` (24 KB) | the fixed SharedUnixLibrary 1.16-vforkfix3 with an installer that checks everything, a restore script and a check, as `!SULFix`. **It replaces a system module: [read this first](docs/SHAREDULIB-FIX.md)** | programs that `vfork` children that can fail to `exec` (optional) |
 | `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip` (0.7 MB) | libstdc++ 6.0.36 | running C++ programs that link it dynamically (the cross compiler's default) |
 | `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` (0.4 MB) | libgfortran 5 | running Fortran programs that link it dynamically (the cross compiler's default) |
-| `riscos-gcc16-cross-16.2.0-19-x86_64-linux.tar.xz` (54 MB) | the cross compiler for Linux | compiling on Linux |
+| `riscos-gcc16-cross-16.2.0-20-x86_64-linux.tar.xz` (54 MB) | the cross compiler for Linux | compiling on Linux |
 | `gcc-16.2.0.tar.xz`, `binutils-2.45.1.tar.xz`, `make-4.4.1.tar.gz`, `gccsdk-unixlib-r7800.tar.xz` | the unmodified upstream sources the binaries were built from (UnixLib is a snapshot of GCCSDK svn r7800) | the source offer, see [SOURCES.md](SOURCES.md) |
 
 ## How it was tested
 
-On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISupport 1.08 and Shared Object Manager 3.04. The compiler, UnixLib and the runtime packages of this release are those of 16.2.0-16 and earlier (16.2.0-17, -18 and -19 changed the module kit only); they passed all of the following on that machine (what was run with the packages of 16.2.0-19 is in the last paragraph of this section):
+On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISupport 1.08 and Shared Object Manager 3.04. UnixLib and the runtime packages of this release are those of 16.2.0-16 and earlier, and the compiler differs from that of 16.2.0-16 only in two options of its driver (16.2.0-17, -18 and -19 changed the module kit only, 16.2.0-20 also those options); they passed all of the following on that machine (what was run with the packages of 16.2.0-20 is in the last paragraph of this section):
 
 * the C regression suite `rotest` (34,541 checks: integers, 64-bit arithmetic, floating point, conversions, varargs, `alloca`, `setjmp`, unwinding, atomics, PIC data, C23) and the C++ suite `cxxtest` (139 checks), built both
   by the cross compiler and by the native compiler (the native compiler's objects are byte-identical to the cross compiler's);
@@ -105,6 +105,7 @@ On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISuppor
 * floating point, `math.h` and C++ in modules, built with the module kit of 16.2.0-17 (run on the Pi on 2026-10-09 and 2026-10-10, before the release): a module (`FpSvc`) that formats and reads floating point numbers, does arithmetic and calls `math.h` in SVC mode and in a generic veneer at interrupt time gave the answers that glibc and Python give (892 + 791 + 10 checks, and the same bits as the host in 100 interrupt-time calls); two modules written in C++ ran their static constructors and destructors in the right order, `new` and `delete`, virtual functions, and `std::string`, `std::vector`, `std::map`, `std::set`, `std::list`, `std::unordered_map`, smart pointers and `std::function`, printing the same text as the host (33 lines, 0 differ); and the kit's C library as a module (`LibTest`) gave glibc's results in every compared section, 318,000 more results for floating point among them ([docs/MODULES.md](docs/MODULES.md#c-in-modules)).
 * the CMHG options of 16.2.0-18 and the faults of the kit that it fixes (run on the Pi on 2026-10-10, before the release): a test module (`CmhgT`, 65 checks) with a SWI function of its own, `handler:` and `no-handler:` commands, generic veneers with `private-word:` and `carry-capable:` and vector veneers with `error-capable:`, all with real flags; two modules with `swi-decoding-code:` (the kernel asks the code for names and numbers; the first run found two faults, fixed); and a module (`KitFix`) that checks that an undefined weak reference and an absolute symbol stay 0 ([docs/MODULES.md](docs/MODULES.md), [docs/OS-MODULES.md](docs/OS-MODULES.md#new-in-1620-18)).
 * BSD sockets and the OSLib veneers in modules, built with the module kit of 16.2.0-19 (run on the Pi on 2026-10-10, before the release): a module (`SockHw`) that does TCP and UDP on the loopback address (non-blocking `connect`, `select`, `accept` with the peer's address, `shutdown`, `EBADF`, `EWOULDBLOCK`, `ECONNREFUSED`), resolves `localhost` through the Resolver, and calls the X and non-X OSLib functions of `libOSLib32.a`: 53 checks, 0 failed; an echo server in the same module answered a client on another machine (three messages and the end of file); a non-X OSLib error ended the whole command line, as a non-X SWI error does; and `__modlib_stack_left ()` read 32,172 bytes at the top of a command and fell with the depth of the recursion. A private stack for modules was tried in the same session: the Task window aborted ([docs/MODULES.md](docs/MODULES.md#sockets)).
+* CMunge's error blocks and the new C library functions, built with the module kit of 16.2.0-20 (run on the Pi on 2026-10-10, before the release): a module (`ErrMod`) with `error-chunk-base-number:` and `error-identifiers:` returned four errors that came back with their numbers (&838000, &838001, &838010, &838002) and messages; 20 checks, 0 failed (`system ()`, the `_kernel_` functions and the wide character functions among them); an unknown command run from the module gave error &D6; `_kernel_raise_error` ended the whole command line, as the kernel's error handler does ([docs/MODULES.md](docs/MODULES.md)).
 * the fixed SharedUnixLibrary (the optional `SharedULibFix` package 1.16-vforkfix3, since 16.2.0-14): the module has been installed on the test machine since 4 Oct 2026, the `vfork` loops that froze the machine with the stock module run without a freeze, and the regression suites pass with it; the installer's logic runs through 28 simulated scenarios; the installer itself was run on the machine (`Install` on the stock module, a reboot, `Check`, `Restore`, `Install` again, a reboot, `Check`, and an `Install` that correctly refused): all passed.
 
 The packages of this release were installed with PackMan on that machine and checked with the self-test (`tests/selftest`: twelve checks, 32 seconds; check 12 builds, loads and runs a module with the kit of this release).

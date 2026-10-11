@@ -24,12 +24,15 @@ mthrowback
 Target RejectNegative Mask(THROWBACK)
 Send errors and warnings to a text editor as well (DDEUtils throwback; a cross compiler sends it to the SysLogD of the host named by THROWBACK_HOST)
 
+; The Negative() chain (-munixlib <-> -mmodule) must be a CYCLE: opts-common.cc cancel_option () follows neg_index until it is back at the option it started from, so a chain
+; that ends in another option (or in -1) makes the driver recurse for ever as soon as an option of arm.opt comes before -mmodule or -munixlib.  -mlibscl has no Negative () at all:
+; it neither cancels nor is cancelled, so -mmodule -mlibscl (either order) keeps the module.
 mlibscl
 Target RejectNegative InverseMask(UNIXLIB,LIBSCL)
 Compile with the RISC OS SharedCLibrary headers (with -mmodule, in either order, it changes nothing: the module is made as for -mmodule alone, as GCCSDK 4.7.4 did)
 
 munixlib
-Target RejectNegative Negative(mlibscl) Mask(UNIXLIB)
+Target RejectNegative Negative(mmodule) Mask(UNIXLIB)
 Compile with the RISC OS UnixLib headers (default)
 
 mmodule

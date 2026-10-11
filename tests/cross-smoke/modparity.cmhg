@@ -1,0 +1,11 @@
+; the CMHG error blocks of 16.2.0-20 (CMunge's error-chunk-base-number: and error-identifiers:)
+title-string:           ModParity
+help-string:            ModParity 1.00
+date-string:            11 Oct 2026
+
+error-chunk-base-number: 0x838100
+error-identifiers: err_one("The first error"),
+                   err_two(0x838110, "The second error has a number of its own")
+
+command-keyword-table: modparity_cmd
+  ModParity_Go(min-args: 0, max-args: 0, help-text: "*ModParity_Go\n", invalid-syntax: "Syntax: *ModParity_Go")
