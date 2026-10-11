@@ -10,7 +10,7 @@
  
  /* Stack of conditionals currently in progress
     (including both successful and failing conditionals).  */
-@@ -860,6 +863,99 @@
+@@ -860,6 +863,127 @@
     free it.  Returns NULL on error.  LOCATION is the source location
     of the file name.  */
  
@@ -19,8 +19,29 @@
 +   variable Prefix$Path, so this is only for a cross compiler on another system.  The prefix is a RISC OS name and its case is not significant.  The name is looked for
 +     1. in the directories of the environment variable PREFIX_PATH (the prefix in upper case, the directories separated by commas; the first file that exists is used),
 +     2. in the directories of the include path, in a directory called Prefix (any case) there (so a tool chain that has include/DeskLib/Core.h finds DeskLib:Core.h),
++   and the name of the file is matched in any case in 1 and 2 too (RISC OS names are not case sensitive: Colourtran.h is ColourTran.h).
 +     3. else the prefix is dropped, and Name.h is searched like any other name (so -I<folder of DeskLib's headers> is enough).
 +   Names without such a prefix are not touched.  FNAME is freed if a different name is returned.  */
++/* The entry of directory DIR whose name is NAME in any case (RISC OS names are not case sensitive), as a new string; NULL if there is none.  */
++static char *
++riscos_find_entry (const char *dir, const char *name)
++{
++  DIR *d = opendir (dir[0] ? dir : ".");
++  struct dirent *e;
++  char *res = NULL;
++  if (d == NULL)
++    return NULL;
++  while ((e = readdir (d)) != NULL)
++    if (strcasecmp (e->d_name, name) == 0)
++      {
++	res = xstrdup (e->d_name);
++	if (strcmp (e->d_name, name) == 0)
++	  break;			/* the exact spelling is the best */
++      }
++  closedir (d);
++  return res;
++}
++
 +static char *
 +riscos_expand_prefix (cpp_reader *pfile, char *fname)
 +{
@@ -52,14 +73,21 @@
 +      size_t dlen = end ? (size_t) (end - val) : strlen (val);
 +      if (dlen > 0)
 +	{
-+	  char *cand = XNEWVEC (char, dlen + strlen (rest) + 2);
-+	  memcpy (cand, val, dlen);
-+	  if (cand[dlen - 1] != '/')
-+	    cand[dlen++] = '/';
-+	  strcpy (cand + dlen, rest);
-+	  if (access (cand, R_OK) == 0)
++	  char *dn = XNEWVEC (char, dlen + 1);
++	  char *cand = NULL, *found;
++	  memcpy (dn, val, dlen);
++	  dn[dlen] = '\0';
++	  found = riscos_find_entry (dn, rest);	/* the name, in any case */
++	  if (found)
 +	    {
-+	      res = lrealpath (cand);
++	      cand = XNEWVEC (char, dlen + strlen (found) + 2);
++	      sprintf (cand, "%s%s%s", dn, dn[dlen - 1] == '/' ? "" : "/", found);
++	      free (found);
++	    }
++	  free (dn);
++	  if (cand)
++	    {
++	      res = access (cand, R_OK) == 0 ? lrealpath (cand) : NULL;
 +	      free (cand);
 +	      if (res)
 +		{
@@ -67,8 +95,6 @@
 +		  return res;
 +		}
 +	    }
-+	  else
-+	    free (cand);
 +	}
 +      val = end ? end + 1 : NULL;
 +    }
@@ -84,18 +110,20 @@
 +	if (strlen (e->d_name) == plen && strncasecmp (e->d_name, fname, plen) == 0)
 +	  {
 +	    size_t nl = strlen (e->d_name);
-+	    char *cand = XNEWVEC (char, strlen (dn) + nl + strlen (rest) + 3);
-+	    sprintf (cand, "%s/%s/%s", dn, e->d_name, rest);
-+	    if (access (cand, R_OK) == 0)
++	    char *sub = XNEWVEC (char, strlen (dn) + nl + 2);
++	    char *found;
++	    sprintf (sub, "%s/%s", dn, e->d_name);
++	    found = riscos_find_entry (sub, rest);
++	    free (sub);
++	    if (found)
 +	      {
-+		res = XNEWVEC (char, nl + strlen (rest) + 2);
-+		sprintf (res, "%s/%s", e->d_name, rest);
-+		free (cand);
++		res = XNEWVEC (char, nl + strlen (found) + 2);
++		sprintf (res, "%s/%s", e->d_name, found);
++		free (found);
 +		closedir (d);
 +		free (fname);
 +		return res;
 +	      }
-+	    free (cand);
 +	  }
 +      closedir (d);
 +    }
@@ -110,7 +138,7 @@
  static const char *
  parse_include (cpp_reader *pfile, int *pangle_brackets,
  	       const cpp_token ***buf, location_t *location)
-@@ -876,6 +972,9 @@
+@@ -876,6 +1000,9 @@
        fname = XNEWVEC (char, header->val.str.len - 1);
        memcpy (fname, header->val.str.text + 1, header->val.str.len - 2);
        fname[header->val.str.len - 2] = '\0';
