@@ -42,6 +42,7 @@ The programs are 32-bit ARMv7 with VFPv3: other ARMv7 machines should work, but 
   **your own SWI calls** can still hit it: pass such SWIs `malloc`'d or static memory, or write one byte to each 4 KB page of the buffer first.
 * **A 64-byte `vstm`** (a store of eight D registers) that is the first access to a stack page is not restarted and the program dies with `SIGSEGV`. UnixLib's `memcpy` was changed to avoid it; hand-written NEON code should too.
 * Whether the two problems above are bugs in RISC OS, in ARMEABISupport or by design is not known; a reproducer and the questions are in [`docs/upstream/07-...`](upstream/07-RISCOS-svc-mode-store-to-unmapped-stack-page-lost.txt).
+* **UnixLib has no `EPROTO`** (a POSIX error code); programs that use it, such as OpenSSL, need `-DEPROTO=<a value that does not occur>` ([NETSURF.md](NETSURF.md)).
 * **UnixLib guesses whether a relative file name is a Unix or a RISC OS name**, and takes a name such as `foo.c.gcov` or `foo.h.bak` (a suffix from the swap list in the middle) for a RISC OS path. A program that opens such a name fails or finds nothing; the tools of this package ask for Unix names, a program of your own does the same with `int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;` ([USING-NATIVE.md](USING-NATIVE.md#file-names-unix-names-risc-os-directories)).
 
 ## Bugs in RISC OS modules that this release does not change
