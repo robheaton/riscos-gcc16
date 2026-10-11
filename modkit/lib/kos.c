@@ -96,3 +96,34 @@ int _kernel_oscli (const char *s)
   if (e) { remember (e); return _kernel_ERROR; }
   return 1;
 }
+
+/* ---- a few more of the SharedCLibrary's _kernel_ functions that a module may call ---- */
+extern void __modlib_raise (const void *e);
+
+/* Raise the error through the error handler of the caller (OS_GenerateError, the non-X form: it does not come back to a module that is called from the system); the value is 0 when it does. */
+int _kernel_raise_error (const _kernel_oserror *e)
+{
+  __modlib_raise (e);
+  return 0;
+}
+
+/* 1 when the Escape key was pressed since the last call (and the condition is acknowledged), else 0 (OS_Byte 126). */
+int _kernel_escape_seen (void)
+{
+  int r = _kernel_osbyte (126, 0, 0);
+  return r != _kernel_ERROR && (r & 0xFF) != 0;
+}
+
+/* There is no floating point hardware in a module (the code is soft float). */
+int _kernel_fpavailable (void) { return 0; }
+
+/* The command line of the program: a module has none (a runnable module gets its arguments as argc and argv). */
+char *_kernel_command_string (void) { return NULL; }
+
+/* Run a command through the command line interpreter (OS_CLI): the same as system () but with the error and the return value as the SharedCLibrary has them: -2 when the OS reports an error (the
+   error is _kernel_last_oserror ()), else 0.  The second argument (CHAIN: the command replaces the program) is not supported: it is treated as 0. */
+int _kernel_system (const char *cmd, int chain)
+{
+  (void) chain;
+  return _kernel_oscli (cmd) == _kernel_ERROR ? -2 : 0;
+}

@@ -117,6 +117,17 @@ for _i, _n in enumerate("LogMessage GetLogLevel FlushLog SetLogLevel LogUnstampe
 for _n, _v in (("ReadErrorMessage", 0x8C), ("LogComplete", 0x8D), ("IRQMode", 0x8E), ("LogCharacter", 0x8F), ("Control", 0x90), ("Enumerate", 0x91)): EXTRA["SysLog_" + _n] = 0x4C800 + _v
 
 
+EXTRA_ONLY = set()
+# more names that the swis.h of GCCSDK's UnixLib lists and the sources do not (third-party modules, old OS modules, SWIs of other file systems): bin/swis-extra.txt, "Name 0xNUMBER" per line (the numbers are
+# the SWI chunk allocations of those modules; modules written for GCCSDK 4.7.4 name them, ARMEABISupport_MemoryOp for instance)
+_x = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swis-extra.txt")
+if os.path.exists(_x):
+    for _l in open(_x):
+        _p = _l.split()
+        if len(_p) == 2:
+            EXTRA.setdefault(_p[0], int(_p[1], 16)); EXTRA_ONLY.add(_p[0])
+
+
 def main():
     args = sys.argv[1:]
     out = None
@@ -131,11 +142,14 @@ def main():
         src = os.path.join(src, "Sources")
     swis, files = collect(src)
     for _n, _v in EXTRA.items(): swis.setdefault(_n, _v)
-    L = ["/* swisnums.h - the SWI numbers of the RISC OS Open sources: %d SWIs from %d assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them." % (len(swis), files),
+    L = ["/* swisnums.h - the SWI numbers of the RISC OS Open sources (and the names of bin/swis-extra.txt): %d SWIs from %d assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them." % (len(swis), files),
          "   Made by modkit/bin/mkswis.py from the hdr/ folders of https://gitlab.riscosopen.org/RiscOS/Sources (Apache License 2.0, Copyright Castle Technology Ltd and RISC OS Open Ltd and others).  DO NOT EDIT. */",
          "#ifndef _SWISNUMS_H", "#define _SWISNUMS_H", ""]
     for name, val in sorted(swis.items(), key=lambda kv: (kv[1], kv[0])):
-        L.append("#undef %s\n#define %s 0x%X\n#undef X%s\n#define X%s 0x%X" % (name, name, val, name, name, val | 0x20000))
+        if name in EXTRA_ONLY:                                       # the names of swis-extra.txt have no X form: GCCSDK's UnixLib swis.h has none, and its modules use [XName] as the name of an inline assembler operand
+            L.append("#undef %s\n#define %s 0x%X" % (name, name, val))
+        else:
+            L.append("#undef %s\n#define %s 0x%X\n#undef X%s\n#define X%s 0x%X" % (name, name, val, name, name, val | 0x20000))
     L += ["", "#endif", ""]
     text = "\n".join(L)
     if out:

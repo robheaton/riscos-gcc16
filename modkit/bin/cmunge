@@ -9,16 +9,14 @@ The command line of GCCSDK's CMunge 0.xx (what its makefiles use: cmunge -tgcc -
   -p, -px   run the C preprocessor over the file first (-D, -U and -I go to it); the included files are processed as part of the text in both modes
   -zbase    Image__RO_Base: a constant that holds Image$$RO$$Base, declared in the header (GCCSDK 4.7.4's CMunge; its examples use it)
 Accepted and without effect, because the model has nothing to switch: -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of
-anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zerrors,
--zoslib, -blank, -x<type>, -depend) is refused with a message instead of being ignored: a module that needs it would be built wrong.
+anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -blank, -x<type>) is refused with a message instead of being ignored: a module that needs it would be built wrong.
 What of the CMHG language is supported: bin/mkmodhdr.py.  The RISC OS numbers come from the RISC OS Open sources: set RISCOS_SOURCES to a checkout (see modkit/README.md)."""
 import os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.realpath(__file__))        # where mkmodhdr.py is (also when this is called through the link <tc>/bin/cmunge)
 BINDIR = os.path.dirname(os.path.abspath(__file__))        # the folder it was called from: <tc>/bin when it is the link
 NOOP = {"-tgcc", "-32bit", "-znoscl", "-throwback", "-cmhg"}
-REFUSED = {"-tnorcroft": "the Norcroft toolchain", "-tlcc": "the LCC toolchain", "-26bit": "26 bit code", "-zerrors": "-zerrors (errors and veneers only)",
-           "-zoslib": "-zoslib (OSLib types in the header)", "-blank": "-blank", "-h": None}
+REFUSED = {"-tnorcroft": "the Norcroft toolchain", "-tlcc": "the LCC toolchain", "-26bit": "26 bit code", "-blank": "-blank", "-h": None}
 
 
 def die(msg):
@@ -36,7 +34,9 @@ def find_cc():
     die("no arm-riscos-gnueabihf-gcc: put it on PATH or set CMUNGE_CC")
 
 
-APCS_HARMLESS = {"32", "32bit", "nofp", "fp", "fpe2", "fpe3", "fpregargs", "nofpregargs", "swst", "noswst", "nonreent"}
+# CMunge's own table of the -apcs flags (apcscli.c): a flag is the name or an abbreviation of at least MIN letters ("nofpr" is nofpregargs, "noswst" noswstackcheck, "nonreent" nonreentrant)
+APCS_FLAGS = (("32bit", 2, True), ("26bit", 2, False), ("reentrant", 5, False), ("nonreentrant", 8, True), ("fpe3", 4, True), ("fpe2", 4, True), ("swstackcheck", 4, True), ("noswstackcheck", 6, True),
+              ("fpregargs", 3, True), ("nofpregargs", 5, True), ("fp", 2, True), ("nofp", 4, True))
 
 
 def check_apcs(spec):
@@ -45,11 +45,16 @@ def check_apcs(spec):
     if toks[0] not in ("3", "32"):
         die("-apcs %s: only APCS-32 (3/...) is supported" % spec)
     for tok in toks[1:]:
-        if tok == "26bit":
-            die("-apcs %s: 26 bit code is not supported by the modkit version of cmunge" % spec)
-        if tok in ("reent", "reentrant", "pic"):
+        if tok == "32":
+            continue
+        if tok == "pic":
             die("-apcs %s: reentrant (position independent) modules are not supported: the module relocates itself" % spec)
-        if tok not in APCS_HARMLESS:
+        for name, minlen, ok in APCS_FLAGS:
+            if len(tok) >= minlen and name.startswith(tok):
+                if not ok:
+                    die("-apcs %s: %s code is not supported by the modkit version of cmunge" % (spec, "26 bit" if name == "26bit" else "reentrant (position independent)"))
+                break
+        else:
             die("-apcs %s: the flag %s is not known to the modkit version of cmunge" % (spec, tok))
 
 
@@ -57,6 +62,8 @@ def main(argv):
     out_o = out_s = out_h = infile = None
     pre = False
     base = False
+    zoslib = zerrors = False
+    xh = xhdr = None
     cpp = []
     i = 0
     while i < len(argv):
@@ -70,8 +77,17 @@ def main(argv):
             if i >= len(argv):
                 die("-apcs needs a specification such as 3/nofpregargs")
             check_apcs(argv[i])
-        elif a == "-depend":
-            die("%s is not supported (modkit has no AMU dependency files)" % a)
+        elif a == "-zoslib":
+            zoslib = True                                                    # OSLib's types in the header (os_error, os_register_block, #include "oslib/os.h")
+        elif a == "-zerrors":
+            zerrors = True                                                   # the error blocks of error-identifiers: only, for an application
+        elif a in ("-xh", "-xhdr", "-depend"):
+            i += 1
+            if i >= len(argv):
+                die("%s needs a file name" % a)
+            if a == "-xh": xh = argv[i]                                      # the SWI numbers as a C header
+            elif a == "-xhdr": xhdr = argv[i]                                # ... and for the assembler
+            else: sys.stderr.write("Warning: GCC has no support for -depend flag\n")       # (as CMunge's: the file is not written)
         elif a in ("-o", "-s", "-d"):
             i += 1
             if i >= len(argv):
@@ -101,7 +117,7 @@ def main(argv):
         i += 1
     if infile is None:
         die("no input file (cmunge -h)")
-    if not (out_o or out_s or out_h):
+    if not (out_o or out_s or out_h or xh or xhdr):
         die("nothing to do: give -o, -s or -d")
     tmp = tempfile.mkdtemp(prefix="cmunge-")
     try:
@@ -114,7 +130,7 @@ def main(argv):
                 sys.stderr.write(r.stderr.decode("latin-1")); die("the preprocessor failed on %s" % infile)
             open(src, "wb").write(r.stdout)                                  # bytes: the files are RISC OS text (Latin-1), not UTF-8
         asm = out_s or os.path.join(tmp, "module.s")
-        cmd = [sys.executable, os.path.join(HERE, "mkmodhdr.py"), "-s", asm] + (["--base"] if base else [])
+        cmd = [sys.executable, os.path.join(HERE, "mkmodhdr.py"), "-s", asm] + (["--base"] if base else []) + (["--zoslib"] if zoslib else []) + (["--zerrors"] if zerrors else []) + (["--xh", xh] if xh else []) + (["--xhdr", xhdr] if xhdr else [])
         if out_h:
             cmd += ["-d", out_h]
         cmd.append(src)

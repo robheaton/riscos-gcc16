@@ -7,7 +7,7 @@
    (exp (-1000), ldexp (1, -1100)), pow (0, -1) is a pole (ERANGE); a subnormal result sets nothing (except nextafter and, as in glibc, atan2 when it underflows to 0 and asinh / atanh of a subnormal argument; glibc
    sets ERANGE for some subnormal results of expf, exp2f and powf by a rule of its own, which this library does not copy).  pow (1, y) and pow (-1, +-inf) are 1 as C99 says.  The float functions work in double and
    round once.  The macros are the compiler's (__builtin_isnan ...).
-   Not there: erf, gamma, the Bessel functions, fma, remquo, scalbln, nexttoward, nanf, the complex functions, the long double functions. */
+   The long double functions (sinl ...) call the double ones (long double is double).  Not there: erf, gamma, the Bessel functions, fma, remquo, scalbln, nexttoward, nanf, the complex functions. */
 #ifndef _MATH_H
 #define _MATH_H
 #ifdef __cplusplus
@@ -159,6 +159,55 @@ extern int ilogbf (float x);
 extern long long llroundf (float x);
 extern long long llrintf (float x);
 
+/* long double (= double) */
+extern long double acosl (long double x);
+extern long double asinl (long double x);
+extern long double atanl (long double x);
+extern long double ceill (long double x);
+extern long double cosl (long double x);
+extern long double coshl (long double x);
+extern long double expl (long double x);
+extern long double fabsl (long double x);
+extern long double floorl (long double x);
+extern long double logl (long double x);
+extern long double log10l (long double x);
+extern long double sinl (long double x);
+extern long double sinhl (long double x);
+extern long double sqrtl (long double x);
+extern long double tanl (long double x);
+extern long double tanhl (long double x);
+extern long double acoshl (long double x);
+extern long double asinhl (long double x);
+extern long double atanhl (long double x);
+extern long double cbrtl (long double x);
+extern long double exp2l (long double x);
+extern long double expm1l (long double x);
+extern long double log1pl (long double x);
+extern long double log2l (long double x);
+extern long double logbl (long double x);
+extern long double nearbyintl (long double x);
+extern long double rintl (long double x);
+extern long double roundl (long double x);
+extern long double truncl (long double x);
+extern long double atan2l (long double x, long double y);
+extern long double fmodl (long double x, long double y);
+extern long double powl (long double x, long double y);
+extern long double copysignl (long double x, long double y);
+extern long double fdiml (long double x, long double y);
+extern long double fmaxl (long double x, long double y);
+extern long double fminl (long double x, long double y);
+extern long double hypotl (long double x, long double y);
+extern long double nextafterl (long double x, long double y);
+extern long double remainderl (long double x, long double y);
+extern long double frexpl (long double x, int *e);
+extern long double ldexpl (long double x, int e);
+extern long double modfl (long double x, long double *ip);
+extern long double scalbnl (long double x, int n);
+extern int ilogbl (long double x);
+extern long lrintl (long double x);
+extern long long llrintl (long double x);
+extern long lroundl (long double x);
+extern long long llroundl (long double x);
 #ifdef __cplusplus
 }
 #endif

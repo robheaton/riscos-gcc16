@@ -1,0 +1,17 @@
+; ErrMod: CMunge's error-identifiers (and the C library parts that 16.2.0-20 added) on the machine (pack/module47 of the work area)
+title-string:           ErrMod
+help-string:            ErrMod 1.00
+date-string:            10 Oct 2026
+finalisation-code:      em_final
+
+error-chunk-base-number: 0x838000
+error-identifiers: err_first("The first error of ErrMod"),
+                   err_second("The second error: a message with a number 2"),
+                   err_numbered(0x838010, "The third error has a number of its own"),
+                   err_next("The fourth error follows the second")
+
+command-keyword-table: em_table
+  ErrMod_Test(min-args: 0, max-args: 0, help-text: "*ErrMod_Test checks the error blocks, system (), the _kernel_ functions and the wide character functions.\n", invalid-syntax: "Syntax: *ErrMod_Test"),
+  ErrMod_Fail(min-args: 1, max-args: 1, help-text: "*ErrMod_Fail <0-3> returns one of the module's errors.\n", invalid-syntax: "Syntax: *ErrMod_Fail <0-3>"),
+  ErrMod_Try(min-args: 1, max-args: 255, help-text: "*ErrMod_Try <command> runs the command and prints the error that it gives.\n", invalid-syntax: "Syntax: *ErrMod_Try <command>"),
+  ErrMod_Raise(min-args: 0, max-args: 0, help-text: "*ErrMod_Raise raises err_second with _kernel_raise_error: the error handler ends the command line.\n", invalid-syntax: "Syntax: *ErrMod_Raise")

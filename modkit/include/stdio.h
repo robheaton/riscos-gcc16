@@ -11,7 +11,7 @@
    Streams: one character can be pushed back with ungetc (a second one is refused); a seek discards it.  exit () and the return from main of a runnable module flush and close the files; _Exit and abort close
    them without writing what is in the buffers.  A module that is killed does not: its finalisation calls __modlib_closeall ().  A FILE is freed by fclose (a second fclose of it is as undefined as in C; of a
    standard stream it is EOF); fclose (NULL) is EOF.  The buffers and the FILEs are malloc blocks, i.e. RMA blocks that a runnable program that does not free them leaves behind.
-   Not here: gets, freopen (NULL, ...), fseeko / ftello (use fseek and ftell), the wide character functions. */
+   Not here: freopen (NULL, ...), fseeko / ftello (use fseek and ftell), the wide character input and output functions. */
 #ifndef _STDIO_H
 #define _STDIO_H
 #ifdef __cplusplus
@@ -70,6 +70,9 @@ extern int fgetc (FILE *f);
 extern int getc (FILE *f);
 extern int getchar (void);
 extern char *fgets (char *s, int n, FILE *f);
+#if !defined (__STDC_VERSION__) || __STDC_VERSION__ < 201112L
+extern char *gets (char *s);                                   /* C90 / C99 only (removed from C11): no length limit */
+#endif
 extern int ungetc (int c, FILE *f);
 extern int fputc (int c, FILE *f);
 extern int putc (int c, FILE *f);

@@ -1,4 +1,4 @@
-/* swisnums.h - the SWI numbers of the RISC OS Open sources: 969 SWIs from 69 assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them.
+/* swisnums.h - the SWI numbers of the RISC OS Open sources (and the names of bin/swis-extra.txt): 1143 SWIs from 69 assembler headers, with their X versions (bit 17 set), as the SharedCLibrary's <swis.h> defines them.
    Made by modkit/bin/mkswis.py from the hdr/ folders of https://gitlab.riscosopen.org/RiscOS/Sources (Apache License 2.0, Copyright Castle Technology Ltd and RISC OS Open Ltd and others).  DO NOT EDIT. */
 #ifndef _SWISNUMS_H
 #define _SWISNUMS_H
@@ -71,6 +71,8 @@
 #define OS_GetEnv 0x10
 #undef XOS_GetEnv
 #define XOS_GetEnv 0x20010
+#undef _FLAGS
+#define _FLAGS 0x10
 #undef OS_Exit
 #define OS_Exit 0x11
 #undef XOS_Exit
@@ -479,10 +481,14 @@
 #define OS_NVMemory 0x76
 #undef XOS_NVMemory
 #define XOS_NVMemory 0x20076
+#undef OS_ClaimOSSWI
+#define OS_ClaimOSSWI 0x77
 #undef OS_TaskControl
 #define OS_TaskControl 0x78
 #undef XOS_TaskControl
 #define XOS_TaskControl 0x20078
+#undef OS_DeviceDriver
+#define OS_DeviceDriver 0x79
 #undef OS_Hardware
 #define OS_Hardware 0x7A
 #undef XOS_Hardware
@@ -631,10 +637,26 @@
 #define OS_ConvertFileSize 0xEC
 #undef XOS_ConvertFileSize
 #define XOS_ConvertFileSize 0x200EC
+#undef OS_ConvertHex16
+#define OS_ConvertHex16 0xED
 #undef OS_ConvertVariform
 #define OS_ConvertVariform 0xED
 #undef XOS_ConvertVariform
 #define XOS_ConvertVariform 0x200ED
+#undef OS_ConvertCardinal8
+#define OS_ConvertCardinal8 0xEE
+#undef OS_ConvertInteger8
+#define OS_ConvertInteger8 0xEF
+#undef OS_ConvertBinary8
+#define OS_ConvertBinary8 0xF0
+#undef OS_ConvertSpacedCardinal8
+#define OS_ConvertSpacedCardinal8 0xF1
+#undef OS_ConvertSpacedInteger8
+#define OS_ConvertSpacedInteger8 0xF2
+#undef OS_ConvertFixedFileSize64
+#define OS_ConvertFixedFileSize64 0xF3
+#undef OS_ConvertFileSize64
+#define OS_ConvertFileSize64 0xF4
 #undef OS_WriteI
 #define OS_WriteI 0x100
 #undef XOS_WriteI
@@ -643,6 +665,16 @@
 #define IIC_Control 0x240
 #undef XIIC_Control
 #define XIIC_Control 0x20240
+#undef Cache_Control
+#define Cache_Control 0x280
+#undef Cache_Cacheable
+#define Cache_Cacheable 0x281
+#undef Cache_Updateable
+#define Cache_Updateable 0x282
+#undef Cache_Disruptive
+#define Cache_Disruptive 0x283
+#undef Cache_Flush
+#define Cache_Flush 0x284
 #undef Econet_CreateReceive
 #define Econet_CreateReceive 0x40000
 #undef XEconet_CreateReceive
@@ -1651,6 +1683,26 @@
 #define SCSI_Register 0x403FF
 #undef XSCSI_Register
 #define XSCSI_Register 0x603FF
+#undef FPEmulator_Version
+#define FPEmulator_Version 0x40480
+#undef FPEmulator_DeactivateContext
+#define FPEmulator_DeactivateContext 0x40481
+#undef FPEmulator_ActivateContext
+#define FPEmulator_ActivateContext 0x40482
+#undef FPEmulator_ChangeContext
+#define FPEmulator_ChangeContext 0x40483
+#undef FPEmulator_ContextLength
+#define FPEmulator_ContextLength 0x40484
+#undef FPEmulator_InitContext
+#define FPEmulator_InitContext 0x40485
+#undef FPEmulator_ExceptionDump
+#define FPEmulator_ExceptionDump 0x40486
+#undef FPEmulator_Abort
+#define FPEmulator_Abort 0x40487
+#undef FPEmulator_LoadContext
+#define FPEmulator_LoadContext 0x40488
+#undef FPEmulator_SaveContext
+#define FPEmulator_SaveContext 0x40489
 #undef FileCore_DiscOp
 #define FileCore_DiscOp 0x40540
 #undef XFileCore_DiscOp
@@ -2111,6 +2163,88 @@
 #define SCSI_LogList 0x41081
 #undef XSCSI_LogList
 #define XSCSI_LogList 0x61081
+#undef NFS_Mount
+#define NFS_Mount 0x410C0
+#undef NFS_MountList
+#define NFS_MountList 0x410C1
+#undef NFS_SetUser
+#define NFS_SetUser 0x410C2
+#undef NFS_Dismount
+#define NFS_Dismount 0x410C3
+#undef NFS_MountInfo
+#define NFS_MountInfo 0x410C4
+#undef NFS_FreeSpace
+#define NFS_FreeSpace 0x410C5
+#undef Socket_Creat
+#define Socket_Creat 0x41200
+#undef Socket_Bind
+#define Socket_Bind 0x41201
+#undef Socket_Listen
+#define Socket_Listen 0x41202
+#undef Socket_Accept
+#define Socket_Accept 0x41203
+#undef Socket_Connect
+#define Socket_Connect 0x41204
+#undef Socket_Recv
+#define Socket_Recv 0x41205
+#undef Socket_Recvfrom
+#define Socket_Recvfrom 0x41206
+#undef Socket_Recvmsg
+#define Socket_Recvmsg 0x41207
+#undef Socket_Send
+#define Socket_Send 0x41208
+#undef Socket_Sendto
+#define Socket_Sendto 0x41209
+#undef Socket_Sendmsg
+#define Socket_Sendmsg 0x4120A
+#undef Socket_Shutdown
+#define Socket_Shutdown 0x4120B
+#undef Socket_Setsockopt
+#define Socket_Setsockopt 0x4120C
+#undef Socket_Getsockopt
+#define Socket_Getsockopt 0x4120D
+#undef Socket_Getpeername
+#define Socket_Getpeername 0x4120E
+#undef Socket_Getsockname
+#define Socket_Getsockname 0x4120F
+#undef Socket_Close
+#define Socket_Close 0x41210
+#undef Socket_Select
+#define Socket_Select 0x41211
+#undef Socket_Ioctl
+#define Socket_Ioctl 0x41212
+#undef Socket_Read
+#define Socket_Read 0x41213
+#undef Socket_Write
+#define Socket_Write 0x41214
+#undef Socket_Stat
+#define Socket_Stat 0x41215
+#undef Socket_Readv
+#define Socket_Readv 0x41216
+#undef Socket_Writev
+#define Socket_Writev 0x41217
+#undef Socket_Gettsize
+#define Socket_Gettsize 0x41218
+#undef Socket_Sendtosm
+#define Socket_Sendtosm 0x41219
+#undef Socket_Sysctl
+#define Socket_Sysctl 0x4121A
+#undef Socket_Accept_1
+#define Socket_Accept_1 0x4121B
+#undef Socket_Recvfrom_1
+#define Socket_Recvfrom_1 0x4121C
+#undef Socket_Recvmsg_1
+#define Socket_Recvmsg_1 0x4121D
+#undef Socket_Sendmsg_1
+#define Socket_Sendmsg_1 0x4121E
+#undef Socket_Getpeername_1
+#define Socket_Getpeername_1 0x4121F
+#undef Socket_Getsockname_1
+#define Socket_Getsockname_1 0x41220
+#undef Socket_InternalLookup
+#define Socket_InternalLookup 0x41221
+#undef Socket_Version
+#define Socket_Version 0x41222
 #undef CD_Version
 #define CD_Version 0x41240
 #undef XCD_Version
@@ -2623,6 +2757,16 @@
 #define Buffer_InternalInfo 0x42949
 #undef XBuffer_InternalInfo
 #define XBuffer_InternalInfo 0x62949
+#undef BASICTrans_HELP
+#define BASICTrans_HELP 0x42C80
+#undef BASICTrans_Error
+#define BASICTrans_Error 0x42C81
+#undef BASICTrans_Message
+#define BASICTrans_Message 0x42C82
+#undef Parallel_HardwareAddress
+#define Parallel_HardwareAddress 0x42EC0
+#undef Parallel_Op
+#define Parallel_Op 0x42EC1
 #undef Portable_Speed
 #define Portable_Speed 0x42FC0
 #undef XPortable_Speed
@@ -2871,6 +3015,22 @@
 #define MakePSFont_MakeFont 0x43440
 #undef XMakePSFont_MakeFont
 #define XMakePSFont_MakeFont 0x63440
+#undef Joystick_Read
+#define Joystick_Read 0x43F40
+#undef Joystick_CalibrateTopRight
+#define Joystick_CalibrateTopRight 0x43F41
+#undef Joystick_CalibrateBottomLeft
+#define Joystick_CalibrateBottomLeft 0x43F42
+#undef VProtect_FI
+#define VProtect_FI 0x44300
+#undef VProtect_OF
+#define VProtect_OF 0x44301
+#undef VProtect_LU
+#define VProtect_LU 0x44302
+#undef VProtect_MM
+#define VProtect_MM 0x44303
+#undef VProtect_CF
+#define VProtect_CF 0x44304
 #undef Free_Register
 #define Free_Register 0x444C0
 #undef XFree_Register
@@ -2995,6 +3155,16 @@
 #define Toolbox_RegisterPostFilter 0x44EFF
 #undef XToolbox_RegisterPostFilter
 #define XToolbox_RegisterPostFilter 0x64EFF
+#undef DrawFile_Render
+#define DrawFile_Render 0x45540
+#undef DrawFile_BBox
+#define DrawFile_BBox 0x45541
+#undef DrawFile_DeclareFonts
+#define DrawFile_DeclareFonts 0x45542
+#undef Internet_GetHostByName
+#define Internet_GetHostByName 0x46000
+#undef Internet_GetHostByAddr
+#define Internet_GetHostByAddr 0x46001
 #undef DMA_RegisterChannel
 #define DMA_RegisterChannel 0x46140
 #undef XDMA_RegisterChannel
@@ -3115,6 +3285,46 @@
 #define Freeway_Serial 0x47A85
 #undef XFreeway_Serial
 #define XFreeway_Serial 0x67A85
+#undef ZapRedraw_RedrawArea
+#define ZapRedraw_RedrawArea 0x48480
+#undef ZapRedraw_GetPaletteEntry
+#define ZapRedraw_GetPaletteEntry 0x48481
+#undef ZapRedraw_RedrawRaster
+#define ZapRedraw_RedrawRaster 0x48482
+#undef ZapRedraw_ConvertBitmap
+#define ZapRedraw_ConvertBitmap 0x48483
+#undef ZapRedraw_PrepareDataLine
+#define ZapRedraw_PrepareDataLine 0x48484
+#undef ZapRedraw_AddCursor
+#define ZapRedraw_AddCursor 0x48485
+#undef ZapRedraw_FindCharacter
+#define ZapRedraw_FindCharacter 0x48486
+#undef ZapRedraw_MoveBytes
+#define ZapRedraw_MoveBytes 0x48487
+#undef ZapRedraw_CachedCharSize
+#define ZapRedraw_CachedCharSize 0x48488
+#undef ZapRedraw_ConvBitmapChar
+#define ZapRedraw_ConvBitmapChar 0x48489
+#undef ZapRedraw_CreatePalette
+#define ZapRedraw_CreatePalette 0x4848A
+#undef ZapRedraw_InsertChar
+#define ZapRedraw_InsertChar 0x4848B
+#undef ZapRedraw_ReadSystemChars
+#define ZapRedraw_ReadSystemChars 0x4848C
+#undef ZapRedraw_ReverseBitmaps
+#define ZapRedraw_ReverseBitmaps 0x4848D
+#undef ZapRedraw_ReadVduVars
+#define ZapRedraw_ReadVduVars 0x4848E
+#undef ZapRedraw_GetRectangle
+#define ZapRedraw_GetRectangle 0x4848F
+#undef ZapRedraw_AddVduBitmaps
+#define ZapRedraw_AddVduBitmaps 0x48490
+#undef ZapRedraw_CacheFontChars
+#define ZapRedraw_CacheFontChars 0x48491
+#undef ZapRedraw_SpriteSize
+#define ZapRedraw_SpriteSize 0x48492
+#undef ZapRedraw_RedrawWindow
+#define ZapRedraw_RedrawWindow 0x48493
 #undef ScreenModes_ReadInfo
 #define ScreenModes_ReadInfo 0x487C0
 #undef XScreenModes_ReadInfo
@@ -3127,6 +3337,26 @@
 #define ScreenModes_Features 0x487C2
 #undef XScreenModes_Features
 #define XScreenModes_Features 0x687C2
+#undef ArcFSMemMan_ClaimWorkspace
+#define ArcFSMemMan_ClaimWorkspace 0x48A00
+#undef ArcFSMemMan_ResizeWorkspace
+#define ArcFSMemMan_ResizeWorkspace 0x48A01
+#undef ArcFSMemMan_ReleaseWorkspace
+#define ArcFSMemMan_ReleaseWorkspace 0x48A02
+#undef ArcFSMemMan_ClaimFileCache
+#define ArcFSMemMan_ClaimFileCache 0x48A03
+#undef ArcFSMemMan_ResizeFileCache
+#define ArcFSMemMan_ResizeFileCache 0x48A04
+#undef ArcFSMemMan_ReleaseFileCache
+#define ArcFSMemMan_ReleaseFileCache 0x48A05
+#undef ArcFSMemMan_Init
+#define ArcFSMemMan_Init 0x48A06
+#undef ArcFSMemMan_Final
+#define ArcFSMemMan_Final 0x48A07
+#undef ArcFSMemMan_Slide
+#define ArcFSMemMan_Slide 0x48A08
+#undef ArcFSMemMan_LookupBlock
+#define ArcFSMemMan_LookupBlock 0x48A09
 #undef JPEG_Info
 #define JPEG_Info 0x49980
 #undef XJPEG_Info
@@ -3163,6 +3393,54 @@
 #define DragAnObject_Stop 0x49C41
 #undef XDragAnObject_Stop
 #define XDragAnObject_Stop 0x69C41
+#undef Omni_EnumerateMounts
+#define Omni_EnumerateMounts 0x4A200
+#undef Omni_RegisterClient
+#define Omni_RegisterClient 0x4A201
+#undef Omni_DeregisterClient
+#define Omni_DeregisterClient 0x4A202
+#undef Omni_MessageLookup
+#define Omni_MessageLookup 0x4A203
+#undef Omni_ConvertClientToAcorn
+#define Omni_ConvertClientToAcorn 0x4A204
+#undef Omni_ConvertAcornToClient
+#define Omni_ConvertAcornToClient 0x4A205
+#undef Omni_ConvertTime
+#define Omni_ConvertTime 0x4A206
+#undef Omni_Printers
+#define Omni_Printers 0x4A207
+#undef Omni_CreateJob
+#define Omni_CreateJob 0x4A208
+#undef Omni_SendJob
+#define Omni_SendJob 0x4A209
+#undef Omni_EndJob
+#define Omni_EndJob 0x4A20A
+#undef Omni_AbortJob
+#define Omni_AbortJob 0x4A20B
+#undef Omni_JobStatus
+#define Omni_JobStatus 0x4A20C
+#undef Omni_ClearJob
+#define Omni_ClearJob 0x4A20D
+#undef Omni_PrinterInfo
+#define Omni_PrinterInfo 0x4A20E
+#undef Omni_EnumerateJobs
+#define Omni_EnumerateJobs 0x4A20F
+#undef Omni_NameLookup
+#define Omni_NameLookup 0x4A210
+#undef Omni_TraceFile
+#define Omni_TraceFile 0x4A211
+#undef Internet_Syslog
+#define Internet_Syslog 0x4A240
+#undef Internet_LogFile
+#define Internet_LogFile 0x4A241
+#undef Internet_LogLevel
+#define Internet_LogLevel 0x4A242
+#undef Internet_ReadErrorMessage
+#define Internet_ReadErrorMessage 0x4A243
+#undef OmniNFS_OmniOp
+#define OmniNFS_OmniOp 0x4A480
+#undef ATAPI_GetDrives
+#define ATAPI_GetDrives 0x4A740
 #undef InverseTable_Calculate
 #define InverseTable_Calculate 0x4BF40
 #undef XInverseTable_Calculate
@@ -3215,6 +3493,8 @@
 #define SysLog_LogData 0x4C88A
 #undef XSysLog_LogData
 #define XSysLog_LogData 0x6C88A
+#undef SysLog_LogFormatted
+#define SysLog_LogFormatted 0x4C88B
 #undef SysLog_ReadErrorMessage
 #define SysLog_ReadErrorMessage 0x4C88C
 #undef XSysLog_ReadErrorMessage
@@ -3255,6 +3535,42 @@
 #define URI_InvalidateURI 0x4E383
 #undef XURI_InvalidateURI
 #define XURI_InvalidateURI 0x6E383
+#undef DigitalRenderer_Activate
+#define DigitalRenderer_Activate 0x4F700
+#undef DigitalRenderer_Deactivate
+#define DigitalRenderer_Deactivate 0x4F701
+#undef DigitalRenderer_Pause
+#define DigitalRenderer_Pause 0x4F702
+#undef DigitalRenderer_Resume
+#define DigitalRenderer_Resume 0x4F703
+#undef DigitalRenderer_GetTables
+#define DigitalRenderer_GetTables 0x4F704
+#undef DigitalRenderer_ReadState
+#define DigitalRenderer_ReadState 0x4F705
+#undef DigitalRenderer_NewSample
+#define DigitalRenderer_NewSample 0x4F706
+#undef DigitalRenderer_New16bitSample
+#define DigitalRenderer_New16bitSample 0x4F708
+#undef DigitalRenderer_NumBuffers
+#define DigitalRenderer_NumBuffers 0x4F709
+#undef DigitalRenderer_StreamSamples
+#define DigitalRenderer_StreamSamples 0x4F70A
+#undef DigitalRenderer_Stream16BitSamples
+#define DigitalRenderer_Stream16BitSamples 0x4F70B
+#undef DigitalRenderer_StreamStatistics
+#define DigitalRenderer_StreamStatistics 0x4F70C
+#undef DigitalRenderer_StreamFlags
+#define DigitalRenderer_StreamFlags 0x4F70D
+#undef DigitalRenderer_SetDefaults
+#define DigitalRenderer_SetDefaults 0x4F70E
+#undef DigitalRenderer_Activate16
+#define DigitalRenderer_Activate16 0x4F70F
+#undef DigitalRenderer_GetFrequency
+#define DigitalRenderer_GetFrequency 0x4F710
+#undef DigitalRenderer_ActivateAuto
+#define DigitalRenderer_ActivateAuto 0x4F711
+#undef DigitalRenderer_SampleFormat
+#define DigitalRenderer_SampleFormat 0x4F712
 #undef SoundCtrl_ExamineMixer
 #define SoundCtrl_ExamineMixer 0x50000
 #undef XSoundCtrl_ExamineMixer
@@ -3347,6 +3663,16 @@
 #define MimeMap_Translate 0x50B00
 #undef XMimeMap_Translate
 #define XMimeMap_Translate 0x70B00
+#undef CryptRandom_Byte
+#define CryptRandom_Byte 0x51980
+#undef CryptRandom_Stir
+#define CryptRandom_Stir 0x51981
+#undef CryptRandom_AddNoise
+#define CryptRandom_AddNoise 0x51982
+#undef CryptRandom_Block
+#define CryptRandom_Block 0x51983
+#undef CryptRandom_Word
+#define CryptRandom_Word 0x51984
 #undef PortMan_AccessBit
 #define PortMan_AccessBit 0x52D80
 #undef XPortMan_AccessBit
@@ -3359,6 +3685,12 @@
 #define BlendTable_UnlockTable 0x56281
 #undef XBlendTable_UnlockTable
 #define XBlendTable_UnlockTable 0x76281
+#undef Iconv_Open
+#define Iconv_Open 0x57540
+#undef Iconv_Iconv
+#define Iconv_Iconv 0x57541
+#undef Iconv_Close
+#define Iconv_Close 0x57542
 #undef RT_Register
 #define RT_Register 0x575C0
 #undef XRT_Register
@@ -3383,6 +3715,10 @@
 #define RT_ReadInfo 0x575C5
 #undef XRT_ReadInfo
 #define XRT_ReadInfo 0x775C5
+#undef SOM_DeregisterClient
+#define SOM_DeregisterClient 0x58584
+#undef SOM_Location
+#define SOM_Location 0x5858F
 #undef VFPSupport_CheckContext
 #define VFPSupport_CheckContext 0x58EC0
 #undef XVFPSupport_CheckContext
@@ -3627,6 +3963,18 @@
 #define RTC_Adjust 0x594C3
 #undef XRTC_Adjust
 #define XRTC_Adjust 0x794C3
+#undef ARMEABISupport_MemoryOp
+#define ARMEABISupport_MemoryOp 0x59D00
+#undef ARMEABISupport_AbortOp
+#define ARMEABISupport_AbortOp 0x59D01
+#undef ARMEABISupport_StackOp
+#define ARMEABISupport_StackOp 0x59D02
+#undef ARMEABISupport_Cleanup
+#define ARMEABISupport_Cleanup 0x59D03
+#undef ARMEABISupport_MMapOp
+#define ARMEABISupport_MMapOp 0x59D04
+#undef ARMEABISupport_ShmOp
+#define ARMEABISupport_ShmOp 0x59D05
 #undef NetMonitor_PrintChar
 #define NetMonitor_PrintChar 0x80040
 #undef XNetMonitor_PrintChar

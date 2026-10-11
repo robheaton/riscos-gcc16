@@ -34,7 +34,7 @@ relocates itself once, in its initialisation (modkit/bin/modreloc.py appends the
                                    __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
   flags of a command (no value):   international: (help-text and invalid-syntax are tokens of the Messages file), add-syntax: (the syntax text follows the help text: *Help shows both), configure: / status:
                                    (a *Configure / *Status command), fs-command: (a command of this filing system module).  help: is refused, as CMunge refuses it
-Anything else is an error, not silently dropped (CMunge's error-base:, error-identifiers:, pdriver-handler:, vector-traps: and module-is-runnable: simple-app: are not supported).  All the RISC OS numbers in the output come from the RISC OS headers (riscos_consts.py)."""
+Anything else is an error, not silently dropped (CMunge's pdriver-handler:, vector-traps: and module-is-runnable: simple-app: are not supported).  All the RISC OS numbers in the output come from the RISC OS headers (riscos_consts.py)."""
 import argparse, os, re, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
@@ -290,11 +290,34 @@ def one_name(key, r):
     if m.end() != len(r): raise CmhgError("%s: needs one function name; '%s' is not supported" % (key, r[m.end():]))
     return r
 
-def parse(text):
+def parse_error_identifiers(r):
+    """error-identifiers: name ([number,] "message"), ...  (CMunge): [(name, number or 0, message bytes)]"""
+    out, pos = [], 0
+    while True:
+        while pos < len(r) and r[pos] in " \t\n\r,": pos += 1
+        if pos >= len(r): break
+        mm = re.compile(r"([A-Za-z_]\w*)\s*\(\s*").match(r, pos)
+        if not mm: raise CmhgError("error-identifiers: a name and ( was expected near %r" % r[pos:pos + 20])
+        pos = mm.end(); num = 0
+        if pos < len(r) and r[pos] != '"':                                                     # a number, then a comma
+            c = r.find(",", pos)
+            if c < 0: raise CmhgError("error-identifiers: %s: a number must be followed by a comma and the message" % mm.group(1))
+            num = cexpr(r[pos:c]); pos = c + 1
+        msg, pos = parse_string_literals(r, pos)
+        while pos < len(r) and r[pos] in " \t\n\r": pos += 1
+        if pos >= len(r) or r[pos] != ")": raise CmhgError("error-identifiers: %s: ) was expected after the message" % mm.group(1))
+        pos += 1
+        if any(n == mm.group(1) for n, _, _ in out): raise CmhgError("error-identifiers: %s is there twice" % mm.group(1))
+        if b"\0" in msg: raise CmhgError("error-identifiers: %s: the message has a zero byte" % mm.group(1))
+        out.append((mm.group(1), num, msg))
+    return out
+
+def parse(text, zerrors=False):
     m = dict(title=None, help=None, date=None, init=None, final=None, cxx=False, service=None, service_numbers=[], commands=None, cmd_handler=None, swi_chunk=0, swi_prefix=None, swi_names=[], swi_handler=None,
-             veneers=[], runnable=False, mfile=None, warnings=[], swi_handlers=[], swi_decoder=None, swi_decoder2=None, notreent=False)
+             veneers=[], runnable=False, mfile=None, warnings=[], swi_handlers=[], swi_decoder=None, swi_decoder2=None, notreent=False, error_base=0, errors=[])
     for key, rest in logical_lines(text):
         r = rest.strip()
+        if zerrors and key not in ("error-chunk-base-number", "error-base", "error-identifiers"): raise CmhgError("%s is not supported by cmunge in 'errors' mode (-zerrors)" % key)
         if key == "title-string": m["title"] = unquote_first(r)
         elif key == "help-string": m["help"] = unquote_first(r)
         elif key == "date-string": m["date"] = unquote_first(r)
@@ -323,6 +346,8 @@ def parse(text):
             parts = [p for p in re.split(r"[\s,]+", r) if p]            # FN (one function that gets the registers) or NAME/NUMBER...: NAMETONUMBER/NUMBERTONAME
             if len(parts) != 1 or not re.fullmatch(r"[A-Za-z_]\w*(/[A-Za-z_]\w*)?", parts[0]): raise CmhgError("swi-decoding-code: needs one function name, or NAME/HANDLER (the name to number function and the number to name function)")
             m["swi_decoder"], m["swi_decoder2"] = parts[0].split("/", 1) if "/" in parts[0] else (parts[0], None)
+        elif key in ("error-chunk-base-number", "error-base"): m["error_base"] = cexpr(r)             # CMunge: ERROR_BASE in the header; the numbers of error-identifiers start here
+        elif key == "error-identifiers": m["errors"] += parse_error_identifiers(r)
         elif key == "module-is-not-reentrant":
             if r: raise CmhgError("module-is-not-reentrant: takes no value")
             m["notreent"] = True
@@ -345,7 +370,8 @@ def parse(text):
         elif key in ("library-enter-code", "library-initialisation-code"): raise CmhgError("%s: is not supported (it redirects the start-up of the Shared C Library, which a modkit module does not have)" % key)
         else: raise CmhgError("%s: is not supported" % key)
     for k in ("title", "help"):
-        if not m[k]: raise CmhgError("%s-string: is missing" % k)
+        if not m[k] and not zerrors: raise CmhgError("%s-string: is missing" % k)
+    if m["errors"] and not m["error_base"]: raise CmhgError("error-identifiers: errors are defined, but there is no error-chunk-base-number:")
     # the SWIs of a module: a chunk, a handler and a decoding table go together (CMunge: a prefix of the module's title when there is no table)
     per_swi = any(h is not None for h in m["swi_handlers"])
     if (m["swi_handler"] is not None or per_swi) and not m["swi_chunk"]: raise CmhgError("swi-handler-code: needs a swi-chunk-base-number:")
@@ -355,6 +381,57 @@ def parse(text):
     m["swi_notable"] = m["swi_decoder"] is not None and m["swi_prefix"] is None             # decoding code and no table of names: the header has no table, so that the kernel asks the code in both directions
     if (m["swi_handler"] is not None or per_swi) and m["swi_prefix"] is None: m["swi_prefix"] = m["title"]
     return m
+
+def oslib_types(text):
+    """-zoslib: the header uses OSLib's types (os_error, os_register_block) and includes oslib/os.h instead of kernel.h"""
+    return text.replace('#include "kernel.h"', '#include "oslib/os.h"').replace("_kernel_oserror", "os_error").replace("_kernel_swi_regs", "os_register_block")
+
+def swi_names(m):
+    """[(NAME, number)] of the module's SWIs, PREFIX_Name with the number of the chunk plus the place in the table"""
+    if not m["swi_chunk"] or m["swi_prefix"] is None: return []
+    return [("%s_%s" % (m["swi_prefix"], n), m["swi_chunk"] + i) for i, n in enumerate(m["swi_names"])]
+
+def generate_xh(m, src):
+    """-xh: a C header with the SWI numbers (CMunge's)"""
+    g = "%s_SWI_H" % re.sub(r"\W", "_", m["title"])
+    L = ["/* Generated by mkmodhdr.py from %s.  DO NOT EDIT. */" % os.path.basename(src), "", "#ifndef %s" % g, "#define %s" % g, "", "/* SWI numbers */"]
+    for n, v in swi_names(m): L.append("#define %-23s 0x%x" % (n, v))
+    return "\n".join(L) + "\n\n#endif\n"
+
+def generate_xhdr(m, src):
+    """-xhdr: the same for the GNU assembler"""
+    L = ["@ Generated by mkmodhdr.py from %s.  DO NOT EDIT." % os.path.basename(src), "", "@ SWI numbers"]
+    names = swi_names(m)
+    for n, v in names: L.append(".set %s,0x%x" % (n, v))
+    for n, v in names: L.append(".set X%s,0x%x" % (n, v | 0x20000))
+    return "\n".join(L) + "\n"
+
+def generate_asm_errors(m, src):
+    """-zerrors: only the error blocks of error-identifiers (for an application, which links the object and uses the header)"""
+    o = ["@ Generated by mkmodhdr.py from %s (-zerrors: the error blocks only).  DO NOT EDIT." % os.path.basename(src), "\t.syntax\tunified\n\t.arm"]
+    if m["errors"]:
+        o.append("\t.section\t.rodata\n\t.align\t2\n@ Error messages, based at &%08x" % m["error_base"])
+        n = m["error_base"]
+        for name, num, msg in m["errors"]:
+            if num: use = num
+            else: use = n; n += 1
+            o.append("\t.global\t__err_%s\n__err_%s:\n\t.word\t0x%x\n%s\n\t.byte\t0\n\t.align\t2" % (name, name, use, asm_bytes(msg)))
+    return "\n".join(o) + "\n"
+
+def generate_h_errors(m, src):
+    guard = "_MODKIT_%s_H_" % re.sub(r"\W", "_", re.sub(r"\.cmhg$", "", os.path.basename(src)))
+    L = ["/* Generated by mkmodhdr.py from %s (-zerrors).  DO NOT EDIT. */" % os.path.basename(src), "#ifndef %s\n#define %s\n\n#include \"kernel.h\"\n" % (guard, guard), "#ifdef __cplusplus\nextern \"C\" {\n#endif"]
+    if m["error_base"]: L.append("\n/* Error base for this module */\n#define ERROR_BASE (0x%08x)" % m["error_base"])
+    if m["errors"]:
+        L.append("/* Error messages embedded in header, based at &%x */" % m["error_base"])
+        n = m["error_base"]
+        for name, num, _ in m["errors"]:
+            if num: use = num
+            else: use = n; n += 1
+            L.append("extern void __err_%s(void); /* &%x */" % (name, use))
+        for name, _, _ in m["errors"]: L.append("#define %s ((_kernel_oserror*)(int)__err_%s)" % (name, name))
+    L.append("\n#ifdef __cplusplus\n}\n#endif\n#endif")
+    return "\n".join(L) + "\n"
 
 # ---------------------------------------------------------------- generators
 def const(name, fallback):
@@ -572,6 +649,13 @@ def generate_asm(m, src):
             A("\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr" % handler)
     A("")
     A("done:\t\t\t\t\t\t@ r0 = 0 (V clear) or an error pointer (V set)\n\tcmp\tr0, #0\n\tldmfdeq\tsp!, {r4-r11, pc}\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\n\tldmfd\tsp!, {r4-r11, pc}")
+    if m["errors"]:                                                                          # error-identifiers: the error blocks (a number and the message), exported as __err_NAME; the header makes _kernel_oserror pointers of them
+        A("\n\t.section\t.rodata\n\t.align\t2\n@ Error messages, based at &%08x" % m["error_base"])
+        n = m["error_base"]
+        for name, num, msg in m["errors"]:
+            if num: use = num
+            else: use = n; n += 1
+            A("\t.global\t__err_%s\n__err_%s:\n\t.word\t%#x\n%s\n\t.byte\t0\n\t.align\t2" % (name, name, use, asm_bytes(msg)))
     return "\n".join(o) + "\n"
 
 def generate_h(m, src, name):
@@ -618,18 +702,33 @@ def generate_h(m, src, name):
         A("\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)")
         if any(v[4].get("error-capable") for v in m["veneers"]):
             A("\n/* VECTOR_ERROR (err) can be returned from a vector handler that is error-capable: claim the vector and return with V set and r0 = the error block */\n#define VECTOR_ERROR(err) ((int) (err))")
+    if m["error_base"]: A("\n/* Error base for this module */\n#define ERROR_BASE (0x%08x)" % m["error_base"])
+    if m["errors"]:
+        A("/* Error messages embedded in header, based at &%x */" % m["error_base"])
+        n = m["error_base"]
+        for name, num, _ in m["errors"]:
+            if num: use = num
+            else: use = n; n += 1
+            A("extern void __err_%s(void); /* &%x */" % (name, use))
+        for name, _, _ in m["errors"]: A("#define %s ((_kernel_oserror*)(int)__err_%s)" % (name, name))
     A("\n#ifdef __cplusplus\n}\n#endif\n#endif")
     return "\n".join(o) + "\n"
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("cmhg"); ap.add_argument("-s", dest="asm"); ap.add_argument("-d", dest="hdr"); ap.add_argument("--base", action="store_true", help="-zbase of CMunge: Image__RO_Base, the address of the module")
+    ap.add_argument("--zoslib", action="store_true", help="-zoslib: OSLib's types in the header"); ap.add_argument("--zerrors", action="store_true", help="-zerrors: the error blocks only")
+    ap.add_argument("--xh", help="-xh FILE: the SWI numbers as a C header"); ap.add_argument("--xhdr", help="-xhdr FILE: the SWI numbers for the assembler")
     a = ap.parse_args()
     try:
-        m = parse(open(a.cmhg, encoding="latin-1").read())
+        m = parse(open(a.cmhg, encoding="latin-1").read(), a.zerrors)
         for w in m["warnings"]: sys.stderr.write("mkmodhdr: warning: %s\n" % w)
         m["base"] = a.base
-        asm = generate_asm(m, a.cmhg); h = generate_h(m, a.cmhg, os.path.basename(a.cmhg))
+        if a.zerrors: asm = generate_asm_errors(m, a.cmhg); h = generate_h_errors(m, a.cmhg)
+        else: asm = generate_asm(m, a.cmhg); h = generate_h(m, a.cmhg, os.path.basename(a.cmhg))
+        if a.zoslib: h = oslib_types(h)
+        if a.xh: open(a.xh, "w").write(generate_xh(m, a.cmhg))
+        if a.xhdr: open(a.xhdr, "w").write(generate_xhdr(m, a.cmhg))
     except CmhgError as e:
         sys.exit("mkmodhdr: %s: %s" % (a.cmhg, e))
     base = os.path.splitext(a.cmhg)[0]

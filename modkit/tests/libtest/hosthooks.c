@@ -308,3 +308,7 @@ oserr *__modlib_xswi (unsigned swi, unsigned *r) { return __modlib_xswif (swi, r
 
 /* the hooks that exit.c has on the machine (the host build leaves exit.c out) */
 void (*__modlib_stdio_end_hook) (int);
+
+/* __modlib_raise (OS_GenerateError on the machine): the host build has no error handler to go to; it only remembers the error */
+const void *g_raised;
+void __modlib_raise (const void *e) { g_raised = e; }

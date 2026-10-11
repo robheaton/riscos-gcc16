@@ -8,8 +8,7 @@ Reads a CMHG file and writes
   -p, -px  run the C preprocessor over the file first (-D, -U and -I go to it)
 -zbase  makes Image__RO_Base (a constant that holds Image$$RO$$Base) and declares it in the header, as GCCSDK 4.7.4's CMunge does
 Accepted and without effect (the model has nothing to switch): -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of anyway
-(nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -zerrors,
--zoslib, -blank, -x<type>, -depend) is refused with a message, not ignored: a module that needs it would be built wrong.
+(nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -blank) is refused with a message, not ignored: a module that needs it would be built wrong.
 
 The CMHG language that is supported (anything else is an error, nothing is dropped silently; CMunge's own error-base:, error-identifiers:, pdriver-handler:, vector-traps: and module-is-runnable: simple-app: are not supported):
   title-string:, help-string: (name and version), date-string:        the module's name, help line (title <tab> version (date)) and the Module_* macros of the C header
@@ -32,7 +31,8 @@ The CMHG language that is supported (anything else is an error, nothing is dropp
   module-is-c-plus-plus:           the module is written in C++ (compile with -fno-exceptions -fno-rtti): the initialisation veneer calls libmodkit's __modlib_cxx_init (the static constructors) before the
                                    initialisation code, the finalisation veneer calls __modlib_cxx_fini (the destructors of the static objects and .fini_array) after the finalisation code (lib/cxxrt.c)
   module-is-runnable:              the module has a start entry: *RMRun Module args (OS_Module Enter) calls it in USER mode; it takes the top of the application memory (OS_GetEnv) as its stack and calls
-                                   int main (int argc, char **argv) - argv[0] is the title, the arguments are the words of the command tail ("..." groups) - and ends the program with its result (libmodkit's
+                                   
+int main (int argc, char **argv) - argv[0] is the title, the arguments are the words of the command tail ("..." groups) - and ends the program with its result (libmodkit's
                                    __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
 The generated code relocates the image once, in its initialisation (modreloc appends the table of address words; see modkit/README.md). */
 #include <ctype.h>
@@ -70,9 +70,13 @@ typedef struct
   int runnable;
   int cxx;                                                  /* module-is-c-plus-plus: */
   unsigned char *mfile; size_t mfilelen;                    /* international-help-file: the name of the Messages file */
+  unsigned error_base;                                      /* error-chunk-base-number: (alias error-base:): ERROR_BASE, where the numbers of error-identifiers start */
+  struct { char *name; unsigned num; unsigned char *msg; size_t len; } *errs; int nerr;       /* error-identifiers: NAME ([NUMBER,] "message") ... (a number of 0 is 'the next one') */
 } Module;
 
 static const char *srcname;                  /* the CMHG file, for messages */
+static int g_zerrors;                                       /* -zerrors: only error-chunk-base-number: and error-identifiers: are accepted, and only the error blocks are made */
+static void parse_error_identifiers (Module *m, const char *r);
 
 static void cmhg_error (const char *fmt, ...) __attribute__ ((noreturn, format (printf, 1, 2)));
 static void cmhg_error (const char *fmt, ...)
@@ -696,6 +700,8 @@ static void parse_cmhg (const char *text, Module *m)
     {
       const char *key = lines[i].key;
       char *r = strip (lines[i].rest);
+      if (g_zerrors && strcmp (key, "error-chunk-base-number") != 0 && strcmp (key, "error-base") != 0 && strcmp (key, "error-identifiers") != 0)
+        cmhg_error ("%s is not supported by cmunge in 'errors' mode (-zerrors)", key);
       if (strcmp (key, "title-string") == 0) m->title = unquote_first (r);
       else if (strcmp (key, "help-string") == 0) m->help = unquote_first (r);
       else if (strcmp (key, "date-string") == 0) m->date = unquote_first (r);
@@ -769,6 +775,8 @@ static void parse_cmhg (const char *text, Module *m)
           m->swi_dec = w[0];
           m->swi_dec2 = q ? xstrdup (q) : NULL;
         }
+      else if (strcmp (key, "error-chunk-base-number") == 0 || strcmp (key, "error-base") == 0) m->error_base = parse_int (r);
+      else if (strcmp (key, "error-identifiers") == 0) parse_error_identifiers (m, r);
       else if (strcmp (key, "module-is-not-reentrant") == 0)
         {
           if (*r) cmhg_error ("module-is-not-reentrant: takes no value");
@@ -836,8 +844,9 @@ static void parse_cmhg (const char *text, Module *m)
         cmhg_error ("%s: is not supported (it redirects the start-up of the Shared C Library, which a modkit module does not have)", key);
       else cmhg_error ("%s: is not supported", key);
     }
-  if (!m->title || !*m->title) cmhg_error ("title-string: is missing");
-  if (!m->help || !*m->help) cmhg_error ("help-string: is missing");
+  if (!g_zerrors && (!m->title || !*m->title)) cmhg_error ("title-string: is missing");
+  if (!g_zerrors && (!m->help || !*m->help)) cmhg_error ("help-string: is missing");
+  if (m->nerr && !m->error_base) cmhg_error ("error-identifiers: errors are defined, but there is no error-chunk-base-number:");
   /* the SWIs of a module: a chunk, a handler and a decoding table go together (CMunge: a prefix of the module's title when there is no table) */
   {
     int per_swi = 0, k;
@@ -872,6 +881,50 @@ static void A (Out *o, const char *fmt, ...)
   o->first = 0;
   buf_adds (&o->b, tmp);
   free (tmp);
+}
+
+/* error-identifiers: NAME ([NUMBER,] "message"), ...  (CMunge) */
+static void parse_error_identifiers (Module *m, const char *r)
+{
+  size_t pos = 0, len = strlen (r);
+  for (;;)
+    {
+      size_t a, b;
+      char *name, *numtext = NULL;
+      unsigned num = 0;
+      unsigned char *msg;
+      size_t mlen;
+      int i;
+      while (pos < len && (r[pos] == ' ' || r[pos] == '\t' || r[pos] == '\n' || r[pos] == '\r' || r[pos] == ',')) pos++;
+      if (pos >= len) break;
+      a = pos;
+      if (!(isalpha ((unsigned char) r[pos]) || r[pos] == '_')) cmhg_error ("error-identifiers: a name and ( was expected near '%.20s'", r + pos);
+      while (pos < len && (isalnum ((unsigned char) r[pos]) || r[pos] == '_')) pos++;
+      b = pos;
+      name = xstrndup (r + a, b - a);
+      while (pos < len && isspace ((unsigned char) r[pos])) pos++;
+      if (pos >= len || r[pos] != '(') cmhg_error ("error-identifiers: a name and ( was expected near '%.20s'", r + a);
+      pos++;
+      while (pos < len && isspace ((unsigned char) r[pos])) pos++;
+      if (pos < len && r[pos] != '"')                                    /* a number, then a comma */
+        {
+          const char *c = strchr (r + pos, ',');
+          if (!c) cmhg_error ("error-identifiers: %s: a number must be followed by a comma and the message", name);
+          numtext = xstrndup (r + pos, (size_t) (c - (r + pos)));
+          num = parse_int (numtext);
+          free (numtext);
+          pos = (size_t) (c - r) + 1;
+        }
+      msg = parse_string_literals (r, &pos, &mlen);
+      while (pos < len && isspace ((unsigned char) r[pos])) pos++;
+      if (pos >= len || r[pos] != ')') cmhg_error ("error-identifiers: %s: ) was expected after the message", name);
+      pos++;
+      for (i = 0; i < m->nerr; i++) if (strcmp (m->errs[i].name, name) == 0) cmhg_error ("error-identifiers: %s is there twice", name);
+      if (memchr (msg, 0, mlen)) cmhg_error ("error-identifiers: %s: the message has a zero byte", name);
+      m->errs = xrealloc (m->errs, sizeof m->errs[0] * (size_t) (m->nerr + 1));
+      m->errs[m->nerr].name = name; m->errs[m->nerr].num = num; m->errs[m->nerr].msg = msg; m->errs[m->nerr].len = mlen;
+      m->nerr++;
+    }
 }
 
 /* a .ascii / .byte sequence for the bytes (printable runs as strings) */
@@ -1264,6 +1317,19 @@ static char *generate_asm (const Module *m, const char *src)
     }
   A (&o, "%s", "");
   A (&o, "done:\t\t\t\t\t\t@ r0 = 0 (V clear) or an error pointer (V set)\n\tcmp\tr0, #0\n\tldmfdeq\tsp!, {r4-r11, pc}\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\n\tldmfd\tsp!, {r4-r11, pc}");
+  if (m->nerr)                                                         /* error-identifiers: the error blocks (a number and the message), exported as __err_NAME; the header makes _kernel_oserror pointers of them */
+    {
+      unsigned n = m->error_base;
+      int i;
+      A (&o, "\n\t.section\t.rodata\n\t.align\t2\n@ Error messages, based at &%08x", m->error_base);
+      for (i = 0; i < m->nerr; i++)
+        {
+          unsigned use = m->errs[i].num ? m->errs[i].num : n++;
+          char *sb = asm_bytes (m->errs[i].msg, m->errs[i].len);
+          A (&o, "\t.global\t__err_%s\n__err_%s:\n\t.word\t0x%x\n%s\n\t.byte\t0\n\t.align\t2", m->errs[i].name, m->errs[i].name, use, sb);
+          free (sb);
+        }
+    }
   buf_addc (&o.b, '\n');
   free (helpline); free (nums);
   return o.b.s;
@@ -1363,6 +1429,19 @@ static char *generate_h (const Module *m, const char *src)
     if (m->nven && any_err)
       A (&o, "\n/* VECTOR_ERROR (err) can be returned from a vector handler that is error-capable: claim the vector and return with V set and r0 = the error block */\n#define VECTOR_ERROR(err) ((int) (err))");
   }
+  if (m->error_base) A (&o, "\n/* Error base for this module */\n#define ERROR_BASE (0x%08x)", m->error_base);
+  if (m->nerr)
+    {
+      unsigned n = m->error_base;
+      int i;
+      A (&o, "/* Error messages embedded in header, based at &%x */", m->error_base);
+      for (i = 0; i < m->nerr; i++)
+        {
+          unsigned use = m->errs[i].num ? m->errs[i].num : n++;
+          A (&o, "extern void __err_%s(void); /* &%x */", m->errs[i].name, use);
+        }
+      for (i = 0; i < m->nerr; i++) A (&o, "#define %s ((_kernel_oserror*)(int)__err_%s)", m->errs[i].name, m->errs[i].name);
+    }
   A (&o, "\n#ifdef __cplusplus\n}\n#endif\n#endif");
   buf_addc (&o.b, '\n');
   free (h.name); free (h.version); free (h.rest); free (guard.s);
@@ -1457,28 +1536,36 @@ static char *temp_name (const char *tag)
 
 /* CMunge's  -apcs 3/nofpregargs  and the like say how the generated code calls C: APCS-32, with or without floating point registers for arguments, with or without stack checking.  A module of this model calls its
    C functions one way (AAPCS, soft float) and has no stack checking, so the flags that only choose between those are accepted and ignored; what changes the model (APCS-26, a reentrant / PIC module) is refused. */
+/* CMunge's own table of the -apcs flags (apcscli.c): a flag is the name or an abbreviation of at least MIN letters ("nofpr" is nofpregargs, "noswst" noswstackcheck, "nonreent" nonreentrant) */
+static const struct { const char *name; size_t minlen; int ok; } apcs_flags[] = {
+  { "32bit", 2, 1 }, { "26bit", 2, 0 }, { "reentrant", 5, 0 }, { "nonreentrant", 8, 1 }, { "fpe3", 4, 1 }, { "fpe2", 4, 1 }, { "swstackcheck", 4, 1 }, { "noswstackcheck", 6, 1 },
+  { "fpregargs", 3, 1 }, { "nofpregargs", 5, 1 }, { "fp", 2, 1 }, { "nofp", 4, 1 }, { NULL, 0, 0 } };
+
 static void check_apcs (const char *spec)
 {
-  static const char *const harmless[] = { "32", "32bit", "nofp", "fp", "fpe2", "fpe3", "fpregargs", "nofpregargs", "swst", "noswst", "nonreent", NULL };
   const char *p = spec;
   int first = 1;
   while (*p)
     {
       char tok[32];
       size_t n = strcspn (p, "/");
-      int k, ok = 0;
+      int k, found = 0;
       if (n >= sizeof tok) die ("-apcs %s: too long a flag", spec);
       memcpy (tok, p, n); tok[n] = 0;
       if (first)
         {
           if (strcmp (tok, "3") && strcmp (tok, "32")) die ("-apcs %s: only APCS-32 (3/...) is supported", spec);
         }
-      else
+      else if (strcmp (tok, "32") != 0)
         {
-          if (!strcmp (tok, "26bit")) die ("-apcs %s: 26 bit code is not supported by the modkit version of cmunge", spec);
-          if (!strcmp (tok, "reent") || !strcmp (tok, "reentrant") || !strcmp (tok, "pic")) die ("-apcs %s: reentrant (position independent) modules are not supported: the module relocates itself", spec);
-          for (k = 0; harmless[k]; k++) if (!strcmp (tok, harmless[k])) ok = 1;
-          if (!ok) die ("-apcs %s: the flag %s is not known to the modkit version of cmunge", spec, tok);
+          if (!strcmp (tok, "pic")) die ("-apcs %s: reentrant (position independent) modules are not supported: the module relocates itself", spec);
+          for (k = 0; apcs_flags[k].name && !found; k++)
+            if (n >= apcs_flags[k].minlen && strncmp (apcs_flags[k].name, tok, n) == 0)
+              {
+                found = 1;
+                if (!apcs_flags[k].ok) die ("-apcs %s: %s code is not supported by the modkit version of cmunge", spec, !strcmp (apcs_flags[k].name, "26bit") ? "26 bit" : "reentrant (position independent)");
+              }
+          if (!found) die ("-apcs %s: the flag %s is not known to the modkit version of cmunge", spec, tok);
         }
       first = 0;
       p += n;
@@ -1486,9 +1573,125 @@ static void check_apcs (const char *spec)
     }
 }
 
+/* ---- -zoslib, -zerrors, -xh, -xhdr */
+static char *str_replace (const char *s, const char *a, const char *b)
+{
+  Buf o;
+  size_t al = strlen (a);
+  buf_init (&o);
+  for (;;)
+    {
+      const char *p = strstr (s, a);
+      if (!p) { buf_adds (&o, s); break; }
+      buf_addn (&o, s, (size_t) (p - s));
+      buf_adds (&o, b);
+      s = p + al;
+    }
+  return o.s;
+}
+
+static char *oslib_types (const char *h)           /* -zoslib: OSLib's types and header in the C header */
+{
+  char *a = str_replace (h, "#include \"kernel.h\"", "#include \"oslib/os.h\"");
+  char *b = str_replace (a, "_kernel_oserror", "os_error");
+  char *c = str_replace (b, "_kernel_swi_regs", "os_register_block");
+  free (a); free (b);
+  return c;
+}
+
+static char *bn_dup (const char *path) { return xstrdup (base_name (path)); }
+
+static char *generate_xh (const Module *m, const char *src)       /* -xh: the SWI numbers as a C header */
+{
+  Buf o;
+  char *g = xstrdup (m->title ? m->title : ""), *bn = bn_dup (src), *q;
+  int i;
+  for (q = g; *q; q++) if (!isalnum ((unsigned char) *q) && *q != '_') *q = '_';
+  buf_init (&o);
+  buf_printf (&o, "/* Generated by mkmodhdr.py from %s.  DO NOT EDIT. */\n\n#ifndef %s_SWI_H\n#define %s_SWI_H\n\n/* SWI numbers */\n", bn, g, g);
+  if (m->swi_chunk && m->swi_prefix)
+    for (i = 0; i < m->nswi; i++)
+      {
+        char name[256];
+        snprintf (name, sizeof name, "%s_%s", m->swi_prefix, m->swi_names[i]);
+        buf_printf (&o, "#define %-23s 0x%x\n", name, m->swi_chunk + (unsigned) i);
+      }
+  buf_adds (&o, "\n#endif\n");
+  free (g); free (bn);
+  return o.s;
+}
+
+static char *generate_xhdr (const Module *m, const char *src)      /* -xhdr: the same for the GNU assembler */
+{
+  Buf o;
+  char *bn = bn_dup (src);
+  int i, x;
+  buf_init (&o);
+  buf_printf (&o, "@ Generated by mkmodhdr.py from %s.  DO NOT EDIT.\n\n@ SWI numbers\n", bn);
+  if (m->swi_chunk && m->swi_prefix)
+    for (x = 0; x < 2; x++)
+      for (i = 0; i < m->nswi; i++) buf_printf (&o, ".set %s%s_%s,0x%x\n", x ? "X" : "", m->swi_prefix, m->swi_names[i], (m->swi_chunk + (unsigned) i) | (x ? 0x20000u : 0));
+  free (bn);
+  return o.s;
+}
+
+static char *generate_asm_errors (const Module *m, const char *src)       /* -zerrors: only the error blocks */
+{
+  Buf o;
+  char *bn = bn_dup (src);
+  buf_init (&o);
+  buf_printf (&o, "@ Generated by mkmodhdr.py from %s (-zerrors: the error blocks only).  DO NOT EDIT.\n\t.syntax\tunified\n\t.arm\n", bn);
+  if (m->nerr)
+    {
+      unsigned n = m->error_base;
+      int i;
+      buf_printf (&o, "\t.section\t.rodata\n\t.align\t2\n@ Error messages, based at &%08x\n", m->error_base);
+      for (i = 0; i < m->nerr; i++)
+        {
+          unsigned use = m->errs[i].num ? m->errs[i].num : n++;
+          char *sb = asm_bytes (m->errs[i].msg, m->errs[i].len);
+          buf_printf (&o, "\t.global\t__err_%s\n__err_%s:\n\t.word\t0x%x\n%s\n\t.byte\t0\n\t.align\t2\n", m->errs[i].name, m->errs[i].name, use, sb);
+          free (sb);
+        }
+    }
+  free (bn);
+  return o.s;
+}
+
+static char *bn_of (const char *src) { static char *b; free (b); b = bn_dup (src); return b; }
+
+static char *generate_h_errors (const Module *m, const char *src)
+{
+  Buf o;
+  char *bn = bn_dup (src), *g, *dot, *q;
+  int i;
+  dot = strstr (bn, ".cmhg");
+  if (dot && dot[5] == 0) *dot = 0;
+  g = xstrdup (bn);
+  for (q = g; *q; q++) if (!isalnum ((unsigned char) *q) && *q != '_') *q = '_';
+  buf_init (&o);
+  buf_printf (&o, "/* Generated by mkmodhdr.py from %s (-zerrors).  DO NOT EDIT. */\n#ifndef _MODKIT_%s_H_\n#define _MODKIT_%s_H_\n\n#include \"kernel.h\"\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n", bn_of (src), g, g);
+  if (m->error_base) buf_printf (&o, "\n/* Error base for this module */\n#define ERROR_BASE (0x%08x)\n", m->error_base);
+  if (m->nerr)
+    {
+      unsigned n = m->error_base;
+      buf_printf (&o, "/* Error messages embedded in header, based at &%x */\n", m->error_base);
+      for (i = 0; i < m->nerr; i++)
+        {
+          unsigned use = m->errs[i].num ? m->errs[i].num : n++;
+          buf_printf (&o, "extern void __err_%s(void); /* &%x */\n", m->errs[i].name, use);
+        }
+      for (i = 0; i < m->nerr; i++) buf_printf (&o, "#define %s ((_kernel_oserror*)(int)__err_%s)\n", m->errs[i].name, m->errs[i].name);
+    }
+  buf_adds (&o, "\n#ifdef __cplusplus\n}\n#endif\n#endif\n");
+  free (bn); free (g);
+  return o.s;
+}
+
 int main (int argc, char **argv)
 {
-  int zbase = 0;
+  int zbase = 0, zoslib = 0;
+  const char *xh = NULL, *xhdr = NULL;
   const char *out_o = NULL, *out_s = NULL, *out_h = NULL, *infile = NULL;
   int pre = 0, i, ncpp = 0;
   char **cpp = xmalloc (sizeof (char *) * (size_t) (argc + 1));
@@ -1527,7 +1730,13 @@ int main (int argc, char **argv)
           if (++i >= argc) die ("-apcs needs a specification such as 3/nofpregargs");
           check_apcs (argv[i]);
         }
-      else if (!strcmp (a, "-depend")) die ("%s is not supported (modkit has no AMU dependency files)", a);
+      else if (!strcmp (a, "-depend") || !strcmp (a, "-xh") || !strcmp (a, "-xhdr"))
+        {
+          if (++i >= argc) die ("%s needs a file name", a);
+          if (!strcmp (a, "-xh")) xh = argv[i];
+          else if (!strcmp (a, "-xhdr")) xhdr = argv[i];
+          else fprintf (stderr, "Warning: GCC has no support for -depend flag\n");          /* (as CMunge's: the file is not written) */
+        }
       else if (!strcmp (a, "-p") || !strcmp (a, "-px")) pre = 1;
       else if ((a[1] == 'D' || a[1] == 'U' || a[1] == 'I') && a[0] == '-' && a[2]) cpp[ncpp++] = (char *) a;
       else if (!strcmp (a, "-D") || !strcmp (a, "-U") || !strcmp (a, "-I"))
@@ -1542,8 +1751,8 @@ int main (int argc, char **argv)
       else if (!strcmp (a, "-tlcc")) die ("the LCC toolchain is not supported by the modkit version of cmunge");
       else if (!strcmp (a, "-26bit")) die ("26 bit code is not supported by the modkit version of cmunge");
       else if (!strcmp (a, "-zbase")) zbase = 1;
-      else if (!strcmp (a, "-zerrors")) die ("-zerrors (errors and veneers only) is not supported by the modkit version of cmunge");
-      else if (!strcmp (a, "-zoslib")) die ("-zoslib (OSLib types in the header) is not supported by the modkit version of cmunge");
+      else if (!strcmp (a, "-zerrors")) g_zerrors = 1;
+      else if (!strcmp (a, "-zoslib")) zoslib = 1;
       else if (!strcmp (a, "-blank")) die ("-blank is not supported by the modkit version of cmunge");
       else if (a[0] == '-' && (a[1] == 'x' || a[1] == 't' || a[1] == 'z')) die ("%s is not supported by the modkit version of cmunge", a);
       else if (a[0] == '-') die ("unknown option %s (cmunge -h)", a);
@@ -1551,7 +1760,7 @@ int main (int argc, char **argv)
       else die ("more than one input file: %s and %s", infile, a);
     }
   if (!infile) die ("no input file (cmunge -h)");
-  if (!out_o && !out_s && !out_h) die ("nothing to do: give -o, -s or -d");
+  if (!out_o && !out_s && !out_h && !xh && !xhdr) die ("nothing to do: give -o, -s or -d");
 
   src = (char *) infile;
   if (pre)
@@ -1571,8 +1780,11 @@ int main (int argc, char **argv)
   srctext = (char *) read_file (src, NULL);
   parse_cmhg (srctext, &m);
   m.base = zbase;
-  asm_text = generate_asm (&m, infile);
-  h_text = generate_h (&m, infile);
+  if (g_zerrors) { asm_text = generate_asm_errors (&m, infile); h_text = generate_h_errors (&m, infile); }
+  else { asm_text = generate_asm (&m, infile); h_text = generate_h (&m, infile); }
+  if (zoslib) h_text = oslib_types (h_text);
+  if (xh) { char *t = generate_xh (&m, infile); write_file (xh, t, strlen (t)); }
+  if (xhdr) { char *t = generate_xhdr (&m, infile); write_file (xhdr, t, strlen (t)); }
   if (out_h) write_file (out_h, h_text, strlen (h_text));
   asmfile = (char *) out_s;
   if (!asmfile && out_o) asmfile = temp_name ("s");

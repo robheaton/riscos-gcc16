@@ -25,8 +25,8 @@ Target RejectNegative Mask(THROWBACK)
 Send errors and warnings to a text editor as well (DDEUtils throwback; a cross compiler sends it to the SysLogD of the host named by THROWBACK_HOST)
 
 mlibscl
-Target RejectNegative Negative(mmodule) InverseMask(UNIXLIB,LIBSCL)
-Compile with the RISC OS SharedCLibrary headers
+Target RejectNegative InverseMask(UNIXLIB,LIBSCL)
+Compile with the RISC OS SharedCLibrary headers (with -mmodule, in either order, it changes nothing: the module is made as for -mmodule alone, as GCCSDK 4.7.4 did)
 
 munixlib
 Target RejectNegative Negative(mlibscl) Mask(UNIXLIB)
@@ -35,3 +35,7 @@ Compile with the RISC OS UnixLib headers (default)
 mmodule
 Target RejectNegative Negative(munixlib) Mask(MODULE)
 Target for RISC OS modules
+
+mapcs-32
+Target Ignore
+Accepted and ignored (APCS-32 is the only ABI: GCCSDK 4.7.4 Makefiles name it)

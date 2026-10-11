@@ -26,6 +26,8 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <math.h>
+#include <wchar.h>
+#include <wctype.h>
 #if defined (T_HOSTLIB)
 # include "mk_rename.h"
 # include "mk_decl.h"
@@ -45,7 +47,7 @@ extern int mk_errno;
 static unsigned g_hash, g_count, g_fail;
 static int g_verbose;
 static const char *g_sect;
-static char g_line[1600];
+static char g_line[9000];
 static size_t g_ll;
 
 static size_t t_len (const char *s) { size_t n = 0; while (s[n]) n++; return n; }
@@ -272,6 +274,119 @@ static void test_numbers (void)
     }
   sect_end ();
 }
+
+
+/* ======================================================================== wide characters: wchar.h, wctype.h and the multibyte functions of stdlib.h (the C locale) */
+static void wgen (wchar_t *d, unsigned n, unsigned maxc)                /* a wide string of up to N - 1 characters of a small alphabet, now and then a big or a high one */
+{
+  unsigned len = rr (n);
+  for (unsigned i = 0; i < len; i++) d[i] = rr (12) == 0 ? (wchar_t) (128 + rr (300)) : rr (30) == 0 ? (wchar_t) ((rnd () & 0x7fffffff) | 0x10000) : (wchar_t) (' ' + rr (maxc));
+  d[len] = 0;
+}
+static void rec_w (const wchar_t *s) { size_t n = 0; while (s[n]) n++; rec_m (s, (n + 1) * sizeof (wchar_t)); }
+static long woff (const wchar_t *base, const wchar_t *p) { return p ? (long) (p - base) : -1; }
+static void test_wchar (void)
+{
+  sect_begin ("wchar", 31);
+  for (unsigned i = 0; i < N (500); i++)
+    {
+      wchar_t a[40], b[24], set[10], buf[80], tok[40];
+      case_begin (i);
+      t_set (a, 0, sizeof a); t_set (b, 0, sizeof b); t_set (set, 0, sizeof set);
+      wgen (a, 40, 12); wgen (b, 24, 6); wgen (set, 10, 8);
+      wchar_t c = rr (6) == 0 ? 0 : rr (6) == 0 ? (wchar_t) (200 + rr (3)) : (wchar_t) (' ' + rr (12));
+      unsigned n = rr (30), k = rr (40);
+      rec_w (a); rec_w (b); rec_w (set); rec_i ((long) c); rec_i (n);
+      rec_i ((long) wcslen (a));
+      rec_i (sgn (wcscmp (a, b))); rec_i (sgn (wcsncmp (a, b, n))); rec_i (sgn (wcscoll (a, b)));
+      rec_i (woff (a, wcschr (a, c))); rec_i (woff (a, wcsrchr (a, c))); rec_i (woff (a, wcsstr (a, b))); rec_i (woff (a, wmemchr (a, c, n)));
+      rec_i ((long) wcsspn (a, set)); rec_i ((long) wcscspn (a, set)); rec_i (woff (a, wcspbrk (a, set)));
+      t_set (buf, 0xA5, sizeof buf); wcscpy (buf, a); rec_m (buf, 40 * sizeof (wchar_t));
+      t_set (buf, 0xA5, sizeof buf); wcsncpy (buf, b, n); rec_m (buf, 40 * sizeof (wchar_t));
+      t_set (buf, 0xA5, sizeof buf); wcscpy (buf, a); wcscat (buf, b); rec_m (buf, 48 * sizeof (wchar_t));
+      t_set (buf, 0xA5, sizeof buf); wcscpy (buf, a); wcsncat (buf, b, n); rec_m (buf, 48 * sizeof (wchar_t));
+      t_set (buf, 0xA5, sizeof buf); { size_t r = wcsxfrm (buf, a, n); rec_i ((long) r); if (n > r) rec_m (buf, 40 * sizeof (wchar_t)); }
+      t_set (buf, 0xA5, sizeof buf); wmemcpy (buf, a, k); wmemcpy (buf + k, a, 8); rec_m (buf, 48 * sizeof (wchar_t));
+      wmemcpy (buf, a, 40); { unsigned dx = rr (8), sx = rr (8); wmemmove (buf + dx, buf + sx, k); } rec_m (buf, 48 * sizeof (wchar_t));
+      wmemcpy (buf, a, 40); wmemset (buf + (k & 7), c, k); rec_m (buf, 48 * sizeof (wchar_t));
+      rec_i (sgn (wmemcmp (a, b, k)));
+      wcscpy (tok, a);
+      { wchar_t *save = 0; int cnt = 0; wchar_t *t = wcstok (tok, set, &save); while (t && cnt < 40) { rec_w (t); cnt++; t = wcstok (0, set, &save); } rec_i (cnt); }
+      /* the numbers */
+      { wchar_t num[40]; char d[40];
+        gen_num (d, i & 1 ? 5 : 14); for (int j = 0; j < 40; j++) num[j] = (wchar_t) (unsigned char) d[j]; if (rr (5) == 0) num[rr (8)] = (wchar_t) (200 + rr (50));
+        int base = bases[rr (sizeof bases / sizeof bases[0])]; wchar_t *e = 0;
+        T_ERRNO = 0; long long ll = wcstoll (num, &e, base); rec_i (ll); rec_i (e ? (long) (e - num) : -2); rec_i (norm_err ());
+        T_ERRNO = 0; e = 0; unsigned long long ull = wcstoull (num, &e, base); rec_u (ull); rec_i (e ? (long) (e - num) : -2); rec_i (norm_err ());
+        if (i & 1) { T_ERRNO = 0; e = 0; long l = wcstol (num, &e, base); rec_i (l); rec_i (e ? (long) (e - num) : -2); rec_i (norm_err ()); T_ERRNO = 0; e = 0; unsigned long ul = wcstoul (num, &e, base); rec_u ((unsigned) ul); rec_i (e ? (long) (e - num) : -2); rec_i (norm_err ()); } }
+      { wchar_t fnum[40]; const char *fs[] = { "3.25", "  -17.5e2x", "0x1p-3", "inf", "nan", "1e400", ".5.", "", "z", "123456789012345678901234567890.5" }; const char *q = fs[rr (10)]; int j = 0; while (q[j]) { fnum[j] = (wchar_t) q[j]; j++; } fnum[j] = 0;
+        wchar_t *e = 0; T_ERRNO = 0; double dv = wcstod (fnum, &e); rec_m (&dv, sizeof dv); rec_i (e ? (long) (e - fnum) : -2); rec_i (norm_err ()); }
+      case_end ();
+    }
+  /* multibyte: every byte value, with the count of bytes given, and strings */
+  for (unsigned i = 0; i < N (600); i++)
+    {
+      char s[24]; wchar_t w[24]; mbstate_t st; unsigned len = rr (12), n = rr (4);
+      case_begin (1000 + i);
+      for (unsigned j = 0; j < len; j++) s[j] = (char) (rr (9) == 0 ? rnd () : ' ' + rr (90));
+      s[len] = 0;
+      rec_s (s);
+      for (int k = 0; k < (int) sizeof st; k++) ((char *) &st)[k] = 0;
+      wchar_t wc = 77;
+      T_ERRNO = 0; { int r = mblen (s, n); rec_i (r); rec_i (T_ERRNO != 0); }
+      T_ERRNO = 0; { int r = mbtowc (&wc, s, n); rec_i (r); rec_i (r > 0 ? (long) wc : 0); rec_i (T_ERRNO != 0); }
+      rec_i (mblen (0, 0)); rec_i (mbtowc (0, 0, 0));
+      { char o[4] = { 9, 9, 9, 9 }; wchar_t x = (wchar_t) (rr (5) == 0 ? 128 + rr (200) : rr (130)); T_ERRNO = 0; int r = wctomb (o, x); rec_i (r); rec_i (T_ERRNO != 0); if (r > 0) rec_m (o, (size_t) r); rec_i (wctomb (0, x)); }
+      T_ERRNO = 0; { size_t r = mbstowcs (0, s, 0); rec_i ((int) r); rec_i (T_ERRNO != 0); }
+      T_ERRNO = 0; { t_set (w, 0x7f, sizeof w); size_t r = mbstowcs (w, s, n + 2); rec_i ((int) r); if (r != (size_t) -1) rec_m (w, (r < n + 2 ? r + 1 : r) * sizeof (wchar_t)); rec_i (T_ERRNO != 0); }
+      T_ERRNO = 0; { size_t r = mbrtowc (&wc, s, n, &st); rec_i ((int) r); rec_i (r + 2 > 2 ? (long) wc : 0); rec_i (T_ERRNO != 0); }
+      { const char *p = s; t_set (w, 0x7f, sizeof w); T_ERRNO = 0; size_t r = mbsrtowcs (w, &p, n + 1, &st); rec_i ((int) r); rec_i (p ? (long) (p - s) : -1); rec_i (T_ERRNO != 0); if (r != (size_t) -1) rec_m (w, (r < n + 1 ? r + 1 : r) * sizeof (wchar_t)); }
+      { wchar_t ws[12]; for (unsigned j = 0; j < len; j++) ws[j] = (wchar_t) (rr (9) == 0 ? 128 + rr (300) : ' ' + rr (90)); ws[len] = 0; const wchar_t *p = ws; char o[16]; t_set (o, 0x7f, sizeof o); T_ERRNO = 0; size_t r = wcsrtombs (o, &p, n + 1, &st); rec_i ((int) r); rec_i (p ? (long) (p - ws) : -1); rec_i (T_ERRNO != 0); if (r != (size_t) -1) rec_m (o, r < n + 1 ? r + 1 : r);
+        t_set (o, 0x7f, sizeof o); T_ERRNO = 0; r = wcstombs (o, ws, n + 1); rec_i ((int) r); rec_i (T_ERRNO != 0); if (r != (size_t) -1) rec_m (o, r < n + 1 ? r + 1 : r); }
+      { int b = (int) rr (300) - 20; rec_i ((int) btowc (b)); rec_i (wctob ((wint_t) (rr (5) == 0 ? 0xFFFFFFFFu : (unsigned) rr (300)))); rec_i (mbsinit (&st)); }
+      case_end ();
+    }
+  /* classification: every value to 300 and a few big ones */
+  for (unsigned i = 0; i < N (1); i++)
+    {
+      static const char *names[] = { "alnum", "alpha", "blank", "cntrl", "digit", "graph", "lower", "print", "punct", "space", "upper", "xdigit", "bogus", "", "Alpha" };
+      case_begin (2000 + i);
+      for (unsigned c = 0; c < 330; c++)
+        {
+          rec_i (iswalnum (c) != 0); rec_i (iswalpha (c) != 0); rec_i (iswblank (c) != 0); rec_i (iswcntrl (c) != 0); rec_i (iswdigit (c) != 0); rec_i (iswgraph (c) != 0); rec_i (iswlower (c) != 0);
+          rec_i (iswprint (c) != 0); rec_i (iswpunct (c) != 0); rec_i (iswspace (c) != 0); rec_i (iswupper (c) != 0); rec_i (iswxdigit (c) != 0); rec_i ((int) towlower (c)); rec_i ((int) towupper (c));
+        }
+      for (unsigned c = 0; c < 20; c++) { unsigned v = rnd (); rec_i (iswalpha (v) != 0); rec_i (iswspace (v) != 0); rec_i ((int) towlower (v)); rec_i ((int) towupper (v)); }
+      for (unsigned j = 0; j < sizeof names / sizeof names[0]; j++) { wctype_t t = wctype (names[j]); rec_i (t != 0); for (unsigned c = 0; c < 130; c += 3) rec_i (iswctype (c, t) != 0); }
+      { wctrans_t lo = wctrans ("tolower"), up = wctrans ("toupper"), bad = wctrans ("nothing"); rec_i (lo != 0); rec_i (up != 0); rec_i (bad != 0); for (unsigned c = 0; c < 200; c++) { rec_i ((int) towctrans (c, lo)); rec_i ((int) towctrans (c, up)); } }
+      case_end ();
+    }
+  sect_end ();
+}
+
+
+/* ======================================================================== the long double functions (long double is double: each is the double function) */
+#ifndef T_ORACLE
+static void test_ldouble (void)
+{
+  sect_begin ("ldouble", 32);
+  for (unsigned i = 0; i < N (300); i++)
+    {
+      double x = (double) rshift (8) / 1000.0 + (double) rr (50) / 7.0, y = (double) rr (40) / 9.0 + 0.5;
+      long double lx = x, ly = y, lp = 0;
+      double ip = 0;
+      int e1 = 0, e2 = 0;
+      case_begin (3000 + i);
+      check (sinl (lx) == sin (x) && cosl (lx) == cos (x) && tanl (lx) == tan (x) && atanl (lx) == atan (x) && expl (lx / 100) == exp (x / 100) && sqrtl (ly) == sqrt (y), "sinl, cosl, tanl, atanl, expl, sqrtl");
+      check (powl (ly, 1.5L) == pow (y, 1.5) && atan2l (lx, ly) == atan2 (x, y) && fmodl (lx, ly) == fmod (x, y) && hypotl (lx, ly) == hypot (x, y) && fabsl (lx) == fabs (x) && copysignl (ly, lx) == copysign (y, x), "powl, atan2l, fmodl, hypotl, fabsl, copysignl");
+      check (floorl (lx) == floor (x) && ceill (lx) == ceil (x) && truncl (lx) == trunc (x) && roundl (lx) == round (x) && rintl (lx) == rint (x) && lroundl (lx) == lround (x) && llrintl (lx) == llrint (x), "floorl, ceill, truncl, roundl, rintl, lroundl, llrintl");
+      check (frexpl (lx, &e1) == frexp (x, &e2) && e1 == e2 && ldexpl (ly, 5) == ldexp (y, 5) && scalbnl (ly, -3) == scalbn (y, -3) && modfl (lx, &lp) == modf (x, &ip) && lp == ip && ilogbl (ly) == ilogb (y), "frexpl, ldexpl, scalbnl, modfl, ilogbl");
+      rec_i (sinl (lx) == sin (x)); rec_i ((long) floorl (lx));
+      case_end ();
+    }
+  sect_end ();
+}
+#endif
 
 /* ======================================================================== qsort, bsearch, div, abs */
 static int cmp_int (const void *a, const void *b) { int x = *(const int *) a, y = *(const int *) b; return (x > y) - (x < y); }
@@ -1760,6 +1875,10 @@ int main (int argc, char **argv)
   RUN ("ctype", test_ctype);
   RUN ("string", test_string);
   RUN ("numbers", test_numbers);
+  RUN ("wchar", test_wchar);
+#ifndef T_ORACLE
+  RUN ("ldouble", test_ldouble);
+#endif
   RUN ("sort", test_sort);
   RUN ("div", test_div);
   RUN ("sscanf", test_sscanf);

@@ -37,6 +37,7 @@ extern div_t div (int n, int d);
 extern ldiv_t ldiv (long n, long d);
 extern lldiv_t lldiv (long long n, long long d);
 extern int rand (void);
+#define MB_CUR_MAX 1
 extern void srand (unsigned seed);
 extern void qsort (void *base, size_t n, size_t size, int (*cmp) (const void *, const void *));
 extern void *bsearch (const void *key, const void *base, size_t n, size_t size, int (*cmp) (const void *, const void *));
@@ -45,14 +46,14 @@ extern int atexit (void (*fn) (void));
 extern void exit (int status) __attribute__ ((noreturn));
 extern void _Exit (int status) __attribute__ ((noreturn));
 extern void abort (void) __attribute__ ((noreturn));
-#ifdef __cplusplus
-/* declared for libstdc++'s <cstdlib>, which has a using-declaration for each of them; the library does not define them: a call is an undefined reference at the link */
-extern int system (const char *cmd);
-extern int mblen (const char *s, size_t n);
+extern int system (const char *cmd);                                         /* OS_CLI; 0, or -1 with errno EIO; system (NULL) is 1 */
+extern int mblen (const char *s, size_t n);                                 /* the C locale: one byte is one character, 0 - 127; a byte above 127 is EILSEQ */
 extern int mbtowc (wchar_t *pwc, const char *s, size_t n);
 extern int wctomb (char *s, wchar_t wc);
 extern size_t mbstowcs (wchar_t *dst, const char *src, size_t n);
 extern size_t wcstombs (char *dst, const wchar_t *src, size_t n);
+#ifdef __cplusplus
+/* declared for libstdc++'s <cstdlib>, which has a using-declaration for each of them; the library does not define them: a call is an undefined reference at the link */
 extern void quick_exit (int status) __attribute__ ((noreturn));
 extern int at_quick_exit (void (*f) (void));
 #endif

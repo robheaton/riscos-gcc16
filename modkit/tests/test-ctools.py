@@ -193,6 +193,14 @@ def gen_cmhg3(rng):
             rng.shuffle(opts)
             cmds.append("C%d(%s)" % (i, ", ".join(opts)))
         L("command-keyword-table", table + rng.choice(["\n     ", " "]) + ",\n     ".join(cmds))
+    if rng.random() < .35:                                              # CMunge's error-chunk-base-number: and error-identifiers: (16.2.0-20)
+        L("error-chunk-base-number", num(rng, rng.choice([0x81DC00, 0x20800, 0x1000])))          # (CMunge: "Errors defined, but no error base")
+        errs = []
+        for i in range(rng.randint(1, 4)):
+            msg = rng.choice(["Out of memory", "Bad parameter", "x", "A longer message, with a comma", "Not found: it is gone"])
+            nm = "err_%s_%d" % (title.lower(), i)
+            errs.append('%s(%s, "%s")' % (nm, num(rng, rng.randint(0x20000, 0xFFFFF)), msg) if rng.random() < .25 else '%s("%s")' % (nm, msg))
+        L("error-identifiers", rng.choice([", ", ",\n    "]).join(errs))
     return "\n".join(lines) + "\n"
 
 rng = random.Random(20261010)
@@ -209,6 +217,14 @@ N += N3
 
 # ---- the same files against the real CMunge (GCCSDK's), when it is there: what the module header says must be the same.  The real one refuses what it does not know and adds the date of the day to a help
 # string that has no date-string, so those files are left out of the comparison.
+def error_blocks(sfile):
+    """[(name, number, message)] of the error blocks (error-identifiers:) in a generated assembler source, from either tool: .word N then .asciz "msg" (CMunge) or .ascii "msg" and .byte 0 (cmunge)"""
+    out = []
+    for m in re.finditer(r'^__err_(\w+):\n\t\.word\t(0x[0-9a-fA-F]+|\d+)[^\n]*\n\t\.(?:asciz|ascii)\t"((?:[^"\\\n]|\\.)*)"', open(sfile).read(), re.M): out.append((m.group(1), int(m.group(2), 0), m.group(3)))
+    return out
+def error_header(hfile):
+    """the lines of a C header that concern error-identifiers: ERROR_BASE, the externs and the #defines"""
+    return [l.strip() for l in open(hfile).read().split("\n") if "ERROR_BASE" in l or "__err_" in l]
 REAL_CMUNGE = os.environ.get("REAL_CMUNGE", os.path.expanduser("~/gccsdk/cross/bin/cmunge"))
 if os.path.exists(REAL_CMUNGE):
     sys.path.insert(0, HERE)
@@ -240,6 +256,9 @@ if os.path.exists(REAL_CMUNGE):
         except subprocess.CalledProcessError:
             skipped += 1; continue
         compared += 1
+        if "error-identifiers" in text or "error-chunk-base" in text:
+            check(error_blocks(d + "/m.s") == error_blocks(d + "/r.s") and error_header(d + "/m.h") == error_header(d + "/r.h"), "generated %d: the error blocks and their header lines differ from the real CMunge's" % i)
+            globals()["compared_errors"] = globals().get("compared_errors", 0) + 1
         if i >= N_BASE: compared_options = globals().get("compared_options", 0) + 1; globals()["compared_options"] = compared_options
         same = True
         for k in a:
@@ -248,11 +267,46 @@ if os.path.exists(REAL_CMUNGE):
             elif a[k] != b[k]:
                 same = False
         check(same, "generated %d: the module header differs from the real CMunge's (%s)" % (i, {k: (a[k], b[k]) for k in a if k != "commands" and a[k] != b[k]} or [(x, y) for x, y in zip(a["commands"], b["commands"]) if x != y][:1]))
-    print("cmunge: %d generated files against the real CMunge (%d left out); %d of them have the options of the veneers, the SWI table and the commands" % (compared, skipped, globals().get("compared_options", 0)))
+    print("cmunge: %d generated files against the real CMunge (%d left out); %d of them have the options of the veneers, the SWI table and the commands, %d have error identifiers" % (compared, skipped, globals().get("compared_options", 0), globals().get("compared_errors", 0)))
+    # the CMHG files of GCCSDK's own modules (SOManager, ARMEABISupport, Khronos, GDBServer): the module header, the error blocks and the header lines, the same from the real CMunge
+    for f in ("gcc4/riscos/soloader/module2/somanager.cmhg", "gcc4/riscos/armeabisupport/armeabisupport.cmhg", "gcc4/riscos/syslogd/modheader.cmhg"):
+        p = os.path.expanduser("~/gccsdk/" + f)
+        if not os.path.exists(p): continue
+        d = tempfile.mkdtemp(dir=W)
+        flags = ["-tgcc", "-32bit", "-p", "-DPACKAGE_VERSION=1.0"]
+        rm = run([os.path.join(BIN, "cmunge")] + flags + ["-s", d + "/m.s", "-d", d + "/m.h", p]); rp = run([sys.executable, os.path.join(KIT, "bin", "cmunge")] + flags + ["-s", d + "/p.s", "-d", d + "/p.h", p]); rr = run([REAL_CMUNGE] + flags + ["-s", d + "/r.s", "-d", d + "/r.h", p])
+        check(rm.returncode == 0 and rp.returncode == 0 and rr.returncode == 0, "%s: cmunge (C %d, Python %d) and the real CMunge (%d) all take the file: %s" % (os.path.basename(f), rm.returncode, rp.returncode, rr.returncode, (rm.stderr + rp.stderr + rr.stderr).strip()[-120:]))
+        if rm.returncode == 0 and rr.returncode == 0:
+            check(error_blocks(d + "/m.s") == error_blocks(d + "/r.s") and (bool(error_blocks(d + "/m.s")) == ("error-identifiers" in open(p).read())) and error_header(d + "/m.h") == error_header(d + "/r.h"), "%s: the error blocks and the header lines are the real CMunge's (%d blocks)" % (os.path.basename(f), len(error_blocks(d + "/m.s"))))
+            check(same_files(d + "/m.s", d + "/p.s") and same_files(d + "/m.h", d + "/p.h"), "%s: the C and Python cmunge make the same files" % os.path.basename(f))
+            # -xh and -xhdr (the SWI numbers), -zoslib (OSLib's types in the header): the real CMunge's files, and the C and Python tools against each other
+            if "swi-chunk-base-number" in open(p).read():
+                outs = {}
+                for tool, cmd in (("c", [os.path.join(BIN, "cmunge")]), ("p", [sys.executable, os.path.join(KIT, "bin", "cmunge")]), ("r", [REAL_CMUNGE])):
+                    rx = run(cmd + flags + ["-zoslib", "-xh", d + "/%s.xh" % tool, "-xhdr", d + "/%s.xhdr" % tool, "-s", d + "/%sz.s" % tool, "-d", d + "/%sz.h" % tool, p])
+                    outs[tool] = rx.returncode == 0
+                strip = lambda f, n: open(f).read().split("\n", n)[n]
+                check(all(outs.values()), "%s: -zoslib -xh -xhdr are taken by C, Python and the real CMunge" % os.path.basename(f))
+                if all(outs.values()):
+                    check(strip(d + "/c.xh", 2).strip() == strip(d + "/r.xh", 5).strip() == strip(d + "/p.xh", 2).strip(), "%s: -xh: the SWI numbers are the real CMunge's" % os.path.basename(f))
+                    check(strip(d + "/c.xhdr", 2).strip() == strip(d + "/r.xhdr", 4).strip() == strip(d + "/p.xhdr", 2).strip(), "%s: -xhdr: the SWI numbers are the real CMunge's" % os.path.basename(f))
+                    hz = {t: open(d + "/%sz.h" % t).read() for t in "cpr"}
+                    check(hz["c"] == hz["p"] and "_kernel_" not in hz["c"] and '#include "oslib/os.h"' in hz["c"] and hz["c"].count("os_error") == hz["r"].count("os_error") and hz["c"].count("os_register_block") == hz["r"].count("os_register_block"), "%s: -zoslib: OSLib's types, as many as the real CMunge's (C and Python the same)" % os.path.basename(f))
     for k, v in sorted(why.items(), key=lambda kv: -kv[1]): print("    %4d  %s" % (v, k))
 else:
     print("cmunge: the real CMunge (%s) is not there: not compared" % REAL_CMUNGE)
 
+# -zerrors: only the error blocks (for an application): the same error blocks and header lines as the real CMunge's; any other directive is refused
+ze = os.path.join(W, "errs.cmhg")
+open(ze, "w").write('error-chunk-base-number: 0x81DC00\nerror-identifiers: e_one("First error"), e_two(0x81dc10, "Second"), e_three("Third")\n')
+zo = {}
+for tool, cmd in (("c", [os.path.join(BIN, "cmunge")]), ("p", [sys.executable, os.path.join(KIT, "bin", "cmunge")]), ("r", [REAL_CMUNGE] if os.path.exists(REAL_CMUNGE) else None)):
+    if cmd is None: continue
+    zr = run(cmd + ["-tgcc", "-32bit", "-zerrors", "-s", W + "/ze_%s.s" % tool, "-d", W + "/ze_%s.h" % tool, ze]); zo[tool] = zr.returncode == 0
+check(all(zo.values()) and same_files(W + "/ze_c.s", W + "/ze_p.s") and same_files(W + "/ze_c.h", W + "/ze_p.h"), "cmunge -zerrors: C and Python make the same files")
+if "r" in zo and zo["r"]: check(error_blocks(W + "/ze_c.s") == error_blocks(W + "/ze_r.s") and len(error_blocks(W + "/ze_c.s")) == 3 and error_header(W + "/ze_c.h") == error_header(W + "/ze_r.h"), "cmunge -zerrors: the error blocks and the header lines are the real CMunge's")
+zb = os.path.join(W, "zbad.cmhg"); open(zb, "w").write('title-string: T\nhelp-string: T 1.00\nerror-chunk-base-number: 1\n')
+check(run([os.path.join(BIN, "cmunge"), "-zerrors", "-d", W + "/zb.h", zb]).returncode != 0 and run([sys.executable, os.path.join(KIT, "bin", "cmunge"), "-zerrors", "-d", W + "/zb.h", zb]).returncode != 0, "cmunge -zerrors refuses a file with a title-string (both tools)")
 print("cmunge: files that must be refused")
 BAD = {
     "unknown keyword": "title-string: T\nhelp-string: T 1.00\nfrobnicate: x\n",
@@ -357,7 +411,7 @@ for defs in ([], ["-DBIG"], ["-D", "BIG=1"], ["-UBIG"], ["-DBIG", "-UBIG"]):
         r = run(cmd + ["-tgcc", "-32bit", "-p"] + defs + ["-s", d + "/o.s", "-d", d + "/o.h", "-o", d + "/o.o", pp])
         out[tool] = (r.returncode, open(d + "/o.s", "rb").read() if os.path.exists(d + "/o.s") else None, open(d + "/o.h", "rb").read() if os.path.exists(d + "/o.h") else None, os.path.exists(d + "/o.o") and os.path.getsize(d + "/o.o") > 100)
     check(out["py"] == out["c"] and out["c"][0] == 0, "-p %s: %s" % (defs, "different" if out["py"] != out["c"] else "failed"))
-for opt in (["-zoslib"], ["-tnorcroft"], ["-26bit"], ["-x", "h"], ["-apcs", "26"], ["-apcs", "3/reent"], ["-apcs", "3/26bit"], ["-apcs", "3/bogus"], ["-apcs"], ["-bogus"], ["-depend", "x"]):
+for opt in (["-tnorcroft"], ["-26bit"], ["-apcs", "26"], ["-apcs", "3/reent"], ["-apcs", "3/26bit"], ["-apcs", "3/bogus"], ["-apcs"], ["-bogus"]):
     rp = run([os.path.join(KIT, "bin", "cmunge")] + opt + ["-d", os.path.join(W, "x.h"), real[0]])
     rc = run([os.path.join(BIN, "cmunge")] + opt + ["-d", os.path.join(W, "x.h"), real[0]])
     check(rp.returncode != 0 and rc.returncode != 0, "cmunge %s is refused by both (py %d, c %d)" % (" ".join(opt), rp.returncode, rc.returncode))

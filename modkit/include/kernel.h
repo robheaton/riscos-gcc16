@@ -7,7 +7,7 @@ extern "C" {
 #include <stddef.h>						/* (size_t: the SharedCLibrary's kernel.h defines it too) */
 typedef struct { int errnum; char errmess[252]; } _kernel_oserror;
 typedef struct { int r[10]; } _kernel_swi_regs;
-typedef struct stack_chunk { unsigned long sc_mark; struct stack_chunk *sc_next, *sc_prev; unsigned long sc_size; int (*sc_deallocate) (); } _kernel_stack_chunk;      /* (the type only: a module has no stack chunks of the SharedCLibrary) */
+typedef struct stack_chunk { unsigned long sc_mark; struct stack_chunk *sc_next, *sc_prev; unsigned long sc_size; int (*sc_deallocate) (void); } _kernel_stack_chunk;      /* (the type only: a module has no stack chunks of the SharedCLibrary) */
 #define _kernel_NONX 0x80000000
 /* Call the SWI NO with the registers IN, return the registers in OUT.  The X bit is set unless bit 31 (_kernel_NONX) is set. */
 /* The bytes that are left of the kernel's SVC stack (32 KB, shared with the OS) for the caller, or -1 when that cannot be known (user mode, the stack of a runnable module).  There is no overflow
@@ -36,6 +36,11 @@ extern int _kernel_oscli (const char *s);                        /* 1 when the c
 extern _kernel_oserror *_kernel_getenv (const char *name, char *buffer, unsigned size);        /* the value of a system variable (OS_ReadVarVal) */
 extern _kernel_oserror *_kernel_setenv (const char *name, const char *value);                  /* NULL as the value deletes it */
 /* interrupts and the processor mode (ARMv6: CPSIE / CPSID; in USR mode they change nothing, as in the SharedCLibrary) */
+extern int _kernel_raise_error (const _kernel_oserror *e);        /* OS_GenerateError: the error goes to the error handler of the caller; the value (0) is only seen when it comes back */
+extern int _kernel_escape_seen (void);                             /* 1 when Escape was pressed since the last call (acknowledged), else 0 */
+extern int _kernel_fpavailable (void);                             /* 0: a module is soft float */
+extern char *_kernel_command_string (void);                        /* NULL: a module has no command line */
+extern int _kernel_system (const char *cmd, int chain);            /* OS_CLI; 0, or -2 when the OS gives an error (chain is ignored) */
 extern void _kernel_irqs_on (void);
 extern void _kernel_irqs_off (void);
 extern int _kernel_irqs_disabled (void);                         /* 0 when IRQs are enabled, else not 0 (the I bit) */
