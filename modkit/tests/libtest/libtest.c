@@ -9,6 +9,9 @@
 
    The inputs come from a generator of this file (xorshift32), identical in every build; the work is scaled by SCALE.  With  -v  (host) every result is printed, to find the first difference with diff.
    The test code itself uses only its own t_* helpers for strings and memory, never the functions under test. */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1                            /* (glibc: stpcpy, mempcpy, getline, timegm, fnmatch flags ... are declared) */
+#endif
 #ifdef T_ARM
 #define __MODLIB_WANT_TIMESPEC 1                 /* (the kit's time.h has struct timespec and clock_gettime only for C11 and C++ otherwise) */
 #endif
@@ -28,6 +31,12 @@
 #include <math.h>
 #include <wchar.h>
 #include <wctype.h>
+#include <strings.h>
+#include <fnmatch.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/times.h>
+#include <sys/timeb.h>
 #if defined (T_HOSTLIB)
 # include "mk_rename.h"
 # include "mk_decl.h"
@@ -1849,6 +1858,246 @@ static void test_arm_only (void)
 _kernel_oserror *lt_init (const char *tail, int podule_base, void *pw) { (void) tail; (void) podule_base; (void) pw; return 0; }
 #endif
 
+
+/* ======================================================================== group 1 of the 4.7.4 parity list: string, time, getline and fnmatch functions (against glibc), the rest by self checks */
+#if defined (T_ORACLE)
+static char *ref_strichr (const char *s, int c)                              /* (glibc has no strichr / strrichr: the reference is written here, independently of the library's) */
+{
+  int lc = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+  for (;; s++)
+    {
+      int d = (unsigned char) *s;
+      if (d >= 'A' && d <= 'Z') d += 32;
+      if (d == lc) return (char *) s;
+      if (!*s) return 0;
+    }
+}
+static char *ref_strrichr (const char *s, int c)
+{
+  int lc = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+  const char *last = 0;
+  for (;; s++)
+    {
+      int d = (unsigned char) *s;
+      if (d >= 'A' && d <= 'Z') d += 32;
+      if (d == lc) last = s;
+      if (!*s) return (char *) last;
+    }
+}
+# define strichr ref_strichr
+# define strrichr ref_strrichr
+#endif
+static void test_g1 (void)
+{
+  static const char alpha[] = "abcABC xyz.-";
+  sect_begin ("g1", 17);
+  for (unsigned i = 0; i < N (500); i++)
+    {
+      char a[48], b[48], d[64];
+      unsigned la = rr (30), n = rr (40), j, k;
+      case_begin (i);
+      for (j = 0; j < la; j++) a[j] = alpha[rr (12)];
+      a[la] = 0;
+      t_set (d, 0xA5, sizeof d); { char *e = stpcpy (d, a); rec_i (e - d); rec_m (d, 48); }
+      t_set (d, 0xA5, sizeof d); { char *e = stpncpy (d, a, n); rec_i (e - d); rec_m (d, 48); }
+      k = rr (45);
+      t_set (d, 0xA5, sizeof d); { char *e = mempcpy (d, a, k < la + 1 ? k : la + 1); rec_i (e - d); rec_m (d, 48); }
+      t_mov (b, a, la + 1); if (la && rr (2)) b[rr (la)] ^= 0x20;
+      k = rr (la + 2); { int r = bcmp (a, b, k); rec_i (r != 0); }
+      { unsigned r1 = rnd (), r2 = rnd (), r3 = rnd (), r4 = rr (32), r5 = rr (64);             /* (the draws in a fixed order: the order of evaluation of the operands is not) */
+	int v = (int) r1 >> r4; long lv = (long) v; long long ll = (long long) (((unsigned long long) r2 << 32) | r3) >> r5;
+	rec_i (ffs (v)); rec_i (ffsl (lv)); rec_i (ffsll (ll)); if (rr (8) == 0) { rec_i (ffs (0)); rec_i (ffsll (0)); } }
+      { int c = rr (8) == 0 ? 0 : alpha[rr (12)]; if (rr (3) == 0 && c >= 'a' && c <= 'z') c -= 32;
+	{ char *r = strichr (a, c); rec_i (r ? r - a : -1); r = strrichr (a, c); rec_i (r ? r - a : -1); } }
+      case_end ();
+    }
+  /* the reentrant time functions, timegm and dysize */
+  for (unsigned i = 0; i < N (400); i++)
+    {
+      struct tm tm, tm2, tm3;
+      char ab[64];
+      long long t = (long long) (rnd () % 4122167296u) - 2061083648LL;
+      time_t tt = (time_t) t;
+      case_begin (1000 + i);
+      rec_i (t);
+      gmtime_r (&tt, &tm); rec_tm (&tm);
+      localtime_r (&tt, &tm2); rec_tm (&tm2);
+      t_set (ab, 0x5A, sizeof ab); { char *r = asctime_r (&tm, ab); rec_i (r == ab); rec_s (ab); }
+      t_set (ab, 0x5A, sizeof ab); { char *r = ctime_r (&tt, ab); rec_i (r == ab); rec_s (ab); }
+      copy_tm (&tm3, &tm);
+      if (rr (5) == 0) tm3.tm_year += 8100 + (int) rr (2000);                       /* a year of five digits does not fit the 26 bytes */
+      T_ERRNO = 0; t_set (ab, 0x5A, sizeof ab);
+      { char *r = asctime_r (&tm3, ab); rec_i (r != 0); if (r) rec_s (ab); else rec_i (T_ERRNO == EOVERFLOW); }
+      copy_tm (&tm2, &tm);
+      tm2.tm_mday += (int) rr (70) - 35; tm2.tm_hour += (int) rr (50) - 25; tm2.tm_min += (int) rr (130) - 65; tm2.tm_sec += (int) rr (200) - 100;
+      tm2.tm_mon += (int) rr (30) - 15; tm2.tm_year += (int) rr (3) - 1;
+      { time_t r = timegm (&tm2); rec_i ((long long) r); rec_tm (&tm2); }
+      { int y = 1 + (int) rr (4000); rec_i (y); rec_i (dysize (y)); }
+      case_end ();
+    }
+  sect_end ();
+}
+
+/* fnmatch against glibc: patterns made of tokens (so that a bracket expression is always one that both sides read the same way) */
+static void test_fnmatch (void)
+{
+  static const char *const tok[] = { "a", "b", "c", "A", "B", ".", "/", "*", "?", "[abc]", "[!a-c]", "[^b]", "[a-c]", "[[:alpha:]]", "[[:upper:]x]", "\\*", "\\a", "[]a]", "[", "[a", "*", "?", "a", "b", "[A-B]", "[!.]", "[[:digit:].]" };
+  static const char nalpha[] = "abcAB./*[\\";
+  sect_begin ("fnmatch", 19);
+  for (unsigned i = 0; i < N (6000); i++)
+    {
+      char p[64], s[24];
+      unsigned np = 1 + rr (6), ns = rr (8), j, flags = rr (32);
+      size_t l = 0;
+      case_begin (i);
+      for (j = 0; j < np; j++) { const char *t = tok[rr (sizeof tok / sizeof tok[0])]; while (*t) p[l++] = *t++; }
+      p[l] = 0;
+      for (j = 0; j < ns; j++) s[j] = nalpha[rr (rr (6) ? 7 : 10)];
+      s[ns] = 0;
+      rec_s (p); rec_s (s); rec_i (flags);
+      rec_i (fnmatch (p, s, (int) flags));
+      case_end ();
+    }
+  sect_end ();
+}
+
+/* getline and getdelim against glibc, on files of random bytes (with newlines, colons and NUL bytes) */
+static void test_getline (void)
+{
+  sect_begin ("getline", 23);
+  for (unsigned i = 0; i < N (150); i++)
+    {
+      const char *name = fsname (3);
+      unsigned n = rr (300);
+      char *line = 0;
+      size_t cap = 0;
+      FILE *f;
+      int delim = rr (3) == 0 ? ':' : '\n';
+      case_begin (i);
+      put_file (name, n);
+      f = fopen (name, "rb");
+      rec_i (f != 0);
+      if (f)
+	{
+	  for (unsigned k = 0; k < 400; k++)
+	    {
+	      int r = (int) (delim == '\n' ? getline (&line, &cap, f) : getdelim (&line, &cap, delim, f));      /* (the kit's ssize_t is int; the host's is long: the upper half of the result is not the library's) */
+	      rec_i (r);
+	      if (r < 0) break;
+	      rec_m (line, (size_t) r + 1);
+	    }
+	  rec_i (feof (f) != 0);
+	  fclose (f);
+	}
+      free (line);
+      remove (name);
+      case_end ();
+    }
+  sect_end ();
+}
+
+
+#if defined (T_ARM)
+/* group 1, the functions that need the OS or that glibc spells differently: checked against answers worked out here */
+static int streq (const char *a, const char *b) { return a && b && !t_cmp (a, b); }
+static int g1_order[4], g1_n;
+static void g1_q1 (void) { g1_order[g1_n++] = 1; }
+static void g1_q2 (void) { g1_order[g1_n++] = 2; }
+static void test_g1self (void)
+{
+  sect_begin ("g1self", 1);
+  check (streq (strsignal (SIGINT), "Interrupt") && streq (strsignal (SIGSEGV), "Segmentation fault") && streq (strsignal (SIGTERM), "Terminated") && streq (strsignal (99), "Unknown signal 99")
+	 && streq (strsignal (0), "Unknown signal 0") && streq (strsignal (-5), "Unknown signal -5"), "strsignal: the texts and an unknown number");
+  check (sys_nsig == NSIG && streq (sys_siglist[SIGABRT], "Aborted") && streq (sys_siglist[SIGUSR2], "User defined signal 2"), "sys_siglist and sys_nsig");
+  { int bad = 0; for (int e = 0; e < sys_nerr; e++) if (!sys_errlist[e] || !streq (strerror (e), sys_errlist[e])) bad++; check (sys_nerr == 92 && !bad, "sys_errlist: every entry is strerror's text"); }
+  check (streq (strerror (ENOENT), "No such file or directory") && streq (strerror (ETIMEDOUT), "Connection timed out") && streq (strerror (EILSEQ), "Invalid or incomplete multibyte or wide character")
+	 && streq (strerror (100), "Unknown error 100") && streq (strerror (-1), "Unknown error -1") && streq (strerror (0), "No error"), "strerror: the texts");
+  { char b[64]; int r;
+    r = strerror_r (ENOENT, b, sizeof b); check (r == 0 && streq (b, "No such file or directory"), "strerror_r: the text");
+    r = strerror_r (ENOENT, b, 4); check (r == ERANGE && streq (b, "No "), "strerror_r: a short buffer gives ERANGE and the text cut");
+    r = strerror_r (999, b, sizeof b); check (r == EINVAL && streq (b, "Unknown error 999"), "strerror_r: an unknown number is EINVAL");
+    r = strerror_r (EPERM, b, 0); check (r == ERANGE, "strerror_r: no room at all is ERANGE"); }
+  { const char *v;
+    check (setenv ("G1Test$A", "one", 1) == 0 && (v = getenv ("G1Test$A")) != 0 && streq (v, "one"), "setenv sets a system variable");
+    check (setenv ("G1Test$A", "two", 0) == 0 && streq (getenv ("G1Test$A"), "one"), "setenv with replace 0 keeps the value");
+    check (setenv ("G1Test$A", "two", 1) == 0 && streq (getenv ("G1Test$A"), "two"), "setenv with replace 1 replaces it");
+    check (putenv ("G1Test$B=three") == 0 && streq (getenv ("G1Test$B"), "three"), "putenv NAME=value sets it");
+    check (putenv ("G1Test$B") == 0 && getenv ("G1Test$B") == 0, "putenv with no = removes it");
+    check (unsetenv ("G1Test$A") == 0 && getenv ("G1Test$A") == 0, "unsetenv removes it");
+    check (unsetenv ("G1Test$A") == 0, "unsetenv of a variable that is not there is 0");
+    T_ERRNO = 0; check (setenv ("", "x", 1) == -1 && T_ERRNO == EINVAL, "setenv: an empty name is EINVAL");
+    T_ERRNO = 0; check (setenv ("a=b", "x", 1) == -1 && T_ERRNO == EINVAL, "setenv: a name with = is EINVAL");
+    T_ERRNO = 0; check (unsetenv ("a=b") == -1 && T_ERRNO == EINVAL, "unsetenv: a name with = is EINVAL"); }
+#if !defined (T_HW)
+  { char b[64];                                                               /* (not on the machine: Inet$HostName and Inet$LocalDomain are the network's) */
+    _kernel_setenv ("Inet$HostName", "g1host"); _kernel_setenv ("Inet$LocalDomain", 0);
+    check (gethostname (b, sizeof b) == 0 && streq (b, "g1host"), "gethostname: Inet$HostName");
+    _kernel_setenv ("Inet$LocalDomain", ".example.org");
+    check (gethostname (b, sizeof b) == 0 && streq (b, "g1host.example.org"), "gethostname: the domain is added (a leading dot is dropped)");
+    check (getdomainname (b, sizeof b) == 0 && streq (b, ".example.org"), "getdomainname: Inet$LocalDomain");
+    _kernel_setenv ("Inet$HostName", "a.b.c");
+    check (gethostname (b, sizeof b) == 0 && streq (b, "a.b.c"), "gethostname: a name with a dot is as it is");
+    _kernel_setenv ("Inet$LocalDomain", 0);
+    check (getdomainname (b, sizeof b) == 0 && streq (b, "b.c"), "getdomainname: what follows the first dot of the host name");
+    _kernel_setenv ("Inet$HostName", "nodot");
+    T_ERRNO = 0; check (getdomainname (b, sizeof b) == -1 && T_ERRNO == ENOSYS, "getdomainname: none is ENOSYS");
+    t_set (b, 0x55, sizeof b); T_ERRNO = 0; check (gethostname (b, 3) == -1 && T_ERRNO == ENAMETOOLONG && b[0] == 'n' && b[1] == 'o' && b[2] == 'd' && b[3] == 0x55, "gethostname: too short copies what fits, without a NUL");
+    _kernel_setenv ("Inet$HostName", 0); }
+#else
+  { char b[64]; const char *h = getenv ("Inet$HostName");
+    check (gethostname (b, sizeof b) == 0 && b[0] != 0 && (!h || !strncmp (b, h, t_len (h) < sizeof b ? t_len (h) : 0)), "gethostname: the machine's name starts with Inet$HostName"); }
+#endif
+  { struct timeval tv; struct timezone tz; struct timeb tb; struct tms tms; struct timespec ts; clock_t c; time_t t1;
+    t1 = time (0);
+    check (gettimeofday (&tv, &tz) == 0 && tv.tv_usec >= 0 && tv.tv_usec < 1000000 && tv.tv_usec % 10000 == 0 && tz.tz_minuteswest == 0 && tz.tz_dsttime == 0, "gettimeofday: the clock in 10 ms steps, no time zone");
+    check (tv.tv_sec - t1 >= 0 && tv.tv_sec - t1 <= 2, "gettimeofday agrees with time ()");
+    check (ftime (&tb) == 0 && tb.millitm % 10 == 0 && tb.millitm < 1000 && tb.timezone == 0 && tb.dstflag == 0 && tb.time - t1 >= 0 && tb.time - t1 <= 2, "ftime");
+    c = times (&tms);
+    check (tms.tms_utime == c && tms.tms_stime == 0 && tms.tms_cutime == 0 && tms.tms_cstime == 0, "times: the processor time is clock ()");
+    check (clock_getres (CLOCK_REALTIME, &ts) == 0 && ts.tv_sec == 0 && ts.tv_nsec == 10000000, "clock_getres: 10 ms");
+    T_ERRNO = 0; check (clock_getres (99, &ts) == -1 && T_ERRNO == EINVAL, "clock_getres: an unknown clock is EINVAL");
+    timezone = 5; daylight = 5; tzset ();
+    check (timezone == 0 && daylight == 0 && streq (tzname[0], "GMT") && streq (tzname[1], "GMT"), "tzset: no time zone"); }
+  { static const unsigned al[] = { 1, 2, 4, 8, 16, 32, 64, 256, 4096, 65536 }; int bad = 0;
+    for (unsigned k = 0; k < sizeof al / sizeof al[0]; k++)
+      for (unsigned z = 0; z < 3; z++)
+	{
+	  size_t n = z == 0 ? 1 : z == 1 ? 100 : 5000, m;
+	  unsigned mask = (al[k] > 8 ? al[k] : 8) - 1;
+	  char *p = aligned_alloc (al[k], n), *q;
+	  if (!p || ((unsigned) p & mask)) { bad++; continue; }
+	  t_set (p, 0x5A, n);
+	  q = realloc (p, n * 2);                                                  /* (a block of aligned_alloc is a block of malloc: realloc and free work) */
+	  if (!q) { bad++; continue; }
+	  for (m = 0; m < n; m++) if (q[m] != 0x5A) { bad++; break; }
+	  free (q);
+	}
+    check (!bad, "aligned_alloc: aligned blocks that realloc and free take");
+    T_ERRNO = 0; check (aligned_alloc (3, 16) == 0 && T_ERRNO == EINVAL, "aligned_alloc: an alignment that is not a power of two is EINVAL");
+    check (aligned_alloc (0, 16) == 0, "aligned_alloc: alignment 0 fails"); }
+  check (at_quick_exit (g1_q1) == 0 && at_quick_exit (g1_q2) == 0 && g1_n == 0, "at_quick_exit registers functions (quick_exit itself ends the program)");
+  check (fileno (stdin) == 0 && fileno (stdout) == 1 && fileno (stderr) == 2, "fileno of the standard streams");
+  { const char *name = fsname (3);
+    FILE *f = fopen (name, "wb");
+    T_ERRNO = 0;
+    check (f != 0 && fileno (f) >= 3, "fileno of a file is 3 or more");
+    if (f) { fputs ("0123456789", f); fclose (f); }
+    f = fopen (name, "rb");
+    check (f != 0 && fseeko (f, 4, SEEK_SET) == 0 && ftello (f) == 4 && fgetc (f) == '4' && ftello (f) == 5, "fseeko and ftello");
+    if (f) fclose (f);
+    remove (name); }
+  T_ERRNO = 0; check (fileno (0) == -1 && T_ERRNO == EBADF, "fileno (NULL) is EBADF");
+  check (getprogname () != 0, "getprogname gives a string");
+#if defined (T_HW)
+  { char b[300]; char *r = realpath ("$", b); const char *e = realpath ("NoSuchObjectG1", b) ? "" : "x";
+    check (r == b && b[0] != 0 && strchr (b, '$') != 0, "realpath of $ is the canonical name of the root");
+    T_ERRNO = 0; check (realpath ("NoSuchObjectG1", 0) == 0 && T_ERRNO == ENOENT && e[0], "realpath of an object that does not exist is ENOENT");
+    r = realpath ("$", 0); check (r != 0 && b[0] != 0 && streq (r, b), "realpath with no buffer gives a malloc block"); free (r); }
+#endif
+  sect_end ();
+}
+#endif
+
 #include "libtest-fp.c"
 
 /* ======================================================================== main */
@@ -1888,6 +2137,12 @@ int main (int argc, char **argv)
   RUN ("limits", test_limits);
   RUN ("inttypes", test_inttypes);
   RUN ("signal", test_signal);
+  RUN ("g1", test_g1);
+  RUN ("fnmatch", test_fnmatch);
+  RUN ("getline", test_getline);
+#if defined (T_ARM)
+  RUN ("g1self", test_g1self);                                                                          /* (before stdio3, which closes the standard streams) */
+#endif
   RUN ("fparith", test_fparith);
   RUN ("fpconv", test_fpconv);
   RUN ("gccrt", test_gccrt);

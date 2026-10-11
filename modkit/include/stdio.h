@@ -90,6 +90,17 @@ extern char *tmpnam (char *s);
 extern FILE *tmpfile (void);
 extern int rename (const char *from, const char *to);
 extern void perror (const char *s);
+#include <_modlib_ext.h>
+#ifdef __MODLIB_EXT
+#include <sys/types.h>
+extern ssize_t getdelim (char **lineptr, size_t *n, int delim, FILE *f);   /* reads up to and including DELIM into a malloc block (grown as needed): the number of characters, or -1 */
+extern ssize_t getline (char **lineptr, size_t *n, FILE *f);
+extern int fileno (FILE *f);                                               /* 0, 1 and 2 for the standard streams; for a file the OS handle plus 3: it names the stream, there is no descriptor layer (open, read ...) behind it */
+extern int fseeko (FILE *f, off_t offset, int whence);
+extern off_t ftello (FILE *f);
+extern const char *sys_errlist[];                                          /* the texts of errno.h's numbers 0 .. sys_nerr - 1 */
+extern int sys_nerr;
+#endif
 /* for a module that has files open when it ends: close them all (flush the buffers); returns the number closed */
 extern int __modlib_closeall (void);
 #ifdef __cplusplus

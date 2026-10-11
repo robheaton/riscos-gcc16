@@ -109,7 +109,7 @@ Set `THROWBACK_DEBUG` to any value to be told why nothing arrives. This path was
 
 ## RISC OS modules (`-mmodule`, `cmunge`)
 
-Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 385 functions, `stdio` files and floating point among them; 30 in 16.2.0-14), for small and medium C and C++ modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
+Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 440 functions, `stdio` files and floating point among them; 30 in 16.2.0-14), for small and medium C and C++ modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
 
 ```bash
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg          # the CMHG file: header, veneers, C header

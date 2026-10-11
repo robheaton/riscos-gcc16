@@ -5,6 +5,10 @@
 #include <limits.h>
 #include <time.h>
 #include <kernel.h>
+#include <errno.h>
+#include <sys/time.h>
+#include <sys/timeb.h>
+#include <sys/times.h>
 
 extern _kernel_oserror *__modlib_xswi (unsigned swi_x, unsigned *regs);
 
@@ -70,3 +74,37 @@ int timespec_get (struct timespec *ts, int base)
 {
   return base == TIME_UTC && clock_gettime (CLOCK_REALTIME, ts) == 0 ? base : 0;
 }
+int clock_getres (clockid_t id, struct timespec *res)
+{
+  if (id != CLOCK_REALTIME && id != CLOCK_MONOTONIC) { errno = EINVAL; return -1; }
+  if (res) { res->tv_sec = 0; res->tv_nsec = 10000000L; }                        /* the clock counts in centiseconds */
+  return 0;
+}
+int gettimeofday (struct timeval *tv, struct timezone *tz)
+{
+  long sec;
+  int cs;
+  if (real_time (&sec, &cs)) { errno = EIO; return -1; }
+  if (tv) { tv->tv_sec = sec; tv->tv_usec = (long) cs * 10000L; }
+  if (tz) { tz->tz_minuteswest = 0; tz->tz_dsttime = 0; }
+  return 0;
+}
+int ftime (struct timeb *tp)
+{
+  long sec;
+  int cs;
+  if (real_time (&sec, &cs)) { errno = EIO; return -1; }
+  tp->time = sec; tp->millitm = (unsigned short) (cs * 10); tp->timezone = 0; tp->dstflag = 0;
+  return 0;
+}
+clock_t times (struct tms *buf)
+{
+  clock_t c = clock ();
+  if (buf) { buf->tms_utime = c == (clock_t) -1 ? 0 : c; buf->tms_stime = buf->tms_cutime = buf->tms_cstime = 0; }
+  return c;
+}
+/* the time zone: RISC OS has none (localtime is gmtime), so there is nothing for tzset to read */
+long timezone;
+int daylight;
+char *tzname[2] = { "GMT", "GMT" };
+void tzset (void) { timezone = 0; daylight = 0; }

@@ -97,6 +97,11 @@ extern int errno;
 #define ESIG 89
 #define EILSEQ 90
 #define EOVERFLOW 91
+#include <_modlib_ext.h>
+#ifdef __MODLIB_EXT
+extern const char *sys_errlist[];
+extern int sys_nerr;
+#endif
 #ifdef __cplusplus
 }
 #endif

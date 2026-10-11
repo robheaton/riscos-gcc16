@@ -20,7 +20,7 @@ M = 0xFFFFFFFF
 HEAP = 0x00600000
 STACK = 0x00F00000
 RETURN = 0xFFFF0000
-ERR_TEST, ERR_VAR, ERR_UNKNOWN = 0x00480000, 0x00480100, 0x00480200
+ERR_TEST, ERR_VAR, ERR_UNKNOWN, ERR_BUFOVF = 0x00480000, 0x00480100, 0x00480200, 0x00480300
 from fsmodel import FileModel, SWIS as FS_SWIS
 ERR_FS = 0x00480300                                         # the error blocks of the file system model (a ring: they are made when needed)
 
@@ -40,7 +40,7 @@ class Machine:
         self.clock = (1_800_000_000 + 2208988800) * 100 if hw else 0
         self.mono = 1000 if hw else 0
         self.swis = {}                                          # SWI number -> number of calls
-        for addr, num, text in ((ERR_TEST, 0xB00B, "Test error"), (ERR_VAR, 0x124, "Variable not found"), (ERR_UNKNOWN, 0x1E6, "SWI not known to the model")):
+        for addr, num, text in ((ERR_TEST, 0xB00B, "Test error"), (ERR_VAR, 0x124, "Variable not found"), (ERR_UNKNOWN, 0x1E6, "SWI not known to the model"), (ERR_BUFOVF, 0x1B6, "Buffer overflow")):
             self.put_bytes(addr, struct.pack("<I", num) + text.encode() + b"\0")
         self.nerr = 0
         self.fs = FileModel(self.fs_error, self.cstr, self.get_bytes, self.put_bytes)      # the files are the files of the host (the test names a folder of its own)
@@ -133,6 +133,8 @@ class Machine:
             val = next((v for k, v in self.vars.items() if k.lower() == name), None)
             if val is None: self.error(cpu, ERR_VAR, x); return
             size = cpu.r[2]
+            if size & 0x80000000:                                                                  # a negative size only measures: R2 = NOT the length, and the kernel sets V with "Buffer overflow" (Kernel/s/Arthur2)
+                self.error(cpu, ERR_BUFOVF, x); cpu.r[2] = (~len(val.encode("latin-1"))) & 0xFFFFFFFF; return
             data = val.encode("latin-1")[:size]
             self.put_bytes(cpu.r[1], data); cpu.r[2] = len(data)
         elif n == 0x24:                                                                            # OS_SetVarVal

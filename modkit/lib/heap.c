@@ -7,12 +7,14 @@
 
 #define XOS_MODULE   0x2001E
 
-void *malloc (size_t n)
+/* a block of the RMA whose payload is aligned to ALIGN (a power of two; 8 at least); the header (the RMA pointer and the size) is just in front of it */
+static void *alloc_aligned (size_t n, size_t align)
 {
   unsigned raw; int err;
-  if (n > 0x7FFFFFF0u) { errno = ENOMEM; return 0; }                    /* (n + 16 must not wrap round: the RMA could never give that much anyway) */
+  size_t extra = align > 8 ? align : 0;
+  if (n > 0x7FFFFFF0u - extra) { errno = ENOMEM; return 0; }                    /* (n + 16 + extra must not wrap round: the RMA could never give that much anyway) */
   register int r0 __asm__ ("r0") = 6;
-  register unsigned r3 __asm__ ("r3") = (unsigned) n + 16;
+  register unsigned r3 __asm__ ("r3") = (unsigned) (n + 16 + extra);
   register unsigned r2 __asm__ ("r2") = 0;
   __asm__ volatile ("swi\t%[swi]\n\t"
 		    "movvs\t%[err], #1\n\t"
@@ -21,10 +23,17 @@ void *malloc (size_t n)
 		    : [err] "=&r" (err), [raw] "=&r" (raw), "+r" (r0), "+r" (r2), "+r" (r3)
 		    : [swi] "i" (XOS_MODULE) : "lr", "memory", "cc");
   if (err) { errno = ENOMEM; return 0; }
-  unsigned payload = (raw + 8 + 7) & ~7u;
+  size_t a = align > 8 ? align : 8;
+  unsigned payload = (unsigned) ((raw + 8 + a - 1) & ~(a - 1));
   ((unsigned *) payload)[-1] = raw;
   ((unsigned *) payload)[-2] = (unsigned) n;
   return (void *) payload;
+}
+void *malloc (size_t n) { return alloc_aligned (n, 8); }
+void *aligned_alloc (size_t alignment, size_t n)
+{
+  if (!alignment || (alignment & (alignment - 1)) || alignment > 0x10000000u) { errno = EINVAL; return 0; }
+  return alloc_aligned (n, alignment);
 }
 void free (void *p)
 {

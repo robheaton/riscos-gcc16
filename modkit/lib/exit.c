@@ -54,3 +54,18 @@ void exit (int status)
   _Exit (status);
 }
 void abort (void) { stop (134, "abort"); }
+
+/* quick_exit (C11): the at_quick_exit functions in the opposite order of their registration, then _Exit () (no exit functions, the streams are not flushed) */
+static void (*qexitfn[MAXEXIT]) (void);
+static int nqexit;
+int at_quick_exit (void (*fn) (void))
+{
+  if (nqexit >= MAXEXIT) return -1;
+  qexitfn[nqexit++] = fn;
+  return 0;
+}
+void quick_exit (int status)
+{
+  while (nqexit > 0) { void (*f) (void) = qexitfn[--nqexit]; f (); }
+  _Exit (status);
+}

@@ -146,7 +146,7 @@ class RiscosModel(Kernel):
         if val is None:
             cpu.r[0] = self.error_block(0x124, "System variable '%s' not found" % name); cpu.r[2] = 0; cpu.v = 1; return
         b = val.encode("latin-1"); buf, size = cpu.r[1], cpu.r[2]
-        if size & 0x80000000: cpu.r[2] = (~len(b)) & 0xFFFFFFFF; cpu.r[3] = self.put_string(name); cpu.r[4] = 0; cpu.v = 0; return
+        if size & 0x80000000: cpu.r[0] = self.error_block(0x1B6, "Buffer overflow"); cpu.r[2] = (~len(b)) & 0xFFFFFFFF; cpu.r[3] = self.put_string(name); cpu.r[4] = 0; cpu.v = 1; return        # (the kernel sets V with the overflow error as well: Kernel/s/Arthur2)
         for i, c in enumerate(b[:size]): cpu.wr8(buf + i, c)
         if len(b) > size: cpu.r[0] = self.error_block(0x1B6, "Buffer overflow"); cpu.r[2] = size; cpu.v = 1; return
         cpu.r[2] = len(b); cpu.r[3] = self.put_string(name); cpu.r[4] = 0; cpu.v = 0

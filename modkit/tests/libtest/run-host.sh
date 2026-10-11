@@ -21,7 +21,7 @@ for f in $LIBSRC; do
       -include "$B/mk_rename.h" -c "$K/lib/$f.c" -o "$B/$f.o"
 done
 gcc -std=gnu11 -O1 -g $SAN -c "$HERE/hosthooks.c" -o "$B/hosthooks.o"
-gcc -std=gnu11 -O1 -g -fno-builtin $SAN -Wall -Wno-unused-function -DT_HOSTLIB -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -I"$B" -idirafter "$K/include" -c "$HERE/libtest.c" -o "$B/libtest-hostlib.o"
+gcc -std=gnu11 -O1 -g -fno-builtin $SAN -Wall -Wno-unused-function -DT_HOSTLIB -DMK_NO_VARS -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -I"$B" -idirafter "$K/include" -c "$HERE/libtest.c" -o "$B/libtest-hostlib.o"
 gcc $SAN -o "$B/libtest-hostlib" "$B/libtest-hostlib.o" "$B/hosthooks.o" $(for f in $LIBSRC; do echo "$B/$f.o"; done) -lm
 gcc -std=gnu11 -O1 -g -fno-builtin -Wall -Wno-unused-function -DT_ORACLE -DT_FSDIR="\"$FS\"" -DSCALE="$SCALE" -o "$B/libtest-oracle" "$HERE/libtest.c" -lm
 V=""; [ -n "${VERBOSE:-}" ] && V="-v"

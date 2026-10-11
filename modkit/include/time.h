@@ -34,12 +34,26 @@ extern double difftime (time_t end, time_t start);
 #ifdef __MODLIB_TIMESPEC
 extern int clock_gettime (clockid_t id, struct timespec *ts);
 extern int timespec_get (struct timespec *ts, int base);
+extern int clock_getres (clockid_t id, struct timespec *res);           /* 10 ms: the resolution of the RISC OS clock */
 #endif
 extern struct tm *gmtime (const time_t *t);
 extern struct tm *localtime (const time_t *t);
 extern time_t mktime (struct tm *tm);
 extern char *asctime (const struct tm *tm);
 extern char *ctime (const time_t *t);
+#include <_modlib_ext.h>
+#ifdef __MODLIB_EXT
+extern char *asctime_r (const struct tm *tm, char *buf);                 /* buf has 26 bytes; EOVERFLOW (and NULL) when the year does not fit */
+extern char *ctime_r (const time_t *t, char *buf);
+extern struct tm *gmtime_r (const time_t *t, struct tm *result);
+extern struct tm *localtime_r (const time_t *t, struct tm *result);        /* RISC OS has no time zone: the same as gmtime_r */
+extern time_t timegm (struct tm *tm);                                      /* mktime and timegm are the same: the calendar is UTC */
+extern int dysize (int year);                                              /* 365 or 366 */
+extern void tzset (void);                                                  /* nothing to read: timezone is 0, daylight is 0 and tzname is "GMT", "GMT" */
+extern long timezone;
+extern int daylight;
+extern char *tzname[2];
+#endif
 extern size_t strftime (char *s, size_t max, const char *fmt, const struct tm *tm);
 #ifdef __cplusplus
 }

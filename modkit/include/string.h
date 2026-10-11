@@ -42,6 +42,17 @@ extern int strcasecmp (const char *a, const char *b);
 extern int strncasecmp (const char *a, const char *b, size_t n);
 extern void bzero (void *p, size_t n);
 extern void bcopy (const void *s, void *d, size_t n);
+extern char *stpcpy (char *d, const char *s);
+extern char *stpncpy (char *d, const char *s, size_t n);
+extern void *mempcpy (void *d, const void *s, size_t n);
+extern int bcmp (const void *a, const void *b, size_t n);
+extern int ffs (int i);
+extern int ffsl (long i);
+extern int ffsll (long long i);
+extern char *strichr (const char *s, int c);                               /* strchr and strrchr that do not tell A from a (UnixLib's names) */
+extern char *strrichr (const char *s, int c);
+extern char *strsignal (int sig);                                          /* the text of a signal number of <signal.h> (the SharedCLibrary's numbers) */
+extern int strerror_r (int errnum, char *buf, size_t buflen);              /* the POSIX one: 0, ERANGE (the text is cut to fit) or EINVAL (an unknown number: the text is "Unknown error N") */
 #endif
 #ifdef __cplusplus
 }

@@ -52,10 +52,16 @@ extern int mbtowc (wchar_t *pwc, const char *s, size_t n);
 extern int wctomb (char *s, wchar_t wc);
 extern size_t mbstowcs (wchar_t *dst, const char *src, size_t n);
 extern size_t wcstombs (char *dst, const wchar_t *src, size_t n);
-#ifdef __cplusplus
-/* declared for libstdc++'s <cstdlib>, which has a using-declaration for each of them; the library does not define them: a call is an undefined reference at the link */
-extern void quick_exit (int status) __attribute__ ((noreturn));
+extern void quick_exit (int status) __attribute__ ((noreturn));            /* C11: the functions of at_quick_exit in the opposite order, then _Exit (the streams are not flushed) */
 extern int at_quick_exit (void (*f) (void));
+extern void *aligned_alloc (size_t alignment, size_t size);               /* C11: a power of two; the block is freed with free () */
+#include <_modlib_ext.h>
+#ifdef __MODLIB_EXT
+extern int setenv (const char *name, const char *value, int replace);      /* system variables (OS_SetVarVal) */
+extern int putenv (char *string);                                          /* "NAME=value" sets the system variable (the string is copied); a string without "=" removes it */
+extern int unsetenv (const char *name);
+extern char *realpath (const char *file, char *resolved);                  /* the canonical RISC OS path of an object that exists (OS_FSControl 37); resolved has FILENAME_MAX bytes, or NULL for malloc */
+extern const char *getprogname (void);                                     /* the name of the program: the first word of the command line (OS_GetEnv) without its directory */
 #endif
 #ifdef __cplusplus
 }

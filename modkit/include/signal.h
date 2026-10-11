@@ -23,6 +23,12 @@ typedef void (*__sighandler_t) (int);
 #define _NSIG	11
 extern __sighandler_t signal (int sig, __sighandler_t func);
 extern int raise (int sig);
+#include <_modlib_ext.h>
+#ifdef __MODLIB_EXT
+#define NSIG _NSIG
+extern const char *const sys_siglist[_NSIG];                               /* the texts of the signal numbers (strsignal) */
+extern int sys_nsig;
+#endif
 #ifdef __cplusplus
 }
 #endif

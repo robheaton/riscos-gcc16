@@ -1,4 +1,4 @@
-/* calendar.c - gmtime, localtime, mktime: the proleptic Gregorian calendar in UTC (RISC OS knows no time zone: localtime is gmtime).  Nothing here needs the OS. */
+/* calendar.c - gmtime, localtime, mktime, the reentrant gmtime_r / localtime_r, timegm and dysize: the proleptic Gregorian calendar in UTC (RISC OS knows no time zone: localtime is gmtime).  Nothing here needs the OS. */
 #pragma GCC optimize ("Os")                       /* not a hot path: the smaller code is the better one in a module */
 #include <stddef.h>
 #include <limits.h>
@@ -18,9 +18,9 @@ static long days_from_civil (long y, long m, long d)
   return era * 146097 + doe - 719468;
 }
 
-static struct tm tmbuf;
-struct tm *gmtime (const time_t *t)
+static struct tm *gm (const time_t *t, struct tm *out)
 {
+  struct tm tmbuf;
   long days = fdiv ((long) *t, 86400);
   long rem = (long) *t - days * 86400;
   long z = days + 719468;
@@ -42,9 +42,15 @@ struct tm *gmtime (const time_t *t)
   tmbuf.tm_mday = (int) d;
   tmbuf.tm_yday = (int) (days - days_from_civil (y, 1, 1));
   tmbuf.tm_isdst = 0;
-  return &tmbuf;
+  *out = tmbuf;
+  return out;
 }
-struct tm *localtime (const time_t *t) { return gmtime (t); }
+static struct tm static_tm;
+struct tm *gmtime (const time_t *t) { return gm (t, &static_tm); }
+struct tm *localtime (const time_t *t) { return gm (t, &static_tm); }
+struct tm *gmtime_r (const time_t *t, struct tm *result) { return gm (t, result); }
+struct tm *localtime_r (const time_t *t, struct tm *result) { return gm (t, result); }
+int dysize (int year) { return (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) ? 366 : 365; }
 
 time_t mktime (struct tm *tm)
 {
@@ -53,6 +59,7 @@ time_t mktime (struct tm *tm)
   long long secs = (long long) (days_from_civil (y, mon + 1, 1) + tm->tm_mday - 1) * 86400 + (long long) tm->tm_hour * 3600 + (long long) tm->tm_min * 60 + tm->tm_sec;
   if (secs < LONG_MIN || secs > LONG_MAX) return (time_t) -1;
   time_t t = (time_t) secs;
-  *tm = *gmtime (&t);
+  gm (&t, tm);
   return t;
 }
+time_t timegm (struct tm *tm) { return mktime (tm); }

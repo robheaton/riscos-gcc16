@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
+#include <string.h>
 
 static long fdiv (long a, long b) { long q = a / b; if ((a % b) && ((a < 0) != (b < 0))) q--; return q; }
 static long fmodl (long a, long b) { return a - fdiv (a, b) * b; }
@@ -108,10 +110,9 @@ size_t strftime (char *s, size_t max, const char *fmt, const struct tm *tm)
   return o.n;
 }
 
-char *asctime (const struct tm *tm)
+static char *format_asctime (const struct tm *tm, char *buf)
 {
-  static char buf[64];
-  out_t o = { buf, 0, sizeof buf };
+  out_t o = { buf, 0, 64 };
   int wd = tm->tm_wday, mo = tm->tm_mon;
   emit (&o, wd >= 0 && wd < 7 ? wday_name[wd] : "???", 3);
   emit (&o, " ", 1);
@@ -130,4 +131,22 @@ char *asctime (const struct tm *tm)
   buf[o.n] = 0;
   return buf;
 }
+char *asctime (const struct tm *tm)
+{
+  static char buf[64];
+  return format_asctime (tm, buf);
+}
+char *asctime_r (const struct tm *tm, char *buf)
+{
+  char tmp[64];
+  format_asctime (tm, tmp);
+  if (strlen (tmp) > 25) { errno = EOVERFLOW; return 0; }                 /* "Www Mmm dd hh:mm:ss yyyy\n" and the NUL in 26 bytes: a year of more than four digits does not fit */
+  strcpy (buf, tmp);
+  return buf;
+}
 char *ctime (const time_t *t) { return asctime (localtime (t)); }
+char *ctime_r (const time_t *t, char *buf)
+{
+  struct tm tm;
+  return asctime_r (localtime_r (t, &tm), buf);
+}
