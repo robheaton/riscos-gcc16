@@ -28,7 +28,7 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 | Shared libraries, `dlopen`, threads (`pthread`, `std::thread`, `std::async`), thread-local storage | yes | yes |
 | Tuning for ARMv7 and Cortex-A72 (`-mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard`) | yes | yes |
 | UnixLib 5.0 rebuilt with GCC 16, plus a series of fixes (fix level 15, [list](docs/RUNTIME.md)) | the runtime packages | the runtime packages |
-| Experimental: build relocatable **modules** with `gcc -mmodule` and `cmunge`, the way GCCSDK 4.7.4 did. **For small and medium C and C++ modules, for now**: a C library of about 440 functions of its own (strings, `ctype`, `stdlib`, `time`, `printf`, `sscanf`, `stdio` files, `_swix` ... and, since 16.2.0-17, floating point: exact `%f %e %g %a`, `strtod`, `<math.h>` (run on hardware), and C++: static constructors, `new` and `delete`, `std::string`, `std::vector`, `std::map` ... without exceptions, RTTI, streams or threads (both run on hardware); 16.2.0-14 had 30), and `cmunge` knows most of CMHG (international help, `module-is-runnable` ...). [What can and cannot be built](docs/MODULES.md#what-can-be-built-today-and-what-cannot); for anything bigger GCCSDK 4.7.4 remains the way | yes (C modules; C++ modules are built on Linux) | yes |
+| Experimental: build relocatable **modules** with `gcc -mmodule` and `cmunge`, the way GCCSDK 4.7.4 did. **For small and medium C and C++ modules, for now**: a C library of about 470 functions of its own (strings, `ctype`, `stdlib`, `time`, `printf`, `sscanf`, `stdio` files, `_swix` ... and, since 16.2.0-17, floating point: exact `%f %e %g %a`, `strtod`, `<math.h>` (run on hardware), and C++: static constructors, `new` and `delete`, `std::string`, `std::vector`, `std::map` ... without exceptions, RTTI, streams or threads (both run on hardware); 16.2.0-14 had 30), and `cmunge` knows most of CMHG (international help, `module-is-runnable` ...). [What can and cannot be built](docs/MODULES.md#what-can-be-built-today-and-what-cannot); for anything bigger GCCSDK 4.7.4 remains the way | yes (C modules; C++ modules are built on Linux) | yes |
 | Optional: **OSLib** (`libOSLib32.a`, `libOSLibSupport32.a` and the 333 headers), built from OSLib's own sources by `install-oslib.py` from your svn checkout (GPL: not shipped); usable in programs and in modules ([docs/OSLIB.md](docs/OSLIB.md)) | the recipe | the recipe |
 | Optional: **DeskLib** (`libDesk.a` for UnixLib programs and `libDesk-sclmodule.a` for modules), built by `install-desklib.py` from a copy of [DeskLib32](https://github.com/adyoull/desklib32) that you fetch yourself (its licence allows only unaltered copies, so it is not shipped); the cross compiler reads `#include "DeskLib:Core.h"` ([docs/DESKLIB.md](docs/DESKLIB.md)) | the recipe | the recipe |
 | Optional: a **fixed SharedUnixLibrary** module, for programs whose `vfork` children can fail to `exec` (it replaces a system module: [read this first](docs/SHAREDULIB-FIX.md)) | the package `SharedULibFix` | not needed |
@@ -38,7 +38,7 @@ how each statement was tested, is in [docs/FEATURES.md](docs/FEATURES.md) and [d
 
 ## Quick start: compile on RISC OS
 
-1. Download from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest) `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` and `Gcc16_16.2.0-20_arm.zip` (70 MB).
+1. Download from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest) `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` and `Gcc16_16.2.0-21_arm.zip` (70 MB).
    A zip must have file type Zip (&A91); if it arrives as Text or Data, type `*SetType <file> &A91` in a Task window.
 2. **Drag each zip onto the PackMan icon on the icon bar**, first `SharedLibs-C-armeabihf`, then `Gcc16` (PackMan insists on this order), and confirm the installs.
 3. **Reboot.** (PackMan replaces the files, but the running system keeps the old UnixLib until the machine restarts.)
@@ -66,8 +66,8 @@ The full guide is [docs/INSTALL-RISCOS.md](docs/INSTALL-RISCOS.md) and [docs/USI
 You need Linux x86-64 with glibc 2.38 or newer (Ubuntu 24.04, Debian 13, Fedora 39 or later).
 
 ```bash
-tar -xf riscos-gcc16-cross-16.2.0-20-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-20-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-21-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-21-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc -O2 -o hello,e1f hello.c        # ,e1f gives the file type ELF when the file is copied over a Samba share
 ```
 
@@ -81,17 +81,17 @@ Everything is attached to the [releases page](https://github.com/robheaton/risco
 | File | What it is | Needed for |
 |---|---|---|
 | `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` (2 MB) | the C runtime: UnixLib 5.0 rebuilt with GCC 16 and fixed, loader, libgcc_s | running **any** program from this tool chain |
-| `Gcc16_16.2.0-20_arm.zip` (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
-| `Gcc16SelfTest_16.2.0-20_arm.zip` (19 KB) | the self-test of the native compiler, as `!GCC16Test` | checking an installation |
+| `Gcc16_16.2.0-21_arm.zip` (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
+| `Gcc16SelfTest_16.2.0-21_arm.zip` (19 KB) | the self-test of the native compiler, as `!GCC16Test` | checking an installation |
 | `SharedULibFix_1.16-vforkfix3_arm.zip` (24 KB) | the fixed SharedUnixLibrary 1.16-vforkfix3 with an installer that checks everything, a restore script and a check, as `!SULFix`. **It replaces a system module: [read this first](docs/SHAREDULIB-FIX.md)** | programs that `vfork` children that can fail to `exec` (optional) |
 | `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip` (0.7 MB) | libstdc++ 6.0.36 | running C++ programs that link it dynamically (the cross compiler's default) |
 | `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` (0.4 MB) | libgfortran 5 | running Fortran programs that link it dynamically (the cross compiler's default) |
-| `riscos-gcc16-cross-16.2.0-20-x86_64-linux.tar.xz` (54 MB) | the cross compiler for Linux | compiling on Linux |
+| `riscos-gcc16-cross-16.2.0-21-x86_64-linux.tar.xz` (54 MB) | the cross compiler for Linux | compiling on Linux |
 | `gcc-16.2.0.tar.xz`, `binutils-2.45.1.tar.xz`, `make-4.4.1.tar.gz`, `gccsdk-unixlib-r7800.tar.xz` | the unmodified upstream sources the binaries were built from (UnixLib is a snapshot of GCCSDK svn r7800) | the source offer, see [SOURCES.md](SOURCES.md) |
 
 ## How it was tested
 
-On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISupport 1.08 and Shared Object Manager 3.04. UnixLib and the runtime packages of this release are those of 16.2.0-16 and earlier, and the compiler differs from that of 16.2.0-16 only in two options of its driver (16.2.0-17, -18 and -19 changed the module kit only, 16.2.0-20 also those options); they passed all of the following on that machine (what was run with the packages of 16.2.0-20 is in the last paragraph of this section):
+On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISupport 1.08 and Shared Object Manager 3.04. UnixLib and the runtime packages of this release are those of 16.2.0-16 and earlier, and the compiler differs from that of 16.2.0-16 only in two options of its driver (16.2.0-20) and in how the cross compiler reads `#include "Prefix:Name.h"` (16.2.0-21); 16.2.0-17 to -19 and -21 changed the module kit; they passed all of the following on that machine (what was run with the packages of 16.2.0-21 is in the last paragraph of this section):
 
 * the C regression suite `rotest` (34,541 checks: integers, 64-bit arithmetic, floating point, conversions, varargs, `alloca`, `setjmp`, unwinding, atomics, PIC data, C23) and the C++ suite `cxxtest` (139 checks), built both
   by the cross compiler and by the native compiler (the native compiler's objects are byte-identical to the cross compiler's);
@@ -112,7 +112,7 @@ On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISuppor
 * The descriptor functions of the C library (`open`, `read`, `write`, `lseek`, `fstat`, `ftruncate`, `unlink`, `utime`, `fdopen` ...), run on the Pi on 2026-10-11, before the release: 801 random sequences of `open` (every combination of flags), `write`, `read`, `lseek`, `ftruncate`, `close` and `unlink` on real files gave the same answers and the same file contents as glibc (25,024 results), and 51 further checks passed, among them the date stamps of the real file system with `utime` and `utimes` ([docs/MODULES.md](docs/MODULES.md)).
 * the fixed SharedUnixLibrary (the optional `SharedULibFix` package 1.16-vforkfix3, since 16.2.0-14): the module has been installed on the test machine since 4 Oct 2026, the `vfork` loops that froze the machine with the stock module run without a freeze, and the regression suites pass with it; the installer's logic runs through 28 simulated scenarios; the installer itself was run on the machine (`Install` on the stock module, a reboot, `Check`, `Restore`, `Install` again, a reboot, `Check`, and an `Install` that correctly refused): all passed.
 
-The packages of this release were installed with PackMan on that machine and checked with the self-test (`tests/selftest`: twelve checks, 32 seconds; check 12 builds, loads and runs a module with the kit of this release).
+The packages of this release were installed with PackMan on that machine and checked with the self-test (`tests/selftest`: twelve checks, 35 seconds; check 12 builds, loads and runs a module with the kit of this release).
 How the build instructions were checked for this release is at the top of [docs/BUILDING.md](docs/BUILDING.md).
 The test programs are in [tests/](tests/) and are described in [docs/TESTING.md](docs/TESTING.md). Only one machine was used: other ARMv7 machines should work, but have not been tried.
 
