@@ -1,0 +1,7 @@
+# Patches for building OSLib with the GCC 16 cross compiler
+
+Four of these patches (112 lines: `Source.Makefile.setup.CROSSGCC_ELF.patch`, `Tools.DefMod2.assembler.c.patch`, `Tools.DefMod2.assembler.h.patch`, `Tools.DefMod2.demod.y.patch`) are the ones that GCCSDK's autobuilder (`autobuilder/libraries/riscos/oslib`) applies to the OSLib source tree (revision 455, still applying to revision 477) so that OSLib's own build makes the EABI hard-float library: a new `-asmtype gnueabihf` for DefMod (which assembles each veneer with `arm-riscos-gnueabihf-gcc`) and the `ELFOBJECTTYPE=ARMEABIHF` setting of `Source/Makefile.setup.CROSSGCC_ELF`.
+
+The fifth, `zz-defmod-svc-safe.patch`, is this project's: a `-svc-safe` option for DefMod, which `Makefile.setup` passes for ARMEABIHF. Without it the veneers of the non-X functions (`os_cli`) keep the return address in LR, which is right in user mode only; a SWI called in SVC mode (a module) overwrites LR, and the veneer returns to itself. With the option they keep it in IP, as the X veneers do. See [docs/OSLIB.md](../../../docs/OSLIB.md).
+
+DefMod and the rest of OSLib are under the GNU General Public License (version 1 or later, see OSLib's `COPYING`; the library has an exception for linking), and so are the patches; OSLib itself is not part of this project: `scripts/install-oslib.py` builds it from your own checkout of `https://svn.code.sf.net/p/ro-oslib/code/trunk/!OSLib`.

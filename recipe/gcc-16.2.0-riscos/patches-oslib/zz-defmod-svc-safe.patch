@@ -1,0 +1,72 @@
+--- Tools/DefMod2/assembler.c
++++ Tools/DefMod2/assembler.c
+@@ -47,6 +47,7 @@
+ 
+ AsmType_e AsmType = AsmType_eUnknown;
+ FloatABI_e FloatABI = FloatABI_eHard;
++int SvcSafe = 0;
+ 
+ static const char *Local;
+ 
+@@ -464,8 +465,9 @@
+    na = Set_Count (a);
+    np = Set_Count (p);
+ 
+-   mode = ni > 4? LR_STACKED: nonx? LR_PRESERVED: LR_IN_IP;
+-      /*assume that the non-x form can only be called in user mode*/
++   mode = ni > 4? LR_STACKED: (nonx && !SvcSafe)? LR_PRESERVED: LR_IN_IP;
++      /*assume that the non-x form can only be called in user mode, unless -svc-safe: a SWI called in SVC
++         mode (a module) overwrites LR, so the veneer then keeps it in IP, as the x form does*/
+ 
+    use_block = def_using_block (s);
+ 
+--- Tools/DefMod2/assembler.h
++++ Tools/DefMod2/assembler.h
+@@ -37,6 +37,7 @@
+ 
+ extern AsmType_e AsmType;
+ extern FloatABI_e FloatABI;
++extern int SvcSafe;		/* -svc-safe: the veneers of the non-X forms keep LR in IP too, so that they work in SVC mode.  */
+   
+ #define GASSyntax (AsmType == AsmType_eGCCELF || AsmType == AsmType_eGNUEABIHF)
+ 
+--- Tools/DefMod2/defmod.y
++++ Tools/DefMod2/defmod.y
+@@ -1181,6 +1181,7 @@
+                      "[-26bit | -32bit] "
+                      "[-asmtype [objasm | asasmaof | asasmelf | gccaof | armasm | gccelf | gnueabihf]] "
+ 		     "[-float-abi [soft | hard]] "
++		     "[-svc-safe] "
+                      "< <module-interface-file>\r"
+                "Purpose: generate output from a module interface file\r"
+                "-v\t\t"             "verbose\r"
+@@ -1204,7 +1205,8 @@
+                "\tarmasm\t\t"       "...use ARM ASM\r"
+                "\tgccelf\t\t"       "...use GCC ELF toolkit (GCCSDK 4 only)\r"
+                "\tgnueabihf\t\t"    "...use GCC ELF toolkit targeting ARMEABIHF\r"
+-	       "-float-abi\t\t"     "marks object files which float-abi is in use\r"
++	       "-svc-safe\t\t"      "veneers of the non-X forms keep LR in IP: they can be called in SVC mode (modules)\r"
++               "-float-abi\t\t"     "marks object files which float-abi is in use\r"
+ 	       "\tsoft\t\t"         "...soft-float, no FP instructions used\r"
+ 	       "\thard\t\t"         "...hard-float, FP instructions can be used\r"
+ 
+@@ -1355,6 +1357,8 @@
+             goto finish;
+          }
+       }
++      else if (strcmp (argv[i], "-svc-safe") == 0)
++         SvcSafe = 1;
+       else if (strcmp (argv[i], "-float-abi") == 0)
+       {
+          ++i;
+--- Source/Makefile.setup.CROSSGCC_ELF
++++ Source/Makefile.setup.CROSSGCC_ELF
+@@ -18,6 +18,8 @@
+ DEFMODFLAGS = -float-abi hard
+ else ifeq ($(ELFOBJECTTYPE),ARMEABIHF)
+ # Shoudn't need any special flags as the compiler defaults to the flags we require.
++# The veneers of the non-X forms must keep LR in IP so that they work in SVC mode too (modules).
++DEFMODFLAGS = -svc-safe
+ else
+ $(error Unknown ELFOBJECTTYPE value, possible values are SOFTFPU, HARDFPU and MODULE)
+ endif

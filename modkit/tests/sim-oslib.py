@@ -26,6 +26,9 @@ def sh(cmd):
     if r.returncode: sys.exit("%s\n%s%s" % (" ".join(cmd), r.stdout[-1500:], r.stderr[-2500:]))
     return r
 if not os.path.exists(os.path.join(TC, T, "lib", "libOSLib32.a")): sys.exit("no libOSLib32.a in " + TC)
+# the library built from OSLib's own sources (install-oslib.py) has members named like XOSReadVarValSize.o; the one that mkoslib-lib.sh makes has one member per function in files named by the function
+REAL_OSLIB = "XOSReadVarValSize.o" in subprocess.run([os.path.join(BIN, T + "-ar"), "t", os.path.join(TC, T, "lib", "libOSLib32.a")], capture_output=True, text=True).stdout.split()
+print("libOSLib32.a is %s" % ("OSLib's own (install-oslib.py)" if REAL_OSLIB else "made by mkoslib-lib.sh"))
 shutil.copy(os.path.join(HERE, "oslib", "oslibtest.cmhg"), W); shutil.copy(os.path.join(HERE, "oslib", "oslibtest.c"), W)
 CC = os.path.join(BIN, T + "-gcc")
 env = dict(os.environ, CMUNGE_CC=CC)
@@ -58,7 +61,10 @@ for base in (0x01C21000, 0x02008040):
     m = re.search(r"monotonic: (\d+) (\d+)\n", out)
     check(m and int(m.group(2)) == int(m.group(1)) + 1, "os_read_monotonic_time returns R0: %s" % ((m.groups() if m else None),))
     check("write0 works\n" in out, "os_write0 and os_new_line")
-    check(k.generated == [(0x124, "System variable 'OlT$Missing' not found")], "the non-X error went to OS_GenerateError: %s" % k.generated)
+    if REAL_OSLIB:     # OSLib's own veneer calls the SWI without the X bit: the kernel hands the error to the error handler itself (the model does not end the command line for it, so the module goes on)
+        check(not k.generated, "the non-X veneer of OSLib's own library calls the SWI without the X bit (the kernel raises the error): %s" % k.generated)
+    else:
+        check(k.generated == [(0x124, "System variable 'OlT$Missing' not found")], "the non-X error went to OS_GenerateError: %s" % k.generated)
     check(err is None and "after the non-X error" in out, "(the model returns from OS_GenerateError)")
     r0, v = k.final(mod)
     check(not k.problems and not k.log, "no complaints of the model %s" % ((k.problems + k.log)[:3],))

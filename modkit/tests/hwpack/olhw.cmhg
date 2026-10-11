@@ -1,0 +1,8 @@
+; OlHw: OSLib's own library (libOSLib32.a built from OSLib's sources by install-oslib.py) in a module, on the machine
+title-string:           OlHw
+help-string:            OlHw 1.00
+date-string:            11 Oct 2026
+
+command-keyword-table: olhw_table
+  OlHw_Test(min-args: 0, max-args: 0, help-text: "*OlHw_Test calls OSLib's veneers in SVC mode (X and non-X forms, few and many arguments, outputs) and checks the answers.\n", invalid-syntax: "Syntax: *OlHw_Test"),
+  OlHw_Raise(min-args: 0, max-args: 0, help-text: "*OlHw_Raise calls a non-X OSLib function that fails: the kernel's error handler ends the command line, so nothing after it runs.\n", invalid-syntax: "Syntax: *OlHw_Raise")

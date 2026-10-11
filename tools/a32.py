@@ -114,7 +114,7 @@ class Cpu:
         if w is None: raise Fault("fetch from %08x" % pc)
         self.r[15] = pc + 4
         self.steps += 1
-        if self.steps > self.max_steps: raise Fault("too many steps")
+        if self.steps > self.max_steps: raise Fault("too many steps (pc=%#x)" % self.r[15])
         if (w & 0xFFF1FE20) == 0xF1000000:                                   # CPSIE / CPSID (imod 2 / 3) of the I and F bits; in USER mode they do nothing; "CPS #mode" is not modelled
             imod = (w >> 18) & 3
             if (w >> 17) & 1 or imod in (0, 1): raise Fault("CPS form not modelled: %08x at %08x" % (w, pc))
