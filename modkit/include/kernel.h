@@ -33,6 +33,8 @@ extern int _kernel_osword (int op, int *data);
 extern int _kernel_osfind (int op, const char *name);
 extern int _kernel_osargs (int op, unsigned handle, int arg);
 extern int _kernel_oscli (const char *s);                        /* 1 when the command worked */
+typedef int _kernel_ExtendProc (int n, void **p);
+extern _kernel_ExtendProc *_kernel_register_slotextend (_kernel_ExtendProc *proc);     /* the Shared C Library's hook for a program that grows its Wimp slot: a module has no slot, so nothing ever calls the handler; the result is the previous handler (always 0) */
 extern _kernel_oserror *_kernel_getenv (const char *name, char *buffer, unsigned size);        /* the value of a system variable (OS_ReadVarVal) */
 extern _kernel_oserror *_kernel_setenv (const char *name, const char *value);                  /* NULL as the value deletes it */
 /* interrupts and the processor mode (ARMv6: CPSIE / CPSID; in USR mode they change nothing, as in the SharedCLibrary) */

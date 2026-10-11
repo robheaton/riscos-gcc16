@@ -1,0 +1,122 @@
+--- a/libcpp/directives.cc
++++ b/libcpp/directives.cc
+@@ -24,6 +24,9 @@
+ #include "internal.h"
+ #include "mkdeps.h"
+ #include "obstack.h"
++#if !defined (__riscos__) && !defined (__riscos)
++#include <dirent.h>
++#endif
+ 
+ /* Stack of conditionals currently in progress
+    (including both successful and failing conditionals).  */
+@@ -860,6 +863,99 @@
+    free it.  Returns NULL on error.  LOCATION is the source location
+    of the file name.  */
+ 
++#if !defined (__riscos__) && !defined (__riscos)
++/* RISC OS style include names, "Prefix:Name.h" (DeskLib:Core.h, as the GCCSDK cross compiler of 4.7.4 read them): on RISC OS itself FileSwitch resolves Prefix: through the system
++   variable Prefix$Path, so this is only for a cross compiler on another system.  The prefix is a RISC OS name and its case is not significant.  The name is looked for
++     1. in the directories of the environment variable PREFIX_PATH (the prefix in upper case, the directories separated by commas; the first file that exists is used),
++     2. in the directories of the include path, in a directory called Prefix (any case) there (so a tool chain that has include/DeskLib/Core.h finds DeskLib:Core.h),
++     3. else the prefix is dropped, and Name.h is searched like any other name (so -I<folder of DeskLib's headers> is enough).
++   Names without such a prefix are not touched.  FNAME is freed if a different name is returned.  */
++static char *
++riscos_expand_prefix (cpp_reader *pfile, char *fname)
++{
++  const char *colon = strchr (fname, ':');
++  const char *rest;
++  size_t plen, i;
++  char var[128];
++  const char *val;
++  cpp_dir *dir;
++  char *res;
++
++  if (colon == NULL || colon == fname || colon[1] == '\0' || colon[1] == '/')
++    return fname;
++  plen = (size_t) (colon - fname);
++  for (i = 0; i < plen; i++)
++    if (!ISALNUM ((unsigned char) fname[i]) && fname[i] != '_')
++      return fname;
++  rest = colon + 1;
++  if (plen + 6 > sizeof var)
++    return fname;
++  for (i = 0; i < plen; i++)
++    var[i] = TOUPPER ((unsigned char) fname[i]);
++  strcpy (var + plen, "_PATH");
++
++  val = getenv (var);
++  while (val != NULL && *val)
++    {
++      const char *end = strchr (val, ',');
++      size_t dlen = end ? (size_t) (end - val) : strlen (val);
++      if (dlen > 0)
++	{
++	  char *cand = XNEWVEC (char, dlen + strlen (rest) + 2);
++	  memcpy (cand, val, dlen);
++	  if (cand[dlen - 1] != '/')
++	    cand[dlen++] = '/';
++	  strcpy (cand + dlen, rest);
++	  if (access (cand, R_OK) == 0)
++	    {
++	      res = lrealpath (cand);
++	      free (cand);
++	      if (res)
++		{
++		  free (fname);
++		  return res;
++		}
++	    }
++	  else
++	    free (cand);
++	}
++      val = end ? end + 1 : NULL;
++    }
++
++  for (dir = pfile->quote_include; dir; dir = dir->next)
++    {
++      const char *dn = dir->name[0] ? dir->name : ".";
++      DIR *d = opendir (dn);
++      struct dirent *e;
++      if (d == NULL)
++	continue;
++      while ((e = readdir (d)) != NULL)
++	if (strlen (e->d_name) == plen && strncasecmp (e->d_name, fname, plen) == 0)
++	  {
++	    size_t nl = strlen (e->d_name);
++	    char *cand = XNEWVEC (char, strlen (dn) + nl + strlen (rest) + 3);
++	    sprintf (cand, "%s/%s/%s", dn, e->d_name, rest);
++	    if (access (cand, R_OK) == 0)
++	      {
++		res = XNEWVEC (char, nl + strlen (rest) + 2);
++		sprintf (res, "%s/%s", e->d_name, rest);
++		free (cand);
++		closedir (d);
++		free (fname);
++		return res;
++	      }
++	    free (cand);
++	  }
++      closedir (d);
++    }
++
++  res = xstrdup (rest);
++  free (fname);
++  return res;
++}
++#endif
++
++
+ static const char *
+ parse_include (cpp_reader *pfile, int *pangle_brackets,
+ 	       const cpp_token ***buf, location_t *location)
+@@ -876,6 +972,9 @@
+       fname = XNEWVEC (char, header->val.str.len - 1);
+       memcpy (fname, header->val.str.text + 1, header->val.str.len - 2);
+       fname[header->val.str.len - 2] = '\0';
++#if !defined (__riscos__) && !defined (__riscos)
++      fname = riscos_expand_prefix (pfile, fname);
++#endif
+       *pangle_brackets = header->type == CPP_HEADER_NAME;
+     }
+   else if (header->type == CPP_LESS)

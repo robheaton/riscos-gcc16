@@ -127,3 +127,9 @@ int _kernel_system (const char *cmd, int chain)
   (void) chain;
   return _kernel_oscli (cmd) == _kernel_ERROR ? -2 : 0;
 }
+
+_kernel_ExtendProc *_kernel_register_slotextend (_kernel_ExtendProc *handler)
+{
+  (void) handler;
+  return 0;
+}
