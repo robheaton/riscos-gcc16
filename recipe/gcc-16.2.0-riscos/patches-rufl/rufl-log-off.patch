@@ -1,0 +1,12 @@
+--- a/src/rufl_internal.h
++++ b/src/rufl_internal.h
+@@ -249,7 +249,8 @@
+ extern const size_t rufl_glyph_map_size;
+ 
+ 
+-#if 1 /*ndef NDEBUG*/
++/* This build: the log goes to stderr, which a Wimp program shows on the screen: off unless RUFL_LOG is defined */
++#ifdef RUFL_LOG
+ #include <time.h>
+ extern bool rufl_log_got_start_time;
+ extern time_t rufl_log_start_time;
