@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <utime.h>
 
 typedef struct { int errnum; char errmess[252]; } oserr;
 static oserr test_err = { 0xB00B, "Test error" }, unknown_err = { 0x1E6, "SWI not known to the host model" };
@@ -271,6 +272,18 @@ oserr *__modlib_xswif (unsigned swi, unsigned *r, unsigned *flags)
 	    r[0] = S_ISDIR (st.st_mode) ? 2 : 1;
 	    r[4] = (unsigned) st.st_size;
 	    r[5] = (unsigned) attr_get (name, 1 | ((st.st_mode & 0200) ? 2 : 0) | (is_locked (name) ? 8 : 0));
+	    { unsigned long long cs = ((unsigned long long) st.st_mtime + 2208988800ULL) * 100; r[2] = 0xFFFFFF00u | (unsigned) ((cs >> 32) & 0xFF); r[3] = (unsigned) cs; }          /* the date stamp: load 0xFFFtttdd, execution the rest */
+	  }
+	else if (r[0] == 1)                                         /* write the catalogue information: the date stamp is the host's modification time */
+	  {
+	    if (stat (name, &st)) { err = &e_notfound; break; }
+	    if ((r[2] & 0xFFF00000u) == 0xFFF00000u)
+	      {
+		unsigned long long cs = ((unsigned long long) (r[2] & 0xFF) << 32) | r[3];
+		struct utimbuf ub; ub.actime = ub.modtime = (time_t) (cs / 100 - 2208988800ULL);
+		utime (name, &ub);
+	      }
+	    r[0] = S_ISDIR (st.st_mode) ? 2 : 1;
 	  }
 	else if (r[0] == 8) { if (mkdir (name, 0777)) err = &e_access; }                    /* create a folder */
 	else if (r[0] == 4)                                         /* write the attributes: the write bit is the host's, the lock is the model's */

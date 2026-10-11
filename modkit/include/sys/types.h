@@ -20,6 +20,14 @@ typedef unsigned long long u_quad_t;
 typedef char *caddr_t;
 typedef int ssize_t;
 typedef long off_t;
+typedef long long off64_t;
+typedef unsigned int dev_t;
+typedef unsigned int ino_t;
+typedef unsigned int nlink_t;
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+typedef int blksize_t;
+typedef long blkcnt_t;
 typedef int pid_t;
 typedef unsigned int mode_t;
 #define NBBY 8

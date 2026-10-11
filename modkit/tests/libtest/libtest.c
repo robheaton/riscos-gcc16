@@ -37,6 +37,11 @@
 #include <sys/time.h>
 #include <sys/times.h>
 #include <sys/timeb.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
+#include <sys/ioctl.h>
+#include <utime.h>
 #if defined (T_HOSTLIB)
 # include "mk_rename.h"
 # include "mk_decl.h"
@@ -2098,6 +2103,244 @@ static void test_g1self (void)
 }
 #endif
 
+
+/* ======================================================================== group 2: the descriptor functions (open, read, write, lseek, ftruncate, close, unlink ...) */
+#if defined (T_HOSTLIB)                                                   /* (the library has the UnixLib numbers of the flags; the host's headers are glibc's) */
+# define T_O_CREAT 0x0200
+# define T_O_EXCL 0x0800
+# define T_O_TRUNC 0x0400
+# define T_O_APPEND 0x0008
+#else
+# define T_O_CREAT O_CREAT
+# define T_O_EXCL O_EXCL
+# define T_O_TRUNC O_TRUNC
+# define T_O_APPEND O_APPEND
+#endif
+static int norm_err2 (void)                                               /* the errors that the two C libraries both have, by a number of their own */
+{
+  switch (T_ERRNO)
+    {
+    case 0: return 0;
+    case EINVAL: return 2;
+    case EBADF: return 4;
+    case ENOENT: return 5;
+    case EEXIST: return 6;
+    case EISDIR: return 7;
+    case ESPIPE: return 8;
+    case EACCES: return 9;
+    case ENOTTY: return 10;
+    default: return 3;
+    }
+}
+/* random sequences of the descriptor calls on a file, the same against glibc and the library: open with every combination of flags, write, read, lseek, ftruncate, close, unlink; the contents of the file at the end */
+static void test_fd (void)
+{
+  static const int flagsets[] = { 0, 1, 2, 1 | T_O_CREAT | T_O_TRUNC, 2 | T_O_CREAT | T_O_TRUNC, 1 | T_O_CREAT | T_O_APPEND, 2 | T_O_CREAT | T_O_APPEND, 2 | T_O_CREAT, 1 | T_O_CREAT | T_O_EXCL, 2 | T_O_TRUNC,
+				  1 | T_O_APPEND, 0 | T_O_CREAT };
+  const char *name = fsname (0);
+  sect_begin ("fd", 29);
+  for (unsigned i = 0; i < N (800); i++)
+    {
+      unsigned fi = rr (12);
+      int fl = flagsets[fi], fd;
+      unsigned nops;
+      case_begin (i);
+      remove (name);
+      if (rr (4) != 0) put_file (name, rr (3) == 0 ? rr (30) : rr (1300));
+      rec_i (fi);                                                        /* (the flags themselves have other numbers in the two libraries) */
+      fd = open (name, fl, 0666);
+      rec_i (fd >= 3);
+      if (fd < 0) { rec_i (norm_err2 ()); rec_i (unlink (name) != 0); case_end (); continue; }
+      nops = 1 + rr (12);
+      for (unsigned k = 0; k < nops; k++)
+	{
+	  unsigned op = rr (9);
+	  rec_i (-1000 - (long long) op);
+	  switch (op)
+	    {
+	    case 0: case 7:                                                    /* write */
+	      {
+		unsigned char b[700];
+		unsigned n = op == 7 ? 1 : rr (3) == 0 ? rr (300) : rr (40);
+		int r;
+		rtext (b, n);
+		T_ERRNO = 0;
+		r = (int) write (fd, b, n);
+		rec_i (r);
+		if (r < 0) rec_i (norm_err2 ());
+		break;
+	      }
+	    case 1: case 6:                                                    /* read */
+	      {
+		unsigned char b[700];
+		unsigned n = op == 6 ? 1 : rr (4) == 0 ? rr (400) : rr (50);
+		int r;
+		t_set (b, 0xA5, sizeof b);
+		T_ERRNO = 0;
+		r = (int) read (fd, b, n);
+		rec_i (r);
+		if (r > 0) rec_m (b, (size_t) r); else if (r < 0) rec_i (norm_err2 ());
+		break;
+	      }
+	    case 2:                                                            /* lseek */
+	      {
+		int whence = (int) rr (4) == 3 ? 7 : (int) rr (3);          /* (a whence that is none of the three: EINVAL) */
+		long off = (long) rr (300) - (whence == SEEK_SET ? 20 : 150);
+		long long r;
+		T_ERRNO = 0;
+		r = (long long) (long) lseek (fd, (off_t) off, whence);
+		rec_i (r);
+		if (r < 0) rec_i (norm_err2 ());
+		break;
+	      }
+	    case 3:                                                            /* ftruncate */
+	      {
+		long len = rr (3) == 0 ? (long) rr (2000) : (long) rr (300);
+		int r;
+		if (rr (20) == 0) len = -1;
+		T_ERRNO = 0;
+		r = ftruncate (fd, (off_t) len);
+		rec_i (r);
+		if (r < 0) rec_i (norm_err2 ());
+		break;
+	      }
+	    case 4: rec_i ((long long) (long) lseek (fd, 0, SEEK_CUR)); break;
+	    case 5: rec_i ((long long) (long) lseek (fd, 0, SEEK_END)); break;
+	    default:
+	      {
+		int r;
+		T_ERRNO = 0;
+		r = (int) write (fd, "", 0);
+		rec_i (r);
+		if (r < 0) rec_i (norm_err2 ());
+		break;
+	      }
+	    }
+	}
+      rec_i (close (fd));
+      T_ERRNO = 0; rec_i (close (fd)); rec_i (norm_err2 ());              /* the second close: EBADF */
+      T_ERRNO = 0; rec_i ((int) read (fd, name, 1)); rec_i (norm_err2 ());
+      rec_file (name);
+      rec_i (unlink (name));
+      T_ERRNO = 0; rec_i (unlink (name)); rec_i (norm_err2 ());
+      case_end ();
+    }
+  sect_end ();
+}
+
+
+#if defined (T_ARM)
+/* group 2, the descriptor functions that glibc cannot be asked about (the numbers of the flags, struct stat, the dates of RISC OS files): answers worked out here */
+static long slurp (int fd, char *b, long cap)                             /* the whole file of FD from the start */
+{
+  long total = 0;
+  int r;
+  if (lseek (fd, 0, SEEK_SET) != 0) return -1;
+  while (total < cap && (r = (int) read (fd, b + total, (size_t) (cap - total))) > 0) total += r;
+  return total;
+}
+static void test_g2self (void)
+{
+  const char *name = fsname (3), *name2 = fsname (2);
+  char b[400];
+  sect_begin ("g2self", 1);
+  remove (name); remove (name2);
+  /* the descriptor of a stream, and the stream of a descriptor */
+  { FILE *f = fopen (name, "w+"); int fd = f ? fileno (f) : -1;
+    check (f != 0 && fd >= 3 && fileno (f) == fd, "fileno: a stream gets a descriptor of 3 or more, and keeps it");
+    check (f != 0 && fdopen (fd, "r+") == f && fdopen (fd, "w") == f, "fdopen: the stream of the descriptor, for a mode that fits");
+    if (f)
+      {
+	fputs ("xyz", f);                                                  /* in the stdio buffer ... */
+	check (write (fd, "123", 3) == 3, "write: a descriptor and a stream on one file");     /* ... and written after it, not before */
+	rewind (f);
+	check (fgets (b, sizeof b, f) != 0 && streq (b, "xyz123"), "write: what the stream had buffered is written first");
+	check (lseek (fd, 1, SEEK_SET) == 1 && read (fd, b, 2) == 2 && b[0] == 'y' && b[1] == 'z' && fgetc (f) == '1', "read: after lseek the stream goes on where the descriptor stopped");
+	fclose (f);
+	T_ERRNO = 0; check (write (fd, "x", 1) == -1 && T_ERRNO == EBADF, "fclose closes the descriptor");
+      } }
+  { FILE *f = fopen (name, "r");
+    int fd = f ? fileno (f) : -1;
+    T_ERRNO = 0;
+    check (f != 0 && fdopen (fd, "w") == 0 && T_ERRNO == EINVAL && fdopen (fd, "r+") == 0 && fdopen (fd, "x") == 0, "fdopen: a mode that does not fit is EINVAL");
+    T_ERRNO = 0; check (f != 0 && write (fd, "x", 1) == -1 && T_ERRNO == EBADF, "write to a descriptor that is read only is EBADF");
+    if (f) fclose (f); }
+  T_ERRNO = 0; check (fdopen (99, "r") == 0 && T_ERRNO == EBADF && fileno (0) == -1, "fdopen of a descriptor that is not open is EBADF");
+  /* open, fstat, fsync-free reading and writing */
+  { int fd = open (name, O_RDWR | O_CREAT | O_TRUNC, 0644); struct stat st; struct stat64 st64;
+    check (fd >= 3, "open: O_CREAT | O_TRUNC");
+    check (write (fd, "hello, world", 12) == 12 && fstat (fd, &st) == 0 && st.st_size == 12 && S_ISREG (st.st_mode) && (st.st_mode & 0600) == 0600 && st.st_nlink == 1, "fstat: size 12, a regular file, read and write");
+    check (fstat64 (fd, &st64) == 0 && st64.st_size == 12 && st64.st_mtime == st.st_mtime, "fstat64: the same");
+    check (st.st_mtime > 1000000000, "fstat: the modification time is the date stamp of the file (after 2001: on the interpreter it is the host's clock, not the model's)");
+    T_ERRNO = 0; check (fstat (99, &st) == -1 && T_ERRNO == EBADF, "fstat of a descriptor that is not open is EBADF");
+    check (fstat (0, &st) == 0 && S_ISCHR (st.st_mode) && fstat (2, &st) == 0 && S_ISCHR (st.st_mode), "fstat of stdin and stderr: a character device");
+    { int n = -1; check (lseek (fd, 3, SEEK_SET) == 3 && ioctl (fd, FIONREAD, &n) == 0 && n == 9, "ioctl FIONREAD: the bytes left in a file"); }
+    T_ERRNO = 0; check (ioctl (fd, 0x12345678, 0) == -1 && T_ERRNO == ENOTTY, "ioctl: anything else is ENOTTY");
+    T_ERRNO = 0; check (isatty (fd) == 0 && T_ERRNO == ENOTTY && isatty (0) == 1 && isatty (1) == 1 && isatty (2) == 1, "isatty: the standard streams yes, a file no (ENOTTY)");
+    T_ERRNO = 0; check (isatty (99) == 0 && T_ERRNO == EBADF, "isatty of a descriptor that is not open is EBADF");
+    { struct iovec iv[3] = { { (void *) "ab", 2 }, { (void *) "cde", 3 }, { (void *) "f", 1 } };
+      check (lseek (fd, 0, SEEK_END) == 12 && writev (fd, iv, 3) == 6 && slurp (fd, b, sizeof b) == 18 && !strncmp (b, "hello, worldabcdef", 18), "writev: three blocks"); }
+    { char r1[5], r2[20]; struct iovec iv[2] = { { r1, 5 }, { r2, 20 } };
+      check (lseek (fd, 7, SEEK_SET) == 7 && readv (fd, iv, 2) == 11 && !strncmp (r1, "world", 5) && !strncmp (r2, "abcdef", 6), "readv: two blocks, the end of the file is a short read"); }
+    T_ERRNO = 0; check (readv (fd, 0, 0) == -1 && T_ERRNO == EINVAL, "readv: no blocks is EINVAL");
+    check (ftruncate (fd, 5) == 0 && fstat (fd, &st) == 0 && st.st_size == 5 && slurp (fd, b, sizeof b) == 5 && !strncmp (b, "hello", 5), "ftruncate: shorter");
+    check (ftruncate (fd, 9) == 0 && slurp (fd, b, sizeof b) == 9 && !strncmp (b, "hello", 5) && b[5] == 0 && b[8] == 0, "ftruncate: longer, with zeros");
+    check (close (fd) == 0, "close"); }
+  { int fd = open (name, O_RDONLY); T_ERRNO = 0;
+    check (fd >= 3 && ftruncate (fd, 2) == -1 && T_ERRNO == EINVAL, "ftruncate of a read only descriptor is EINVAL");
+    if (fd >= 0) close (fd); }
+  /* truncate and utime on the path */
+  check (truncate (name, 3) == 0, "truncate: shorter");
+  { int fd = open (name, O_RDONLY); struct stat st;
+    check (fd >= 3 && fstat (fd, &st) == 0 && st.st_size == 3, "truncate: the file is 3 bytes");
+    { struct utimbuf ub; ub.actime = ub.modtime = 1000000000;
+      check (utime (name, &ub) == 0, "utime");
+      check (fstat (fd, &st) == 0 && st.st_mtime == 1000000000, "utime: the modification time is 2001-09-09 01:46:40 (and fstat of the descriptor that open () made sees it)"); }
+    { struct timeval tv[2]; tv[0].tv_sec = tv[1].tv_sec = 1500000000; tv[0].tv_usec = tv[1].tv_usec = 0;
+      check (utimes (name, tv) == 0 && fstat (fd, &st) == 0 && st.st_mtime == 1500000000, "utimes: 2017-07-14"); }
+    check (utime (name, 0) == 0 && fstat (fd, &st) == 0 && st.st_mtime - time (0) >= -4 && st.st_mtime - time (0) <= 4, "utime (path, NULL) is now");
+    if (fd >= 0) close (fd); }
+  T_ERRNO = 0; check (truncate ("NoSuchFileG2", 0) == -1 && T_ERRNO == ENOENT && utime ("NoSuchFileG2", 0) == -1 && T_ERRNO == ENOENT, "truncate and utime of a file that is not there: ENOENT");
+  /* open: the errors */
+  T_ERRNO = 0; check (open ("NoSuchFileG2", O_RDONLY) == -1 && T_ERRNO == ENOENT, "open: a file that is not there is ENOENT");
+  T_ERRNO = 0; check (open ("NoSuchFileG2", O_WRONLY | O_TRUNC) == -1 && T_ERRNO == ENOENT, "open: O_TRUNC without O_CREAT does not make the file");
+  T_ERRNO = 0; check (open (name, O_WRONLY | O_CREAT | O_EXCL) == -1 && T_ERRNO == EEXIST, "open: O_CREAT | O_EXCL of a file that is there is EEXIST");
+  T_ERRNO = 0; check (open (name, 3) == -1 && T_ERRNO == EINVAL, "open: access mode 3 is EINVAL");
+  T_ERRNO = 0; check (open (0, O_RDONLY) == -1, "open (NULL)");
+  { int fd = open (name2, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    check (fd >= 3 && obj_type (name2) == 1, "open: O_CREAT | O_EXCL makes a new file");
+    if (fd >= 0) close (fd); }
+  { int fd = creat (name2, 0644); check (fd >= 3 && write (fd, "abc", 3) == 3 && close (fd) == 0 && obj_type (name2) == 1, "creat"); }
+  { int fd = open (name2, O_RDONLY | O_CREAT); check (fd >= 3, "open: O_RDONLY | O_CREAT of a file that is there"); if (fd >= 0) close (fd); }
+  check (unlink (name2) == 0 && obj_type (name2) == 0, "unlink: the file is gone");
+  T_ERRNO = 0; check (unlink (name2) == -1 && T_ERRNO == ENOENT, "unlink: a file that is not there is ENOENT");
+  { char dir[240]; _kernel_osfile_block ob = { 0, 0, 0, 0 };
+    t_cpy (dir, g_fsbase); t_cpy (dir + t_len (dir), "dg2");
+    _kernel_osfile (8, dir, &ob);
+    T_ERRNO = 0; check (obj_type (dir) == 2 && unlink (dir) == -1 && T_ERRNO == EISDIR && obj_type (dir) == 2, "unlink: a directory is EISDIR, and stays");
+    T_ERRNO = 0; check (open (dir, O_RDONLY) == -1 && T_ERRNO == EISDIR, "open: a directory is EISDIR");
+    remove (dir); }
+  /* the table of descriptors */
+  { int fds[70], n = 0, last = -1, bad = 0;
+    for (int k = 0; k < 70; k++) { fds[k] = open (name, O_RDONLY); if (fds[k] >= 0) { n++; last = fds[k]; if (fds[k] != 3 + k) bad++; } else break; }
+    check (!bad && n == 61 && last == 63, "open: the descriptors are the lowest free ones, 3 to 63");
+    T_ERRNO = 0; check (open (name, O_RDONLY) == -1 && T_ERRNO == EMFILE, "open: the 62nd is EMFILE");
+    check (close (fds[10]) == 0 && open (name, O_RDONLY) == fds[10], "close: the lowest free descriptor is used again");
+    for (int k = 0; k < n; k++) close (fds[k]); }
+  /* the *64 names */
+  { int fd = open64 (name, O_RDWR | O_CREAT | O_TRUNC); FILE *f;
+    check (fd >= 3 && write (fd, "0123456789", 10) == 10 && lseek64 (fd, 4, SEEK_SET) == 4 && lseek64 (fd, 0x100000000LL, SEEK_SET) == -1 && T_ERRNO == EOVERFLOW, "open64 and lseek64 (a position beyond 2 GB is EOVERFLOW)");
+    if (fd >= 0) close (fd);
+    f = fopen64 (name, "r");
+    { fpos64_t p = -1;
+      check (f != 0 && fseeko64 (f, 3, SEEK_SET) == 0 && ftello64 (f) == 3 && fgetpos64 (f, &p) == 0 && p == 3 && fsetpos64 (f, &p) == 0 && fgetc (f) == '3', "fopen64, fseeko64, ftello64, fgetpos64, fsetpos64"); }
+    if (f) fclose (f);
+    fd = creat64 (name, 0644); check (fd >= 3, "creat64"); if (fd >= 0) close (fd); }
+  remove (name); remove (name2);
+  sect_end ();
+}
+#endif
+
 #include "libtest-fp.c"
 
 /* ======================================================================== main */
@@ -2140,8 +2383,10 @@ int main (int argc, char **argv)
   RUN ("g1", test_g1);
   RUN ("fnmatch", test_fnmatch);
   RUN ("getline", test_getline);
+  RUN ("fd", test_fd);
 #if defined (T_ARM)
   RUN ("g1self", test_g1self);                                                                          /* (before stdio3, which closes the standard streams) */
+  RUN ("g2self", test_g2self);
 #endif
   RUN ("fparith", test_fparith);
   RUN ("fpconv", test_fpconv);

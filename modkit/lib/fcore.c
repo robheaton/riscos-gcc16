@@ -26,10 +26,11 @@ extern void (*__modlib_stdio_end_hook) (int);   /* exit.c */
 extern int (*__modlib_stdout_hook) (int);       /* scr.c */
 
 static unsigned char kbbuf[260];
-FILE __modlib_stdin = { 0, K_KEYBOARD, M_READ, S_IDLE, B_STATIC, -1, kbbuf, sizeof kbbuf, 0, 0, 0, 0, 0 };
-FILE __modlib_stdout = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0 };
-FILE __modlib_stderr = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0 };
+FILE __modlib_stdin = { 0, K_KEYBOARD, M_READ, S_IDLE, B_STATIC, -1, kbbuf, sizeof kbbuf, 0, 0, 0, 0, 0, 0, 0 };
+FILE __modlib_stdout = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+FILE __modlib_stderr = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static FILE *files;                             /* the open files */
+void (*__modlib_fd_hook) (FILE *f);               /* fdio.c: the stream had a descriptor, which is free now */
 void (*__modlib_tmp_hook) (FILE *f);              /* tmpfile.c: called when a stream made by tmpfile has been closed (its file is to go) */
 
 /* errno from an OS error (the numbers of FileSwitch, FileCore and the other file systems).  The error itself stays for _kernel_last_oserror. */
@@ -123,6 +124,18 @@ int __modlib_rawread (FILE *f, void *p, unsigned n)
   b.dataptr = p; b.nbytes = (int) n; b.fileptr = 0; b.buf_len = 0; b.wild_fld = 0;
   if (_kernel_osgbpb (4, f->handle, &b) == _kernel_ERROR) { osfail (f); return -1; }
   return (int) n - b.nbytes;
+}
+
+static void drop_input (FILE *f);
+int __modlib_file_len (FILE *f, long *ext) { return file_len (f, ext); }
+void __modlib_os_errno (void) { os_errno (); }
+/* the stream is idle at the position that the program sees: what waits in the write buffer is written, what is read ahead is dropped (for fdio.c, which reads and writes with no buffer) */
+int __modlib_sync (FILE *f)
+{
+  if (f->kind != K_FILE) return 0;
+  if (f->state == S_WRITE && __modlib_flush (f)) return EOF;
+  if (f->state == S_READ || f->unget >= 0) drop_input (f);
+  return 0;
 }
 
 /* the end of a program or a module: __modlib_stdio_end_hook (exit.c) points to stdio_end once a stream has been used */
@@ -229,17 +242,14 @@ int __modlib_prepwrite (FILE *f)
   return 0;
 }
 
-/* open NAME with MODE into F, or into a new stream when F is 0; returns the stream or 0 */
-static FILE *open_file (FILE *f, const char *name, const char *mode)
+/* open NAME into F, or into a new stream when F is 0; returns the stream or 0.  RD and WR: what the stream is for; CREATE: a missing file is made; TRUNC: an existing file is emptied; EXCL: the file must not be
+   there; APPEND: every write goes to the end; END: the position starts at the end of the file (fopen "a").  fopen and open () are the two callers. */
+FILE *__modlib_open_gen (FILE *f, const char *name, int rd, int wr, int create, int trunc, int excl, int append, int end)
 {
-  int c = mode[0], plus = 0, excl = 0, h;
+  int h;
   long ext = 0;
-  const char *p;
   unsigned char kind_mode;
-  if (c != 'r' && c != 'w' && c != 'a') { errno = EINVAL; return 0; }
-  for (p = mode + 1; *p; p++) { if (*p == '+') plus = 1; else if (*p == 'x') excl = 1; }
-  if (excl && c != 'w') { errno = EINVAL; return 0; }
-  if (excl || c != 'r' || plus)                                   /* "wx": the file must not be there; a file that is read only or locked is not opened for writing at all (OS_Find for output would give a stream that cannot be written, and may empty the file) */
+  if (wr || excl)                                                 /* a file that is read only or locked is not opened for writing at all (OS_Find for output would give a stream that cannot be written); with EXCL the file must not be there */
     {
       _kernel_osfile_block b = { 0, 0, 0, 0 };
       int t = _kernel_osfile (17, name, &b);                      /* OS_File 17: the type of the object and its attributes (bit 1 write, bit 3 locked) */
@@ -247,12 +257,24 @@ static FILE *open_file (FILE *f, const char *name, const char *mode)
       if (t != 0 && excl) { errno = EEXIST; return 0; }
       if (t == 1 && ((b.end & 2) == 0 || (b.end & 8))) { errno = EACCES; return 0; }
     }
-  if (c == 'r') h = _kernel_osfind (plus ? FIND_UP : FIND_IN, name);
-  else if (c == 'w') h = _kernel_osfind (FIND_OUT, name);
+  if (!wr)
+    {
+      h = _kernel_osfind (FIND_IN, name);
+      if (h == _kernel_ERROR && create)                           /* open () with O_CREAT and no write access: the file is made empty, then opened for reading */
+        {
+          const _kernel_oserror *e = __modlib_peek_oserror ();
+          if (e && (e->errnum & 0xFF) == 0xD6)
+            {
+              int g = _kernel_osfind (FIND_OUT, name);
+              if (g > 0) { _kernel_osfind (0, (const char *) g); h = _kernel_osfind (FIND_IN, name); }
+            }
+        }
+    }
+  else if (trunc) h = _kernel_osfind (FIND_OUT, name);
   else
     {
-      h = _kernel_osfind (FIND_UP, name);                         /* append: an existing file ... */
-      if (h == _kernel_ERROR)
+      h = _kernel_osfind (FIND_UP, name);                         /* an existing file ... */
+      if (h == _kernel_ERROR && create)
         {
           const _kernel_oserror *e = __modlib_peek_oserror ();
           if (e && (e->errnum & 0xFF) == 0xD6) h = _kernel_osfind (FIND_OUT, name);          /* ... or a new one */
@@ -260,15 +282,14 @@ static FILE *open_file (FILE *f, const char *name, const char *mode)
     }
   if (h == _kernel_ERROR) { os_errno (); return 0; }
   if (h <= 0) { errno = ENOENT; return 0; }
-  kind_mode = (unsigned char) (c == 'r' ? M_READ : c == 'w' ? M_WRITE : M_WRITE | M_APPEND);
-  if (plus) kind_mode |= M_READ | M_WRITE;
+  kind_mode = (unsigned char) ((rd ? M_READ : 0) | (wr ? M_WRITE : 0) | (append ? M_APPEND : 0));
   if (get_len ((unsigned) h, &ext)) { _kernel_osfind (0, (const char *) h); return 0; }
   if (kind_mode & M_WRITE)                                        /* FileSwitch opens a file that is read only or locked for update without a word, as a stream that cannot be written (OS_Args 254: bit 7 is the right to write) */
     {
       unsigned r[10] = { 254, (unsigned) h };
       if (!__modlib_xswi (0x09 | X, r) && !(r[0] & 0x80)) { errno = EACCES; _kernel_osfind (0, (const char *) h); return 0; }
     }
-  if (c != 'a' || plus) ext = 0;                                  /* "a" starts at the end; "a+" reads from the start (and every write goes to the end) */
+  if (!end) ext = 0;                                              /* "a" starts at the end; "a+" reads from the start (and every write goes to the end) */
   if (!f)
     {
       f = malloc (sizeof (FILE) + BUFSIZ);
@@ -294,10 +315,21 @@ static FILE *open_file (FILE *f, const char *name, const char *mode)
   f->rpos = f->rend = f->wlen = 0;
   f->fpos = ext;
   if (ext) f->bits &= ~B_PTR;                                     /* the OS pointer is at 0 */
+  if (!(f->bits & B_STATIC)) f->fd = -1;                          /* (a standard stream keeps its descriptor, 0, 1 or 2, by its address) */
+  f->name = 0;
   f->next = files;
   files = f;
   __modlib_register_end ();
   return f;
+}
+static FILE *open_file (FILE *f, const char *name, const char *mode)
+{
+  int c = mode[0], plus = 0, excl = 0;
+  const char *p;
+  if (c != 'r' && c != 'w' && c != 'a') { errno = EINVAL; return 0; }
+  for (p = mode + 1; *p; p++) { if (*p == '+') plus = 1; else if (*p == 'x') excl = 1; }
+  if (excl && c != 'w') { errno = EINVAL; return 0; }
+  return __modlib_open_gen (f, name, c == 'r' || plus, c != 'r' || plus, c != 'r', c == 'w', excl, c == 'a', c == 'a' && !plus);
 }
 
 FILE *fopen (const char *name, const char *mode) { return open_file (0, name, mode); }
@@ -319,6 +351,8 @@ static int close_file (FILE *f)
       if (__modlib_flush (f)) r = EOF;
       if (_kernel_osfind (0, (const char *) f->handle) == _kernel_ERROR) { os_errno (); r = EOF; }
       unlink_file (f);
+      if (f->fd >= 0 && __modlib_fd_hook && !(f->bits & B_STATIC)) __modlib_fd_hook (f);
+      if (f->name) { free (f->name); f->name = 0; }
       if ((f->bits & B_TEMP) && __modlib_tmp_hook) __modlib_tmp_hook (f);
       if (f->bits & B_OWNBUF) { free (f->buf); f->buf = 0; f->bufsize = 0; }
     }

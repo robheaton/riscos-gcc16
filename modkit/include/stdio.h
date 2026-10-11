@@ -95,9 +95,18 @@ extern void perror (const char *s);
 #include <sys/types.h>
 extern ssize_t getdelim (char **lineptr, size_t *n, int delim, FILE *f);   /* reads up to and including DELIM into a malloc block (grown as needed): the number of characters, or -1 */
 extern ssize_t getline (char **lineptr, size_t *n, FILE *f);
-extern int fileno (FILE *f);                                               /* 0, 1 and 2 for the standard streams; for a file the OS handle plus 3: it names the stream, there is no descriptor layer (open, read ...) behind it */
+extern int fileno (FILE *f);                                               /* the descriptor of the stream (see <unistd.h>): 0, 1, 2 for the standard streams; a stream that has none yet gets the lowest free one, 3 or more */
 extern int fseeko (FILE *f, off_t offset, int whence);
 extern off_t ftello (FILE *f);
+extern FILE *fdopen (int fd, const char *mode);                            /* the stream of a descriptor (the same FILE every time: closing it closes the descriptor); the mode must fit how the descriptor was opened */
+typedef long long fpos64_t;
+extern FILE *fopen64 (const char *name, const char *mode);                 /* the *64 names are the plain ones (a file of 2 GB or more is not opened: EOVERFLOW) */
+extern FILE *freopen64 (const char *name, const char *mode, FILE *f);
+extern FILE *tmpfile64 (void);
+extern int fseeko64 (FILE *f, off64_t offset, int whence);
+extern off64_t ftello64 (FILE *f);
+extern int fgetpos64 (FILE *f, fpos64_t *pos);
+extern int fsetpos64 (FILE *f, const fpos64_t *pos);
 extern const char *sys_errlist[];                                          /* the texts of errno.h's numbers 0 .. sys_nerr - 1 */
 extern int sys_nerr;
 #endif

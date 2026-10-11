@@ -1,0 +1,5 @@
+title-string:           ModG2
+help-string:            ModG2 0.01
+date-string:            11 Oct 2026
+command-keyword-table:  modg2_cmd
+  ModG2_Go(min-args: 0, max-args: 0, help-text: "*ModG2_Go\n", invalid-syntax: "Syntax: *ModG2_Go")

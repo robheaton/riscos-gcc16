@@ -33,6 +33,8 @@ struct __FILE
   unsigned rpos, rend, wlen;
   long fpos;
   struct __FILE *next;                          /* the open files, for fflush (0) and the exit */
+  int fd;                                       /* the descriptor of fdio.c (fileno, open ...), or -1 when it has none yet (a standard stream has 0, 1 or 2 by its address) */
+  char *name;                                   /* a copy of the name that open () used (a malloc block), or 0 */
 };
 
 extern int __modlib_prepread (FILE *f);         /* the stream is ready for reading (a write buffer is written): 0, or EOF with errno and the error flag */
@@ -42,6 +44,11 @@ extern int __modlib_drain (FILE *f);            /* write the write buffer, stay 
 extern int __modlib_flush (FILE *f);            /* write the write buffer and go idle: 0 or EOF */
 extern int __modlib_rawwrite (FILE *f, const void *p, unsigned n);        /* write N bytes at the position of the stream, with no buffer: 0 or EOF */
 extern int __modlib_rawread (FILE *f, void *p, unsigned n);               /* read up to N bytes at the position, with no buffer: the number, or -1 */
+extern FILE *__modlib_open_gen (FILE *f, const char *name, int rd, int wr, int create, int trunc, int excl, int append, int end);   /* fcore.c: open NAME into F (a new stream if F is 0) for reading and / or writing; a missing file is made if CREATE, an existing one emptied if TRUNC, EXCL: it must not be there; APPEND: every write goes to the end; END: the position starts at the end */
+extern int __modlib_sync (FILE *f);             /* the stream is idle at the position the program sees (what is buffered is written or dropped): 0, or EOF with errno */
+extern int __modlib_file_len (FILE *f, long *ext);   /* the length of the file: 0, or -1 with errno (EOVERFLOW at 2 GB) */
+extern void __modlib_os_errno (void);           /* errno from the OS error that the last kernel call gave */
+extern void (*__modlib_fd_hook) (FILE *f);      /* fdio.c: called when a stream that has a descriptor is closed */
 extern void __modlib_register_end (void);       /* (fcore.c) the end of a program is to close the files and set the standard streams up again */
 extern void __modlib_scrputc (int c);
 extern int __modlib_vformat (void (*out) (int, void *), void *ctx, const char *fmt, va_list ap);

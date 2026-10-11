@@ -20,6 +20,7 @@ extern "C" {
 #define SIOCATMARK _IOR ('s', 7, int)
 #define SIOCGIFADDR _IOWR ('i', 33, struct ifreq)
 extern int socketioctl (int s, unsigned long cmd, void *arg);
+extern int ioctl (int fd, unsigned long request, ...);               /* on a descriptor of open (): FIONREAD (the bytes left in a file); anything else is ENOTTY.  For a socket use socketioctl */
 #ifdef __cplusplus
 }
 #endif

@@ -68,6 +68,16 @@ class FileModel:
             r[0] = 2 if stat.S_ISDIR(st.st_mode) else 1
             r[4] = st.st_size & M
             r[5] = self.attrs.get(name, 1 | (2 if st.st_mode & 0o200 else 0) | (8 if name in self.locked else 0))
+            cs = (int(st.st_mtime) + 2208988800) * 100                                              # the date stamp: load address 0xFFFtttdd (type FFF, the top byte of the time), execution address the rest, centiseconds since 1900
+            r[2] = (0xFFFFFF00 | ((cs >> 32) & 0xFF)) & M; r[3] = cs & M
+        elif r[0] == 1:                                                                            # write the catalogue information: the date stamp is the host's modification time; the attributes are kept
+            try: st = os.stat(name)
+            except OSError: self.fail(cpu, 0xD6, "File not found"); return
+            if (r[2] & 0xFFF00000) == 0xFFF00000:
+                cs = ((r[2] & 0xFF) << 32) | r[3]
+                t = cs // 100 - 2208988800
+                os.utime(name, (t, t))
+            r[0] = 2 if stat.S_ISDIR(st.st_mode) else 1
         elif r[0] == 8:                                                                            # create a folder
             try: os.mkdir(name)
             except OSError: self.fail(cpu, 0xC4, "Already exists")

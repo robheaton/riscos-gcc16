@@ -1,0 +1,333 @@
+/* fdio.c - the descriptor functions on files: open, creat, close, read, write, readv, writev, lseek, fstat, ftruncate, truncate, isatty, ioctl, unlink, utime, utimes, fdopen and fileno, and the *64 names.
+   A descriptor is a FILE of the stdio code of the kit (fcore.c): 0, 1 and 2 are stdin, stdout and stderr; open () makes a stream that is read and written with no buffer (the OS calls are OS_GBPB and
+   OS_Args, as fread and fwrite make them), and fopen / fileno give a descriptor to a stream that has none.  The same object is both: fdopen returns the FILE of the descriptor, and fclose closes
+   the descriptor.  Only files (and the three standard streams): a socket has its own numbers (<sys/socket.h>).  RISC OS has no permissions, owners or links. */
+#pragma GCC optimize ("Os")                       /* not a hot path: the smaller code is the better one in a module */
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <errno.h>
+#include <limits.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <utime.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
+#include <kernel.h>
+#include "fileimpl.h"
+
+#define FDMAX 64                                  /* descriptors 0 to FDMAX - 1 (0, 1 and 2 are the standard streams) */
+static FILE *fdtab[FDMAX];
+
+static void release (FILE *f)                     /* (the hook of fcore.c: the stream is closed) */
+{
+  if (f->fd >= 3 && f->fd < FDMAX && fdtab[f->fd] == f) fdtab[f->fd] = 0;
+  f->fd = -1;
+}
+static int alloc_fd (FILE *f)
+{
+  int i;
+  for (i = 3; i < FDMAX; i++)
+    if (!fdtab[i]) { fdtab[i] = f; f->fd = i; __modlib_fd_hook = release; return i; }
+  errno = EMFILE;
+  return -1;
+}
+/* the stream of descriptor FD, or 0 with errno EBADF */
+static FILE *get (int fd)
+{
+  FILE *f = fd == 0 ? &__modlib_stdin : fd == 1 ? &__modlib_stdout : fd == 2 ? &__modlib_stderr : fd > 2 && fd < FDMAX ? fdtab[fd] : 0;
+  if (!f || f->kind == K_CLOSED) { errno = EBADF; return 0; }
+  return f;
+}
+
+int fileno (FILE *f)
+{
+  if (!f || f->kind == K_CLOSED) { errno = EBADF; return -1; }
+  if (f == &__modlib_stdin) return 0;
+  if (f == &__modlib_stdout) return 1;
+  if (f == &__modlib_stderr) return 2;
+  if (f->fd >= 0) return f->fd;
+  return alloc_fd (f);
+}
+FILE *fdopen (int fd, const char *mode)
+{
+  FILE *f = get (fd);
+  int c = mode ? mode[0] : 0, plus = 0;
+  const char *p;
+  if (!f) return 0;
+  if (c != 'r' && c != 'w' && c != 'a') { errno = EINVAL; return 0; }
+  for (p = mode + 1; *p; p++) if (*p == '+') plus = 1;
+  if (((c == 'r' || plus) && !(f->mode & M_READ)) || ((c != 'r' || plus) && !(f->mode & M_WRITE))) { errno = EINVAL; return 0; }          /* the mode must fit how the descriptor was opened */
+  return f;
+}
+
+/* set the length of the file of F: shorter with OS_Args 3, longer with zeros written at the end (what OS_Args 3 puts there is not defined) */
+static int set_extent (FILE *f, long len)
+{
+  long ext;
+  if (__modlib_sync (f) || __modlib_file_len (f, &ext)) return -1;
+  if (len < ext)
+    {
+      if (_kernel_osargs (3, f->handle, (int) len) == _kernel_ERROR) { __modlib_os_errno (); return -1; }
+      f->bits &= ~B_PTR;
+    }
+  else if (len > ext)
+    {
+      unsigned char zero[256];
+      long save = f->fpos;
+      memset (zero, 0, sizeof zero);
+      f->fpos = ext; f->bits &= ~B_PTR;
+      while (f->fpos < len)
+	{
+	  long left = len - f->fpos;
+	  if (__modlib_rawwrite (f, zero, (unsigned) (left < (long) sizeof zero ? left : (long) sizeof zero))) { f->fpos = save; f->bits &= ~B_PTR; return -1; }
+	}
+      f->fpos = save; f->bits &= ~B_PTR;
+    }
+  return 0;
+}
+
+int open (const char *path, int flags, ...)
+{
+  int acc = flags & O_ACCMODE, create = (flags & O_CREAT) != 0, trunc = (flags & O_TRUNC) != 0, fd;
+  FILE *f;
+  if (!path) { errno = EFAULT; return -1; }
+  if (acc == O_ACCMODE) { errno = EINVAL; return -1; }
+  f = __modlib_open_gen (0, path, acc != O_WRONLY, acc != O_RDONLY, create, trunc && create, create && (flags & O_EXCL) != 0, (flags & O_APPEND) != 0, 0);
+  if (!f) return -1;
+  if (trunc && !create && acc != O_RDONLY && set_extent (f, 0)) { fclose (f); return -1; }               /* O_TRUNC of a file that must be there: emptied after it is opened */
+  fd = alloc_fd (f);
+  if (fd < 0) { fclose (f); return -1; }
+  f->name = malloc (strlen (path) + 1);                                                               /* (for fstat: the date stamp) */
+  if (f->name) strcpy (f->name, path);
+  return fd;
+}
+int open64 (const char *path, int flags, ...) { return open (path, flags | O_LARGEFILE); }
+int creat (const char *path, mode_t mode) { (void) mode; return open (path, O_WRONLY | O_CREAT | O_TRUNC); }
+int creat64 (const char *path, mode_t mode) { return creat (path, mode); }
+
+int close (int fd)
+{
+  FILE *f = get (fd);
+  if (!f) return -1;
+  return fclose (f) ? -1 : 0;                                    /* (fclose frees the descriptor through the hook of fcore.c) */
+}
+
+ssize_t read (int fd, void *buf, size_t n)
+{
+  FILE *f = get (fd);
+  int got;
+  if (!f) return -1;
+  if (n > (size_t) INT_MAX) { errno = EINVAL; return -1; }
+  if (f->kind == K_KEYBOARD)                                      /* the keyboard gives a line at a time */
+    {
+      char *p = buf;
+      size_t k = 0;
+      int c;
+      while (k < n && (c = fgetc (f)) != EOF) { p[k++] = (char) c; if (c == '\n') break; }
+      if (!k && ferror (f)) return -1;
+      return (ssize_t) k;
+    }
+  if (f->kind != K_FILE || !(f->mode & M_READ)) { errno = EBADF; return -1; }
+  if (!n) return 0;
+  if (__modlib_sync (f)) return -1;
+  got = __modlib_rawread (f, buf, (unsigned) n);
+  if (got < 0) return -1;
+  f->fpos += got;
+  return got;
+}
+ssize_t write (int fd, const void *buf, size_t n)
+{
+  FILE *f = get (fd);
+  if (!f) return -1;
+  if (n > (size_t) INT_MAX) { errno = EINVAL; return -1; }
+  if (f->kind == K_SCREEN)
+    {
+      if (fwrite (buf, 1, n, f) != n) return -1;
+      return (ssize_t) n;
+    }
+  if (f->kind != K_FILE || !(f->mode & M_WRITE)) { errno = EBADF; return -1; }
+  if (!n) return 0;
+  if (__modlib_sync (f)) return -1;
+  if (__modlib_rawwrite (f, buf, (unsigned) n)) return -1;
+  return (ssize_t) n;
+}
+ssize_t readv (int fd, const struct iovec *iov, int count)
+{
+  ssize_t total = 0;
+  int i;
+  if (count <= 0 || count > 1024) { errno = EINVAL; return -1; }
+  for (i = 0; i < count; i++)
+    {
+      ssize_t r;
+      if (iov[i].iov_len > (size_t) (INT_MAX - total)) { errno = EINVAL; return -1; }
+      r = read (fd, iov[i].iov_base, iov[i].iov_len);
+      if (r < 0) return total ? total : -1;
+      total += r;
+      if ((size_t) r < iov[i].iov_len) break;
+    }
+  return total;
+}
+ssize_t writev (int fd, const struct iovec *iov, int count)
+{
+  ssize_t total = 0;
+  int i;
+  if (count <= 0 || count > 1024) { errno = EINVAL; return -1; }
+  for (i = 0; i < count; i++)
+    if (iov[i].iov_len > (size_t) (INT_MAX - total)) { errno = EINVAL; return -1; }
+    else total += (ssize_t) iov[i].iov_len;
+  total = 0;
+  for (i = 0; i < count; i++)
+    {
+      ssize_t r = write (fd, iov[i].iov_base, iov[i].iov_len);
+      if (r < 0) return total ? total : -1;
+      total += r;
+    }
+  return total;
+}
+
+off_t lseek (int fd, off_t offset, int whence)
+{
+  FILE *f = get (fd);
+  long p;
+  if (!f) return -1;
+  if (f->kind != K_FILE) { errno = ESPIPE; return -1; }
+  if (fseek (f, (long) offset, whence)) return -1;
+  p = ftell (f);
+  return p;
+}
+off64_t lseek64 (int fd, off64_t offset, int whence)
+{
+  if (offset > 0x7FFFFFFFLL || offset < -0x7FFFFFFFLL - 1) { errno = EOVERFLOW; return -1; }
+  return lseek (fd, (off_t) offset, whence);
+}
+
+/* the RISC OS date stamp of a file as seconds since 1970 (0 when it has none): the load address is 0xFFFtttdd (type ttt, the top byte of the time dd), the execution address is the rest of the time,
+   in centiseconds since 1900; divided in 16 bit steps, there is no 64 bit division in a module */
+static long stamp_to_time (unsigned load, unsigned exec)
+{
+  unsigned hi, qh, acc, q1, q0;
+  long long secs;
+  if ((load & 0xFFF00000u) != 0xFFF00000u) return 0;
+  hi = load & 0xFF;
+  qh = hi / 100; acc = (hi % 100) * 65536 + (exec >> 16);
+  q1 = acc / 100; acc = (acc % 100) * 65536 + (exec & 0xFFFF);
+  q0 = acc / 100;
+  secs = ((long long) qh << 32) + ((long long) q1 << 16) + q0 - 2208988800LL;
+  return secs < LONG_MIN ? LONG_MIN : secs > LONG_MAX ? LONG_MAX : (long) secs;
+}
+static int fill_stat (int fd, struct stat64 *st)
+{
+  FILE *f = get (fd);
+  memset (st, 0, sizeof *st);
+  if (!f) return -1;
+  st->st_nlink = 1;
+  st->st_blksize = 512;
+  if (f->kind == K_FILE)
+    {
+      long ext;
+      _kernel_osfile_block b = { 0, 0, 0, 0 };
+      unsigned attr = 3;                                          /* owner read and write */
+      if (__modlib_sync (f) || __modlib_file_len (f, &ext)) return -1;
+      st->st_size = ext;
+      st->st_blocks = (ext + 511) / 512;
+      if (!(f->mode & M_WRITE)) attr &= ~2u;
+      if (f->name && _kernel_osfile (17, f->name, &b) == 1)
+	{
+	  attr = (unsigned) b.end & 3;
+	  st->st_atime = st->st_mtime = st->st_ctime = stamp_to_time ((unsigned) b.load, (unsigned) b.exec);
+	}
+      st->st_mode = S_IFREG | ((attr & 1) ? 0444 : 0) | ((attr & 2) ? 0222 : 0);
+    }
+  else st->st_mode = S_IFCHR | 0620;                              /* the keyboard and the screen */
+  return 0;
+}
+int fstat64 (int fd, struct stat64 *st) { return fill_stat (fd, st); }
+int fstat (int fd, struct stat *st)
+{
+  struct stat64 s;
+  if (fill_stat (fd, &s)) return -1;
+  if (s.st_size > 0x7FFFFFFFLL) { errno = EOVERFLOW; return -1; }
+  st->st_dev = s.st_dev; st->st_ino = s.st_ino; st->st_mode = s.st_mode; st->st_nlink = s.st_nlink; st->st_uid = s.st_uid; st->st_gid = s.st_gid; st->st_rdev = s.st_rdev;
+  st->st_size = (off_t) s.st_size; st->st_atime = s.st_atime; st->st_mtime = s.st_mtime; st->st_ctime = s.st_ctime; st->st_blksize = s.st_blksize; st->st_blocks = s.st_blocks;
+  return 0;
+}
+
+int ftruncate (int fd, off_t length)
+{
+  FILE *f = get (fd);
+  if (!f) return -1;
+  if (length < 0 || f->kind != K_FILE || !(f->mode & M_WRITE)) { errno = EINVAL; return -1; }
+  return set_extent (f, (long) length);
+}
+int truncate (const char *path, off_t length)
+{
+  FILE *f;
+  int r;
+  if (length < 0) { errno = EINVAL; return -1; }
+  f = __modlib_open_gen (0, path, 0, 1, 0, 0, 0, 0, 0);
+  if (!f) return -1;
+  r = set_extent (f, (long) length);
+  fclose (f);
+  return r;
+}
+
+int isatty (int fd)
+{
+  FILE *f = get (fd);
+  if (!f) return 0;
+  if (f->kind == K_KEYBOARD || f->kind == K_SCREEN) return 1;
+  errno = ENOTTY;
+  return 0;
+}
+int ioctl (int fd, unsigned long request, ...)
+{
+  FILE *f = get (fd);
+  va_list ap;
+  if (!f) return -1;
+  if (request == FIONREAD && f->kind == K_FILE)
+    {
+      long ext, pos;
+      int *out;
+      if (__modlib_sync (f) || __modlib_file_len (f, &ext)) return -1;
+      pos = f->fpos;
+      va_start (ap, request);
+      out = va_arg (ap, int *);
+      va_end (ap);
+      *out = pos < ext ? (int) (ext - pos) : 0;
+      return 0;
+    }
+  errno = ENOTTY;
+  return -1;
+}
+
+int unlink (const char *path)
+{
+  _kernel_osfile_block b = { 0, 0, 0, 0 };
+  int t = _kernel_osfile (17, path, &b);
+  if (t == _kernel_ERROR) { __modlib_os_errno (); return -1; }
+  if (t == 0) { errno = ENOENT; return -1; }
+  if (t != 1) { errno = EISDIR; return -1; }                      /* a directory (or an image file) is not for unlink */
+  return remove (path);
+}
+
+/* the date stamp of PATH to T seconds since 1970: the type stays, the time is put into the load and execution addresses */
+static int set_time (const char *path, long t)
+{
+  _kernel_osfile_block b = { 0, 0, 0, 0 };
+  int ty = _kernel_osfile (17, path, &b);
+  unsigned long long cs;
+  if (ty == _kernel_ERROR) { __modlib_os_errno (); return -1; }
+  if (ty == 0) { errno = ENOENT; return -1; }
+  if (((unsigned) b.load & 0xFFF00000u) != 0xFFF00000u) { errno = EINVAL; return -1; }          /* a file with a load and execution address of its own has no date stamp to set */
+  cs = ((unsigned long long) ((long long) t + 2208988800LL)) * 100;
+  b.load = (int) (((unsigned) b.load & 0xFFFFFF00u) | (unsigned) ((cs >> 32) & 0xFF));
+  b.exec = (int) (unsigned) cs;
+  if (_kernel_osfile (1, path, &b) == _kernel_ERROR) { __modlib_os_errno (); return -1; }          /* OS_File 1: write the catalogue information (the attributes in b.end stay as they were) */
+  return 0;
+}
+int utime (const char *path, const struct utimbuf *times) { return set_time (path, times ? times->modtime : time (0)); }
+int utimes (const char *path, const struct timeval tv[2]) { return set_time (path, tv ? tv[1].tv_sec : time (0)); }
