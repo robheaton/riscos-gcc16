@@ -1,4 +1,4 @@
-/* fdio.c - the descriptor functions on files: open, creat, close, read, write, readv, writev, lseek, fstat, ftruncate, truncate, isatty, ioctl, unlink, utime, utimes, fdopen and fileno, and the *64 names.
+/* fdio.c - the descriptor functions on files: open, creat, close, read, write, readv, writev, lseek, stat, lstat, fstat, access, dup, dup2, fsync, fdatasync, ftruncate, truncate, isatty, ioctl, unlink, utime, utimes, fdopen and fileno, and the *64 names.
    A descriptor is a FILE of the stdio code of the kit (fcore.c): 0, 1 and 2 are stdin, stdout and stderr; open () makes a stream that is read and written with no buffer (the OS calls are OS_GBPB and
    OS_Args, as fread and fwrite make them), and fopen / fileno give a descriptor to a stream that has none.  The same object is both: fdopen returns the FILE of the descriptor, and fclose closes
    the descriptor.  Only files (and the three standard streams): a socket has its own numbers (<sys/socket.h>).  RISC OS has no permissions, owners or links. */
@@ -22,9 +22,10 @@
 #define FDMAX 64                                  /* descriptors 0 to FDMAX - 1 (0, 1 and 2 are the standard streams) */
 static FILE *fdtab[FDMAX];
 
-static void release (FILE *f)                     /* (the hook of fcore.c: the stream is closed) */
+static void release (FILE *f)                     /* (the hook of fcore.c: the stream is closed: every descriptor that dup () made of it goes too) */
 {
-  if (f->fd >= 3 && f->fd < FDMAX && fdtab[f->fd] == f) fdtab[f->fd] = 0;
+  int i;
+  for (i = 3; i < FDMAX; i++) if (fdtab[i] == f) fdtab[i] = 0;
   f->fd = -1;
 }
 static int alloc_fd (FILE *f)
@@ -101,20 +102,77 @@ int open (const char *path, int flags, ...)
   if (trunc && !create && acc != O_RDONLY && set_extent (f, 0)) { fclose (f); return -1; }               /* O_TRUNC of a file that must be there: emptied after it is opened */
   fd = alloc_fd (f);
   if (fd < 0) { fclose (f); return -1; }
-  f->name = malloc (strlen (path) + 1);                                                               /* (for fstat: the date stamp) */
-  if (f->name) strcpy (f->name, path);
   return fd;
 }
 int open64 (const char *path, int flags, ...) { return open (path, flags | O_LARGEFILE); }
 int creat (const char *path, mode_t mode) { (void) mode; return open (path, O_WRONLY | O_CREAT | O_TRUNC); }
 int creat64 (const char *path, mode_t mode) { return creat (path, mode); }
 
+static int is_std (FILE *f) { return f == &__modlib_stdin || f == &__modlib_stdout || f == &__modlib_stderr; }
+static int refs (FILE *f)                         /* how many descriptors of 3 and up are this stream */
+{
+  int i, n = 0;
+  for (i = 3; i < FDMAX; i++) if (fdtab[i] == f) n++;
+  return n;
+}
 int close (int fd)
 {
   FILE *f = get (fd);
   if (!f) return -1;
+  if (fd >= 3 && (is_std (f) || refs (f) > 1))                  /* a copy that dup () made: the descriptor goes, the stream stays while it has another (a copy of a standard stream is never closed) */
+    {
+      int i;
+      fdtab[fd] = 0;
+      if (f->fd == fd) { f->fd = -1; for (i = 3; i < FDMAX; i++) if (fdtab[i] == f) { f->fd = i; break; } }
+      return 0;
+    }
   return fclose (f) ? -1 : 0;                                    /* (fclose frees the descriptor through the hook of fcore.c) */
 }
+int dup (int fd)
+{
+  FILE *f = get (fd);
+  int i;
+  if (!f) return -1;
+  for (i = 3; i < FDMAX; i++)
+    if (!fdtab[i])
+      {
+	fdtab[i] = f;
+	if (f->fd < 0 && !is_std (f)) f->fd = i;
+	__modlib_fd_hook = release;
+	return i;
+      }
+  errno = EMFILE;
+  return -1;
+}
+int dup2 (int fd, int fd2)
+{
+  FILE *f = get (fd);
+  if (!f) return -1;
+  if (fd2 < 0 || fd2 >= FDMAX) { errno = EBADF; return -1; }
+  if (fd2 == fd) return fd2;
+  if (fd2 < 3) { errno = ENOSYS; return -1; }                    /* the standard streams cannot be pointed somewhere else */
+  if (fdtab[fd2]) close (fd2);
+  fdtab[fd2] = f;
+  if (f->fd < 0 && !is_std (f)) f->fd = fd2;
+  __modlib_fd_hook = release;
+  return fd2;
+}
+/* write what is buffered, then OS_Args 255: the filing system writes the file's data to the medium */
+int fsync (int fd)
+{
+  FILE *f = get (fd);
+  if (!f) return -1;
+  if (f->kind == K_FILE)
+    {
+      if (fflush (f) || __modlib_sync (f)) return -1;
+      if (_kernel_osargs (255, f->handle, 0) == _kernel_ERROR) { __modlib_os_errno (); return -1; }
+      return 0;
+    }
+  if (f->kind == K_SCREEN) return fflush (f) ? -1 : 0;
+  errno = EINVAL;                                               /* the keyboard: not something that can be synchronised */
+  return -1;
+}
+int fdatasync (int fd) { return fsync (fd); }
 
 ssize_t read (int fd, void *buf, size_t n)
 {
@@ -219,6 +277,68 @@ static long stamp_to_time (unsigned load, unsigned exec)
   secs = ((long long) qh << 32) + ((long long) q1 << 16) + q0 - 2208988800LL;
   return secs < LONG_MIN ? LONG_MIN : secs > LONG_MAX ? LONG_MAX : (long) secs;
 }
+/* the permission bits of RISC OS attributes (bit 0 read, bit 1 write) as UnixLib gives them, for a file of the load address LOAD: a read bit also makes an execute bit, except for Text (&FFF) and Data (&FFD) */
+static mode_t file_mode (unsigned load, unsigned attr)
+{
+  mode_t m = ((attr & 1) ? 0444 : 0) | ((attr & 2) ? 0222 : 0);
+  if (((load & 0xFFF00000u) != 0xFFF00000u) || (((load >> 8) & 0xFFF) != 0xFFF && ((load >> 8) & 0xFFF) != 0xFFD)) m |= (m & 0444) >> 2;
+  return m;
+}
+/* stat of a path: OS_File 17 gives the object type (1 file, 2 directory, 3 image file, which is a directory here as it is in UnixLib), the date stamp, the length and the attributes */
+static int stat_path (const char *path, struct stat64 *st)
+{
+  _kernel_osfile_block b = { 0, 0, 0, 0 };
+  int t;
+  if (!path) { errno = EFAULT; return -1; }
+  t = _kernel_osfile (17, path, &b);
+  if (t == _kernel_ERROR) { __modlib_os_errno (); return -1; }
+  if (t == 0) { errno = ENOENT; return -1; }
+  memset (st, 0, sizeof *st);
+  st->st_blksize = 512;
+  st->st_atime = st->st_mtime = st->st_ctime = stamp_to_time ((unsigned) b.load, (unsigned) b.exec);
+  if (t == 1)
+    {
+      st->st_mode = S_IFREG | file_mode ((unsigned) b.load, (unsigned) b.end);
+      st->st_nlink = 1;
+      st->st_size = (unsigned) b.start;
+      { long ext; if (__modlib_open_length (path, &ext)) st->st_size = ext; }                       /* (a file that this program has open: its real length) */
+      st->st_blocks = (st->st_size + 511) / 512;
+    }
+  else
+    {
+      st->st_mode = S_IFDIR | S_IRWXU;                            /* (the attributes of a directory are not reliable: UnixLib gives the owner everything too) */
+      st->st_nlink = 2;
+      st->st_size = (unsigned) b.start > 32768 ? 0 : (unsigned) b.start;      /* (the size of a directory in an image file system is not either) */
+      st->st_blocks = (st->st_size + 511) / 512;
+    }
+  return 0;
+}
+static int narrow_stat (const struct stat64 *s, struct stat *st)
+{
+  if (s->st_size > 0x7FFFFFFFLL) { errno = EOVERFLOW; return -1; }
+  st->st_dev = s->st_dev; st->st_ino = s->st_ino; st->st_mode = s->st_mode; st->st_nlink = s->st_nlink; st->st_uid = s->st_uid; st->st_gid = s->st_gid; st->st_rdev = s->st_rdev;
+  st->st_size = (off_t) s->st_size; st->st_atime = s->st_atime; st->st_mtime = s->st_mtime; st->st_ctime = s->st_ctime; st->st_blksize = s->st_blksize; st->st_blocks = s->st_blocks;
+  return 0;
+}
+int stat64 (const char *path, struct stat64 *st) { return stat_path (path, st); }
+int lstat64 (const char *path, struct stat64 *st) { return stat_path (path, st); }          /* (there are no links) */
+int stat (const char *path, struct stat *st)
+{
+  struct stat64 s;
+  if (stat_path (path, &s)) return -1;
+  return narrow_stat (&s, st);
+}
+int lstat (const char *path, struct stat *st) { return stat (path, st); }
+/* F_OK: it is there; R_OK, W_OK, X_OK: the bits of the mode that stat gives (a directory has all of them) */
+int access (const char *path, int mode)
+{
+  struct stat64 s;
+  if (mode & ~(R_OK | W_OK | X_OK)) { errno = EINVAL; return -1; }
+  if (stat_path (path, &s)) return -1;
+  if (((mode & R_OK) && !(s.st_mode & 0444)) || ((mode & W_OK) && !(s.st_mode & 0222)) || ((mode & X_OK) && !(s.st_mode & 0111))) { errno = EACCES; return -1; }
+  return 0;
+}
+
 static int fill_stat (int fd, struct stat64 *st)
 {
   FILE *f = get (fd);
@@ -240,7 +360,7 @@ static int fill_stat (int fd, struct stat64 *st)
 	  attr = (unsigned) b.end & 3;
 	  st->st_atime = st->st_mtime = st->st_ctime = stamp_to_time ((unsigned) b.load, (unsigned) b.exec);
 	}
-      st->st_mode = S_IFREG | ((attr & 1) ? 0444 : 0) | ((attr & 2) ? 0222 : 0);
+      st->st_mode = S_IFREG | file_mode ((unsigned) b.load, attr);
     }
   else st->st_mode = S_IFCHR | 0620;                              /* the keyboard and the screen */
   return 0;
@@ -250,10 +370,7 @@ int fstat (int fd, struct stat *st)
 {
   struct stat64 s;
   if (fill_stat (fd, &s)) return -1;
-  if (s.st_size > 0x7FFFFFFFLL) { errno = EOVERFLOW; return -1; }
-  st->st_dev = s.st_dev; st->st_ino = s.st_ino; st->st_mode = s.st_mode; st->st_nlink = s.st_nlink; st->st_uid = s.st_uid; st->st_gid = s.st_gid; st->st_rdev = s.st_rdev;
-  st->st_size = (off_t) s.st_size; st->st_atime = s.st_atime; st->st_mtime = s.st_mtime; st->st_ctime = s.st_ctime; st->st_blksize = s.st_blksize; st->st_blocks = s.st_blocks;
-  return 0;
+  return narrow_stat (&s, st);
 }
 
 int ftruncate (int fd, off_t length)

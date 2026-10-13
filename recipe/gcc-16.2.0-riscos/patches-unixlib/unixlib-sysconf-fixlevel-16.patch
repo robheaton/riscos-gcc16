@@ -1,0 +1,18 @@
+--- a/libunixlib/unix/sysconf.c	2026-10-11 17:43:05.504041761 +0100
++++ b/libunixlib/unix/sysconf.c	2026-10-11 17:43:13.304266576 +0100
+@@ -153,12 +153,13 @@
+ 	 getrlimit (RLIMIT_STACK) reports the size of the EABI main stack, and
+ 	 POSIX semaphores block instead of polling and have sem_timedwait; 15:
+ 	 gprof (-pg) works for EABI programs: __gnu_mcount_nc, __gmon_start__
+-	 and a sampler thread behind profil ()).
++	 and a sampler thread behind profil (); 16: errno.h has EPROTO, ENODATA,
++	 ENOLINK, EMULTIHOP, ECANCELED, ENOTRECOVERABLE and EOWNERDEAD).
+ 	 Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 15;
++	return 16;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */

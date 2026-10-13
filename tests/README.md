@@ -7,6 +7,7 @@
 | [`selftest/`](selftest) | **start here on RISC OS**: checks a fresh installation of the native compiler (about half a minute) | the packages installed |
 | [`cross-smoke/`](cross-smoke) | **start here on Linux**: checks the cross compiler in a directory, and that it finds everything inside it | the cross toolchain |
 | [`fixlevel/`](fixlevel) | `fixlevel N`: is the UnixLib in use at fix level N? | any compiler |
+| [`errno/`](errno) | `errtest`: the error numbers 92 - 98 (`EPROTO` ... `EOWNERDEAD`) in UnixLib (`strerror`, `sys_nerr`) and in the C++ runtime (`std::system_category ()`) | the cross toolchain, then RISC OS with the runtimes 16.2.0-14 and 16.2.0-6 |
 | [`rotest/`](rotest), [`cxx/`](cxx), [`fortran/`](fortran), [`shlib/`](shlib), [`random/`](random), [`bench/`](bench) | the compiler regression suites (34,541 C checks, 139 C++ checks, Fortran, threads, shared libraries, benchmarks): built on Linux, run on RISC OS | the cross toolchain; GCCSDK 10.2.0 for the `g10`/`cx10` comparison variants |
 | top-level `*.c`, `ulinfo.c`, [`unixlib16/`](unixlib16) | small code-generation probes and the library checks (`ulinfo`: 48 checks) | the cross toolchain |
 | [`unixlib17/`](unixlib17), [`unixlib18/`](unixlib18), [`unixlib24/`](unixlib24), [`unixlib25/`](unixlib25), [`upstream20/`](upstream20) | stack and heap sizes, `mmap` limits, process exit, `scanf`, `vfork` heap, the `.fini_array`, `getrlimit`, semaphores, `.gcda` files: the runtime tests | the cross toolchain |

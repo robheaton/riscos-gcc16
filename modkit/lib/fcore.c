@@ -316,11 +316,20 @@ FILE *__modlib_open_gen (FILE *f, const char *name, int rd, int wr, int create, 
   f->fpos = ext;
   if (ext) f->bits &= ~B_PTR;                                     /* the OS pointer is at 0 */
   if (!(f->bits & B_STATIC)) f->fd = -1;                          /* (a standard stream keeps its descriptor, 0, 1 or 2, by its address) */
-  f->name = 0;
+  f->name = malloc (strlen (name) + 1);                           /* (for fstat's date stamp, and for stat of a file that is open: the length of an open file is the filing system's allocation until it is closed) */
+  if (f->name) strcpy (f->name, name);
   f->next = files;
   files = f;
   __modlib_register_end ();
   return f;
+}
+/* the length of PATH when a stream of this program has it open for writing (the name as it was given to open or fopen): stat of an open file gives the filing system's allocation (24 MB on an NVMe disc), not the length; 1 if found */
+int __modlib_open_length (const char *path, long *ext)
+{
+  FILE *p;
+  for (p = files; p; p = p->next)
+    if (p->kind == K_FILE && (p->mode & M_WRITE) && p->name && !strcmp (p->name, path) && !__modlib_sync (p) && !file_len (p, ext)) return 1;
+  return 0;
 }
 static FILE *open_file (FILE *f, const char *name, const char *mode)
 {

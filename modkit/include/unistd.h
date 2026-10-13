@@ -19,6 +19,15 @@ extern ssize_t write (int fd, const void *buf, size_t n);
 extern int close (int fd);
 extern off_t lseek (int fd, off_t offset, int whence);
 extern off64_t lseek64 (int fd, off64_t offset, int whence);
+#define F_OK		0
+#define R_OK		4
+#define W_OK		2
+#define X_OK		1
+extern int access (const char *path, int mode);                            /* the bits of stat ()'s mode: a file that is not Text or Data is executable when it is readable, as in UnixLib */
+extern int dup (int fd);                                                   /* a second descriptor of the same file (the same position); closing one leaves the other */
+extern int dup2 (int fd, int fd2);                                         /* fd2 from 3 up: what it was is closed; 0 to 2 cannot be redirected (ENOSYS) */
+extern int fsync (int fd);                                                 /* what is buffered is written, then OS_Args 255 */
+extern int fdatasync (int fd);
 extern int isatty (int fd);
 extern int unlink (const char *path);                                      /* a file, not a directory (EISDIR) */
 extern int ftruncate (int fd, off_t length);

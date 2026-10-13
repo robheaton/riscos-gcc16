@@ -52,6 +52,10 @@ struct stat64
 };
 extern int fstat (int fd, struct stat *st);
 extern int fstat64 (int fd, struct stat64 *st);
+extern int stat (const char *path, struct stat *st);                 /* OS_File 17: the type, the date stamp, the length and the attributes; a directory is S_IFDIR with the owner's bits */
+extern int lstat (const char *path, struct stat *st);                /* the same: there are no links */
+extern int stat64 (const char *path, struct stat64 *st);
+extern int lstat64 (const char *path, struct stat64 *st);
 #ifdef __cplusplus
 }
 #endif

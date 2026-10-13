@@ -7,7 +7,7 @@
    (exp (-1000), ldexp (1, -1100)), pow (0, -1) is a pole (ERANGE); a subnormal result sets nothing (except nextafter and, as in glibc, atan2 when it underflows to 0 and asinh / atanh of a subnormal argument; glibc
    sets ERANGE for some subnormal results of expf, exp2f and powf by a rule of its own, which this library does not copy).  pow (1, y) and pow (-1, +-inf) are 1 as C99 says.  The float functions work in double and
    round once.  The macros are the compiler's (__builtin_isnan ...).
-   The long double functions (sinl ...) call the double ones (long double is double).  Not there: erf, gamma, the Bessel functions, fma, remquo, scalbln, nexttoward, nanf, the complex functions. */
+   The long double functions (sinl ...) call the double ones (long double is double).  Not there: erf, gamma, the Bessel functions, fma, remquo, scalbln, nexttoward, nanf (the complex functions are in <complex.h>). */
 #ifndef _MATH_H
 #define _MATH_H
 #ifdef __cplusplus

@@ -67,6 +67,7 @@ typedef struct
   int base;                                                 /* -zbase: Image__RO_Base, a word that holds the address of the module */
   int notreent;                                             /* module-is-not-reentrant: (accepted, no effect) */
   Veneer *ven; int nven;
+  char *pd_entry; char **pd_names; int npd;                 /* pdriver-handler: ENTRY, FN, FN ... */
   int runnable;
   int cxx;                                                  /* module-is-c-plus-plus: */
   unsigned char *mfile; size_t mfilelen;                    /* international-help-file: the name of the Messages file */
@@ -782,9 +783,45 @@ static void parse_cmhg (const char *text, Module *m)
           if (*r) cmhg_error ("module-is-not-reentrant: takes no value");
           m->notreent = 1;
         }
-      else if (strcmp (key, "irq-handlers") == 0 || strcmp (key, "vector-handlers") == 0 || strcmp (key, "generic-veneers") == 0)
+      else if (strcmp (key, "irq-handlers") == 0 || strcmp (key, "vector-handlers") == 0 || strcmp (key, "generic-veneers") == 0 || strcmp (key, "vector-traps") == 0)
         {
           parse_handlers (m, key, r);
+        }
+      else if (strcmp (key, "pdriver-handler") == 0)
+        {
+          /* ENTRY, FUNCTION, FUNCTION ...: ENTRY is the symbol whose value is r0 of PDriver_DeclareDriver (not a C function); the functions are those for reason codes 0, 1, 2 ... (CMunge: read_pdriver) */
+          char *copy, *q, *e;
+          int k, ncomma = 0;
+          if (m->pd_entry) cmhg_error ("Only supply one pdriver-handler!");
+          copy = xstrdup (r);
+          q = copy;
+          while (is_space ((unsigned char) *q)) q++;
+          e = q + strlen (q);
+          while (e > q && is_space ((unsigned char) e[-1])) e--;
+          *e = 0;
+          for (k = 0; q[k]; k++) if (q[k] == ',') ncomma++;
+          {
+            char *start = q;
+            int word = 0;
+            for (;;)
+              {
+                char *comma = strchr (start, ','), *a = start, *b = comma ? comma : start + strlen (start);
+                char *w;
+                size_t j;
+                while (a < b && is_space ((unsigned char) *a)) a++;
+                while (b > a && is_space ((unsigned char) b[-1])) b--;
+                w = xstrndup (a, (size_t) (b - a));
+                if (word == 0 && (!(is_alpha ((unsigned char) w[0]) || w[0] == '_') || strlen (w) == 0)) cmhg_error ("No entry point defined for pdriver-handler!");
+                for (j = 0; w[j]; j++) if (!is_word ((unsigned char) w[j]) || (j == 0 && isdigit ((unsigned char) w[j]))) { if (word == 0) cmhg_error ("No entry point defined for pdriver-handler!"); else cmhg_error ("Wrong separator found in pdriver-handler!"); }
+                if (word == 0) { if (ncomma == 0) cmhg_error ("Wrong separator found in pdriver-handler!"); m->pd_entry = w; }
+                else if (w[0]) { m->pd_names = xrealloc (m->pd_names, sizeof m->pd_names[0] * (size_t) (m->npd + 1)); m->pd_names[m->npd++] = w; }
+                else free (w);
+                word++;
+                if (!comma) break;
+                start = comma + 1;
+              }
+          }
+          free (copy);
         }
       else if (strcmp (key, "event-handler") == 0)
         {
@@ -1302,7 +1339,14 @@ static char *generate_asm (const Module *m, const char *src)
       if (v->pw == 12) strcpy (movs, "\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n");
       else sprintf (movs, "\tmov\tr1, r%d\t\t\t\t@ the private word is in r%d (private-word:)\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n", v->pw, v->pw);
       A (&o, "\tstmfd\tsp!, {r0-%s, lr}\n%s\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7", top, movs);
-      if (generic)
+      if (strcmp (v->kind, "vector-traps") == 0)
+        {
+          /* the vector handler protocol of error-capable: (0 = claim, 1 = pass on, anything else an error block: claim with V set and r0 = the block), and two more arguments for the handler:
+             trap, a function that runs the rest of the vector chain with the registers of its block (vtcall below), and its argument, the block of this entry */
+          A (&o, "\tadrl\tr2, vtcall\t\t\t\t@ trap: the rest of the vector chain\n\tmov\tr3, r0\t\t\t\t@ its argument: the block of this entry");
+          A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #1\n\tbhi\t%s_err\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr\n%s_err:\n\tstr\tr0, [sp]\t\t\t\t@ the error block goes back into r0\n\torr\tr12, r12, #0x10000000\t\t@ V set\n\tldmfd\tsp!, {r0-r11, lr}\n\tldr\tlr, [sp], #4\t\t\t@ and the vector is claimed\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr", v->handler, v->entry, v->entry);
+        }
+      else if (generic)
         {
           /* as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value;
              carry-capable: 2 = return with C set (and V clear), the registers as the handler left them */
@@ -1315,6 +1359,33 @@ static char *generate_asm (const Module *m, const char *src)
       else
         A (&o, "\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr", v->handler);
     }
+  {
+    int any_trap = 0, k;
+    for (k = 0; k < m->nven; k++) if (strcmp (m->ven[k].kind, "vector-traps") == 0) any_trap = 1;
+    if (any_trap)
+      {
+        A (&o, "%s", "");
+        A (&o, "vtcall:\t\t\t\t\t\t@ the trap function of vector-traps: _kernel_oserror *trap (_kernel_swi_regs *regs, void *trappw): the rest of the vector chain, called with r0 - r9 of REGS;\n"
+               "\t\t\t\t\t\t@ TRAPPW (r1) is the block of the entry, whose r10, r11 and lr slots are the chain's continuation (r10, r11, and the pass-on address)\n"
+               "\tstmfd\tsp!, {r0, r4-r11, lr}\n\tadd\tr12, r1, #40\n\tldmia\tr0, {r0-r9}\n\tadrl\tlr, vtresume\n\tstr\tlr, [sp, #-4]!\t\t\t@ the claimant that ends the chain pops this and comes back to vtresume\n"
+               "\tldmia\tr12, {r10, r11, pc}\t\t\t@ on into the chain\n"
+               "vtresume:\t\t\t\t\t@ back: r0 - r9 as the chain left them, V set and r0 = an error block if it claimed with an error\n"
+               "\tldr\tr12, [sp], #4\t\t\t\t@ REGS\n\tstmia\tr12, {r0-r9}\n\tmovvc\tr0, #0\n\tldmfd\tsp!, {r4-r11, pc}");
+      }
+    if (m->pd_entry)
+      {
+        A (&o, "%s", "");
+        A (&o, "\t.global\t%s\n%s:\t\t\t\t\t\t@ pdriver-handler: the entry that is r0 of PDriver_DeclareDriver: r11 = the reason code, r0 - r9 = the registers, r12 = the private word", m->pd_entry, m->pd_entry);
+        A (&o, "\tstmfd\tsp!, {r0-r9, lr}\n\tmrs\tr8, cpsr\n\tmov\tr0, r11\t\t\t\t@ the reason code\n\tmov\tr1, sp\t\t\t\t@ the registers as a block\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n"
+               "\tadrl\tlr, pd_ret\t\t\t\t@ the functions below return here\n\tcmp\tr0, #%d\n\taddlo\tpc, pc, r0, lsl #2\n\tb\tpd_bad", m->npd);
+        for (k = 0; k < m->npd; k++) A (&o, "\tb\t%s", m->pd_names[k]);
+        A (&o, "pd_bad:\n\tmvn\tr0, #0\t\t\t\t\t@ error_BAD_PDRIVER_SWI\n"
+               "pd_ret:\n\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tpd_err\n\tbic\tr8, r8, #0x10000000\t\t\t@ done: V clear, the other flags as they were\n\tmsr\tcpsr_f, r8\n\tldmfd\tsp!, {r0-r9, pc}\n"
+               "pd_err:\n\tcmn\tr0, #1\n\tbne\tpd_fail\n\tadrl\tr0, pd_badswi\t\t\t@ \"SWI values out of range for this module\": the message BadSWI, looked up with the module title as %%0\n\tmov\tr1, #0\n\tmov\tr2, #0\n\tadrl\tr4, title\n\tswi\t0x61506\t\t\t\t@ XMessageTrans_ErrorLookup\n"
+               "pd_fail:\n\torr\tr8, r8, #0x10000000\t\t\t@ V set and r0 = the error block\n\tmsr\tcpsr_f, r8\n\tadd\tsp, sp, #4\t\t\t\t@ (r0 of the block is not restored)\n\tldmfd\tsp!, {r1-r9, pc}\n"
+               "\t.balign\t4\npd_badswi:\n\t.word\t0x1e6\n\t.asciz\t\"BadSWI\"\n\t.balign\t4");
+      }
+  }
   A (&o, "%s", "");
   A (&o, "done:\t\t\t\t\t\t@ r0 = 0 (V clear) or an error pointer (V set)\n\tcmp\tr0, #0\n\tldmfdeq\tsp!, {r4-r11, pc}\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\n\tldmfd\tsp!, {r4-r11, pc}");
   if (m->nerr)                                                         /* error-identifiers: the error blocks (a number and the message), exported as __err_NAME; the header makes _kernel_oserror pointers of them */
@@ -1414,18 +1485,45 @@ static char *generate_h (const Module *m, const char *src)
         }
       A (&o, "\n/* Special error for 'SWI values out of range for this module' */\n#define error_BAD_SWI ((_kernel_oserror *) -1)");
     }
-  for (i = 0; i < m->nven; i++)
-    A (&o, "extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);", m->ven[i].entry, strcmp (m->ven[i].kind, "generic-veneers") == 0 ? "_kernel_oserror *" : "int", m->ven[i].handler);        /* (CMunge: a generic handler returns an error) */
-  {
-    int any_carry = 0, any_err = 0;
+    {
+    int any_trap = 0, any_other = 0, k;
+    for (k = 0; k < m->nven; k++) { if (strcmp (m->ven[k].kind, "vector-traps") == 0) any_trap = 1; else any_other = 1; }
+    if (any_trap)
+      A (&o, "\n/* The function that a vector trap's handler calls to run the rest of the vector chain with the registers of REGS: the result is NULL, or an error block (the chain claimed the vector with V set) */\ntypedef _kernel_oserror *(*vectortrap_f) (_kernel_swi_regs *regs, void *trappw);");
     for (i = 0; i < m->nven; i++)
       {
+        if (strcmp (m->ven[i].kind, "vector-traps") == 0)
+          A (&o, "extern void %s (void);\t\t/* the entry point of the vector: not a C function */\n_kernel_oserror *%s (_kernel_swi_regs *r, void *pw, vectortrap_f trap, void *trappw);", m->ven[i].entry, m->ven[i].handler);
+        else
+          A (&o, "extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);", m->ven[i].entry, strcmp (m->ven[i].kind, "generic-veneers") == 0 ? "_kernel_oserror *" : "int", m->ven[i].handler);        /* (CMunge: a generic handler returns an error) */
+      }
+    if (any_trap)
+      A (&o, "\n/* VECTORTRAP_PASSON should only be returned to pass the call on when you have no interest in it: it is quicker than calling TRAP and returning its result; NULL claims the vector, an error block claims it with V set */\n#define VECTORTRAP_PASSON ((_kernel_oserror *) 1)");
+    if (m->pd_entry)
+      {
+        A (&o, "\nextern void %s (void);\t\t/* the value to give as r0 to PDriver_DeclareDriver: not a C function */", m->pd_entry);
+        A (&o, "/* Functions called to handle the PDriver SWI calls, one for each reason code from 0 */");
+        for (k = 0; k < m->npd; k++)
+          {
+            int j, seen = 0;
+            for (j = 0; j < k; j++) if (strcmp (m->pd_names[j], m->pd_names[k]) == 0) seen = 1;
+            if (!seen) A (&o, "_kernel_oserror *%s (int number, _kernel_swi_regs *r, void *pw);", m->pd_names[k]);
+          }
+        A (&o, "\n/* Return NULL if the call was handled (r0 - r9 as returned in R), an error block, or error_BAD_PDRIVER_SWI for a reason code that this module does not handle */\n#define error_BAD_PDRIVER_SWI ((_kernel_oserror *) -1)");
+      }
+    (void) any_other;
+  }
+  {
+    int any_carry = 0, any_err = 0, nonvt = 0;
+    for (i = 0; i < m->nven; i++)
+      {
+        if (strcmp (m->ven[i].kind, "vector-traps") != 0) nonvt = 1;
         if (strcmp (m->ven[i].kind, "generic-veneers") == 0 && m->ven[i].carry) any_carry = 1;
         if (m->ven[i].errc) any_err = 1;
       }
     if (any_carry)
       A (&o, "\n/* VENEER_SETCARRY can be returned from a generic veneer's function that is carry-capable: return with C set, all other registers as the function left them */\n#define VENEER_SETCARRY ((_kernel_oserror *) 2)");
-    if (m->nven) A (&o, "\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)");
+    if (nonvt) A (&o, "\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)");
     if (m->nven && any_err)
       A (&o, "\n/* VECTOR_ERROR (err) can be returned from a vector handler that is error-capable: claim the vector and return with V set and r0 = the error block */\n#define VECTOR_ERROR(err) ((int) (err))");
   }

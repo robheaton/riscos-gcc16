@@ -97,6 +97,13 @@ extern int errno;
 #define ESIG 89
 #define EILSEQ 90
 #define EOVERFLOW 91
+#define EPROTO 92                         /* the POSIX codes that UnixLib lacks too: numbers after its last (91) */
+#define ENODATA 93
+#define ENOLINK 94
+#define EMULTIHOP 95
+#define ECANCELED 96
+#define ENOTRECOVERABLE 97
+#define EOWNERDEAD 98
 #include <_modlib_ext.h>
 #ifdef __MODLIB_EXT
 extern const char *sys_errlist[];

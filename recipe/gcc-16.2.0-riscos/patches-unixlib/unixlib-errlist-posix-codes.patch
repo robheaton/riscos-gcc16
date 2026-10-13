@@ -1,0 +1,16 @@
+--- a/libunixlib/sys/errlist.c	2026-10-11 17:43:05.510423707 +0100
++++ b/libunixlib/sys/errlist.c	2026-10-11 17:43:05.518921326 +0100
+@@ -146,6 +146,13 @@
+   "Signal Received",				/* ESIG, as flagged by SIG_ERR */
+   "Invalid multibyte sequence",			/* (90) EILSEQ */
+   "Value too large for defined data type",	/* EOVERFLOW */
++  "Protocol error",				/* EPROTO */
++  "No data available",				/* ENODATA */
++  "Link has been severed",			/* ENOLINK */
++  "Multihop attempted",				/* EMULTIHOP */
++  "Operation canceled",				/* ECANCELED */
++  "State not recoverable",			/* ENOTRECOVERABLE */
++  "Owner died",					/* EOWNERDEAD */
+ #endif
+ };
+ 

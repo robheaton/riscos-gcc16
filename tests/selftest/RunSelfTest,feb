@@ -1,4 +1,4 @@
-| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-21 on SharedLibs-C-armeabihf 16.2.0-13 or later).
+| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-22 on SharedLibs-C-armeabihf 16.2.0-13 or later).
 | It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov, a profile-guided build, a gprof run and a module that is built, loaded and run, and checks that a compile error is reported.
 | BEFORE: install the packages with PackMan, REBOOT, and double-click !GCC16 once (it sets GCC16$Dir and the search path).
 | RUN IT IN A TASK WINDOW (Ctrl-F12):     Obey <GCC16Test$Dir>.RunSelfTest        About half a minute.
@@ -23,7 +23,7 @@ Copy <SelfTest$Src>.Makefile <SelfTest$Dir>.Makefile F~C~V
 Dir <SelfTest$Dir>
 | what double-clicking !GCC16 does: Run$Path, return code limit and the suffix swapping lists of every tool
 Obey <GCC16$Dir>.!Run
-If "<GCC16$Version>" <> "16.2.0-21" Then Error This self-test is for Gcc16 16.2.0-21 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-21 with PackMan, reboot, double-click !GCC16, then run this again
+If "<GCC16$Version>" <> "16.2.0-22" Then Error This self-test is for Gcc16 16.2.0-22 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-22 with PackMan, reboot, double-click !GCC16, then run this again
 Unset TMPDIR
 WimpSlot -min 48M -max 48M
 Unset SelfTest$Fails
@@ -32,7 +32,7 @@ Time
 Echo GCC16 <GCC16$Version> is in <GCC16$Dir>.  The test directory is <SelfTest$Dir>.
 Spool
 SpoolOn <SelfTest$Dir>.Results
-Echo ===================== 1. the runtime: UnixLib fix level 15 (SharedLibs-C-armeabihf 16.2.0-13)
+Echo ===================== 1. the runtime: UnixLib fix level 15 or more (SharedLibs-C-armeabihf 16.2.0-13 or later)
 GCC16bin:gcc -O2 -o fixlevel fixlevel.c
 Set SelfTest$RC <Sys$ReturnCode>
 If "<SelfTest$RC>" = "0" Then Echo PASS: compile fixlevel.c
@@ -40,8 +40,8 @@ If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile fixlevel.c (return code <SelfT
 If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> fixlevel-compile
 IfThere <SelfTest$Dir>.fixlevel Then Run <SelfTest$Dir>.fixlevel 15
 Set SelfTest$RC <Sys$ReturnCode>
-If "<SelfTest$RC>" = "0" Then Echo PASS: the runtime is at fix level 15
-If "<SelfTest$RC>" <> "0" Then Echo FAIL: the runtime is not at fix level 15: install SharedLibs-C-armeabihf 16.2.0-13 with PackMan and REBOOT
+If "<SelfTest$RC>" = "0" Then Echo PASS: the runtime is at fix level 15 or more
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: the runtime is below fix level 15: install SharedLibs-C-armeabihf 16.2.0-13 or later with PackMan and REBOOT
 If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> fixlevel-run
 Time
 Spool

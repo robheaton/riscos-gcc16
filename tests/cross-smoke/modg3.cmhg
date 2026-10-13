@@ -1,0 +1,7 @@
+title-string:           ModG3
+help-string:            ModG3 0.01
+date-string:            11 Oct 2026
+command-keyword-table:  modg3_cmd
+  ModG3_Go(min-args: 0, max-args: 0, help-text: "*ModG3_Go\n", invalid-syntax: "Syntax: *ModG3_Go")
+vector-traps:           vta/vta_handler
+pdriver-handler:        pdentry, pd_info

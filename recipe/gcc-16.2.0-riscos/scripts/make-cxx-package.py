@@ -5,6 +5,7 @@
   16.2.0-3: libstdc++ with the atomic.cc timed-wait clock fix and hardware_concurrency()==1 (SRC=build/.../src/.libs/...)
   16.2.0-4: std::random_device reads /dev/urandom (SRC=build-f/arm-riscos-gnueabihf/libstdc++-v3/src/.libs/libstdc++.so.6.0.36)
   16.2.0-5: the same, built with -fstack-clash-protection (the new compiler default)
+  16.2.0-6: built against the headers with the seven new errno codes (system_error.cc maps them)
 usage: make-cxx-package.py [REL] [SRC]   (defaults: 3, the in-tree build)"""
 import os, struct, subprocess, sys, time, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,7 +43,9 @@ NOTE = {"2": "", "3": ("\n\nlibstdc++.so.6.0.36 changes since 16.2.0-2: std::cou
               "Mersenne twister, and falls back to a time-seeded engine where the device cannot be opened.  Built from a clean from-recipe build "
               "(build-f)."),
         "5": ("\n\nlibstdc++.so.6.0.36 changes since 16.2.0-4: built with -fstack-clash-protection (the new default of the compiler: every function with a stack frame touches the "
-              "pages of its frame, so no page of the lazily mapped EABI stack is first touched by RISC OS or by a 64-byte store); the code is otherwise the same.")}.get(REL, "")
+              "pages of its frame, so no page of the lazily mapped EABI stack is first touched by RISC OS or by a 64-byte store); the code is otherwise the same."),
+        "6": ("\n\nlibstdc++.so.6.0.36 changes since 16.2.0-5: built against the UnixLib headers of 16.2.0-14, whose <errno.h> has EPROTO, ENODATA, ENOLINK, EMULTIHOP, ECANCELED, ENOTRECOVERABLE and EOWNERDEAD: "
+              "std::system_category ().default_error_condition () now puts six of them in the generic category (all but EMULTIHOP, which C++'s std::errc does not have); it knew none of them before; the code is otherwise the same.")}.get(REL, "")
 tmp = OUT + "libstdc++.so.6.0.36"
 subprocess.run(["cp", SRC, tmp], check=True)
 subprocess.run([STRIP, "--strip-unneeded", tmp], check=True)

@@ -172,6 +172,10 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
 
 #define TARGET_RISCOSELF
 
+/* UnixLib has the POSIX file functions (mkdir (path, mode), access, fcntl): libgcov creates the missing directories of the path of a .gcda file (under GCOV_PREFIX, or the build
+   directory that is not there on the target) itself instead of failing to write the file.  This also makes libgcov lock the file with fcntl (F_SETLKW), which UnixLib accepts and ignores.  */
+#define TARGET_POSIX_IO
+
 /* Override configure checks for mmap() compatibility.  Our C library
    partly provides these features, but they do not work in a way
    that the garbage collector expects.  */

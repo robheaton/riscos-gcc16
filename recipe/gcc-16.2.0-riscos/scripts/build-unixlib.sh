@@ -106,6 +106,12 @@ apply_patch unixlib-sysconf-fixlevel-14.patch
 apply_patch unixlib-gprof-eabi.patch
 # sysconf (0x4700) answers 15.
 apply_patch unixlib-sysconf-fixlevel-15.patch
+# <errno.h> had no EPROTO, ENODATA, ENOLINK, EMULTIHOP, ECANCELED, ENOTRECOVERABLE or EOWNERDEAD (libgcov, libstdc++'s error_constants.h and the ported programs use them): numbers 92-98
+# after the last of UnixLib (EOVERFLOW 91), with their strerror texts (prepare-sysroot.sh applies the header patch to the headers of the cross tool chain too).
+apply_patch unixlib-errno-posix-codes.patch
+apply_patch unixlib-errlist-posix-codes.patch
+# sysconf (0x4700) answers 16.
+apply_patch unixlib-sysconf-fixlevel-16.patch
 # TEST BUILDS ONLY (debugging aids that are not part of the library): EXTRA_PATCHES="unixlib-ul-trace.patch" EXTRA_DEFS="-DULTRACE" builds a libunixlib that appends a line to a log file at the steps of
 # fork/vfork (see the comment in sys/_vfork.s); the same patch built without EXTRA_DEFS must give the very library of the release (checked by tools/check-ul-trace.sh).  Unset: nothing changes.
 for ep in ${EXTRA_PATCHES:-}; do apply_patch "$ep"; done

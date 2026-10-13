@@ -17,8 +17,8 @@ This page installs the compiler that runs **on RISC OS**. For the Linux cross co
 Download from the [releases page](https://github.com/robheaton/riscos-gcc16/releases) (check them against `SHA256SUMS` if you can):
 
 * `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` (always needed)
-* `Gcc16_16.2.0-21_arm.zip` (the compiler)
-* `Gcc16SelfTest_16.2.0-21_arm.zip` (optional: a self-test of the installation, see section 3, "Check it")
+* `Gcc16_16.2.0-22_arm.zip` (the compiler)
+* `Gcc16SelfTest_16.2.0-22_arm.zip` (optional: a self-test of the installation, see section 3, "Check it")
 * `SharedULibFix_1.16-vforkfix3_arm.zip` (optional: a fixed SharedUnixLibrary module, which **replaces a system module**: see "The fixed SharedUnixLibrary" below before you install it)
 * `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip` and `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` (optional: only for programs that link libstdc++ or libgfortran dynamically, which is the cross compiler's default; the native compiler links them statically)
 
@@ -33,11 +33,11 @@ A package zip must have the file type **Zip (&A91)**. If it arrives as Text or D
 
 ## 2. Install
 
-1. **Drag `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` onto the PackMan icon on the icon bar** and confirm the install.
-2. **Drag `Gcc16_16.2.0-21_arm.zip` onto the PackMan icon** and confirm. PackMan insists on this order, because `Gcc16` depends on `SharedLibs-C-armeabihf` 16.2.0-13 or later.
+1. **Drag `SharedLibs-C-armeabihf_16.2.0-14_arm.zip` onto the PackMan icon on the icon bar** and confirm the install.
+2. **Drag `Gcc16_16.2.0-22_arm.zip` onto the PackMan icon** and confirm. PackMan insists on this order, because `Gcc16` depends on `SharedLibs-C-armeabihf` 16.2.0-13 or later.
 3. Optionally do the same for the C++ and Fortran runtime zips.
 
-   `SharedLibs-C-armeabihf` 16.2.0-13 **takes the place of** GCCSDK's own package of that name (10.2.0-1): it has the same set of files, with `libunixlib` and `libm` (UnixLib) rebuilt and fixed. Programs built with GCCSDK's 10.2.0 compilers keep working on it (checked with a C++ and a thread test).
+   `SharedLibs-C-armeabihf` 16.2.0-14 **takes the place of** GCCSDK's own package of that name (10.2.0-1): it has the same set of files, with `libunixlib` and `libm` (UnixLib) rebuilt and fixed. Programs built with GCCSDK's 10.2.0 compilers keep working on it (checked with a C++ and a thread test).
    PackMan will not offer GCCSDK's older version as an upgrade over it.
 4. **Reboot the machine.** PackMan replaces the files on the disk, but the library manager keeps the copy of UnixLib it has already loaded, so the old code keeps running until the machine restarts.
 5. **Double-click `!GCC16`** (PackMan puts it in the `Apps.Utilities` directory of your Apps location). Its `!Run` sets up the search path (`Run$Path`), the return-code limit and the filename suffix swapping that the compiler relies on. These are system variables, so **do this again after every reboot** (or run `!GCC16.!Run` from your own boot sequence).
@@ -57,10 +57,10 @@ To check that the **loaded** UnixLib is the new one, compile and run the small p
 
 ```
 gcc -O2 -o fixlevel fixlevel.c
-fixlevel 15
+fixlevel 16
 ```
 
-It should print `fixlevel: libunixlib fix level 15 (15 or more is needed): OK` (the runtime package 16.2.0-13 is fix level 15). (`*Info` on the library file cannot tell the versions apart: it shows only the size in megabytes.)
+It should print `fixlevel: libunixlib fix level 16 (16 or more is needed): OK` (the runtime package 16.2.0-14 is fix level 16; `Gcc16` itself needs only 15, the level of 16.2.0-13). (`*Info` on the library file cannot tell the versions apart: it shows only the size in megabytes.)
 Fix levels and what they mean are listed in [RUNTIME.md](RUNTIME.md).
 
 To check the whole installation, install the optional `Gcc16SelfTest` package the same way (after `Gcc16`), open the folder that contains `!GCC16Test` once, and type in a Task window `Obey <GCC16Test$Dir>.RunSelfTest`. It compiles and runs twelve small tests (C, C++, Fortran, `make`, `-flto`, a compile error, coverage with `gcov`, profile-guided optimisation, `gprof`, and a module that is built, loaded and run) in about half a minute and ends with `SELFTEST: ALL CHECKS PASSED` ([tests/selftest](../tests/selftest/README.md)). It is made for this release and stops with a message if the installed `Gcc16` is not 16.2.0-17.
@@ -74,7 +74,7 @@ The stock SharedUnixLibrary 1.16 that RISC OS ships has bugs that show when a pr
 ## Upgrading, going back, removing
 
 * **Upgrade:** drag the newer zips onto PackMan the same way (runtime first), then reboot.
-* **Go back:** install the older package from its release (remove the newer one first in PackMan if it refuses to go back), then reboot. `Gcc16` 16.2.0-21 needs a runtime of 16.2.0-13 or later (so do 16.2.0-13 to -16; `Gcc16` 16.2.0-12 needs 16.2.0-12 or later, and 16.2.0-8 to -11 need 16.2.0-10 or later).
+* **Go back:** install the older package from its release (remove the newer one first in PackMan if it refuses to go back), then reboot. `Gcc16` 16.2.0-22 needs a runtime of 16.2.0-13 or later (so do 16.2.0-13 to -16; `Gcc16` 16.2.0-12 needs 16.2.0-12 or later, and 16.2.0-8 to -11 need 16.2.0-10 or later).
 * **Remove:** remove `Gcc16` in PackMan. `SharedLibs-C-armeabihf` is the runtime of **every** program built by this tool chain (and of other EABI programs): remove it only if nothing needs it.
 
 ## If something goes wrong

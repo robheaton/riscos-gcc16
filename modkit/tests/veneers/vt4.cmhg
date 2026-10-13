@@ -1,0 +1,12 @@
+; VecTrapTest: vector-traps and pdriver-handler (tests/sim-vtraps.py)
+title-string:           VecTrapTest
+help-string:            VecTrapTest 1.00
+date-string:            11 Oct 2026
+
+initialisation-code:    vtt_init
+
+; two vector traps: the first with its handler named, the second with the default name (vtb_handler)
+vector-traps:           vta/vta_handler, vtb
+
+; the printer driver entry: pdentry is not a function; three reason codes (0, 1 and 2), the first and the third with the same function
+pdriver-handler:        pdentry, pd_info, pd_set, pd_info

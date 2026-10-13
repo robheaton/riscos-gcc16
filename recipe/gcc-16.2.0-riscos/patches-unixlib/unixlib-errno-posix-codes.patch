@@ -1,0 +1,20 @@
+--- a/libunixlib/include/errno.h	2026-10-11 17:43:05.505894247 +0100
++++ b/libunixlib/include/errno.h	2026-10-11 17:43:05.517248087 +0100
+@@ -186,8 +186,16 @@
+ #  define ESIG			89
+ #  define EILSEQ		90 /* Invalid multibyte sequence.  */
+ #  define EOVERFLOW		91 /* Value too large for defined data type */
++/* The remaining POSIX codes (they have no number in the original list; these follow its last one).  */
++#  define EPROTO		92 /* Protocol error.  */
++#  define ENODATA		93 /* No data available.  */
++#  define ENOLINK		94 /* Link has been severed.  */
++#  define EMULTIHOP		95 /* Multihop attempted.  */
++#  define ECANCELED		96 /* Operation canceled.  */
++#  define ENOTRECOVERABLE	97 /* State not recoverable.  */
++#  define EOWNERDEAD		98 /* Owner died.  */
+ 
+-#  define __SYS_NERR		91
++#  define __SYS_NERR		98
+ #endif
+ 
+ #undef errno

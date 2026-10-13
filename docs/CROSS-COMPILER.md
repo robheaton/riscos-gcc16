@@ -9,8 +9,8 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-21-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-21-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-22-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-22-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 
@@ -47,7 +47,7 @@ Install the runtime packages from the same release with PackMan (see [INSTALL-RI
 
 Do not use `-static-libgcc`: the link then fails, because UnixLib refers to libgcc symbols (it works only with `-Wl,--allow-shlib-undefined`).
 Check what a program needs with `arm-riscos-gnueabihf-readelf -d prog,e1f | grep NEEDED`.
-Use the runtime of the same release (`SharedLibs-C-armeabihf` 16.2.0-13): older ones lack the fixes listed in [RUNTIME.md](RUNTIME.md).
+Use the runtime of the same release (`SharedLibs-C-armeabihf` 16.2.0-14): older ones lack the fixes listed in [RUNTIME.md](RUNTIME.md).
 
 ## Coverage and profile-guided optimisation
 
@@ -67,7 +67,7 @@ Copy `prog,e1f` to RISC OS and run it. The program writes `prog.gcda` to the **a
 *prog
 ```
 
-writes `prog.gcda` (the RISC OS file `prog/gcda`) in the current directory. Copy the file back and read it with the cross `gcov`, next to `prog.gcno` and `prog.c`:
+writes `prog.gcda` (the RISC OS file `prog/gcda`) in the current directory. Since 16.2.0-22 libgcov creates the directories of the path it writes to when they are not there yet (`*Set GCOV_PREFIX out/a/b` makes `out`, `out.a` and `out.a.b`); before, the program ended without a profile. Copy the file back and read it with the cross `gcov`, next to `prog.gcno` and `prog.c`:
 
 ```bash
 arm-riscos-gnueabihf-gcov -b -c prog.gcda       # or: arm-riscos-gnueabihf-gcov prog.c

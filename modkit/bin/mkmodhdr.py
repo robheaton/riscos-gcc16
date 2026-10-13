@@ -34,7 +34,7 @@ relocates itself once, in its initialisation (modkit/bin/modreloc.py appends the
                                    __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
   flags of a command (no value):   international: (help-text and invalid-syntax are tokens of the Messages file), add-syntax: (the syntax text follows the help text: *Help shows both), configure: / status:
                                    (a *Configure / *Status command), fs-command: (a command of this filing system module).  help: is refused, as CMunge refuses it
-Anything else is an error, not silently dropped (CMunge's pdriver-handler:, vector-traps: and module-is-runnable: simple-app: are not supported).  All the RISC OS numbers in the output come from the RISC OS headers (riscos_consts.py)."""
+Anything else is an error, not silently dropped (CMunge's module-is-runnable: simple-app: is not supported).  All the RISC OS numbers in the output come from the RISC OS headers (riscos_consts.py)."""
 import argparse, os, re, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
@@ -252,7 +252,7 @@ def parse_command_table(rest):
 
 def parse_handlers(key, r):
     """ENTRY[/HANDLER][(options)] ... -> [(entry, handler, {private-word: n, carry-capable, error-capable})]: the options that CMunge allows - private-word: rN and carry-capable: for generic-veneers, error-capable: for vector-handlers, none for irq-handlers"""
-    allow = {"generic-veneers": ("private-word", "carry-capable"), "vector-handlers": ("error-capable",), "irq-handlers": ()}[key]
+    allow = {"generic-veneers": ("private-word", "carry-capable"), "vector-handlers": ("error-capable",), "irq-handlers": (), "vector-traps": ()}[key]
     out = []; pos = 0
     while True:
         while pos < len(r) and r[pos] in " \t\n\r\v\f,": pos += 1
@@ -314,7 +314,7 @@ def parse_error_identifiers(r):
 
 def parse(text, zerrors=False):
     m = dict(title=None, help=None, date=None, init=None, final=None, cxx=False, service=None, service_numbers=[], commands=None, cmd_handler=None, swi_chunk=0, swi_prefix=None, swi_names=[], swi_handler=None,
-             veneers=[], runnable=False, mfile=None, warnings=[], swi_handlers=[], swi_decoder=None, swi_decoder2=None, notreent=False, error_base=0, errors=[])
+             veneers=[], pdriver=None, runnable=False, mfile=None, warnings=[], swi_handlers=[], swi_decoder=None, swi_decoder2=None, notreent=False, error_base=0, errors=[])
     for key, rest in logical_lines(text):
         r = rest.strip()
         if zerrors and key not in ("error-chunk-base-number", "error-base", "error-identifiers"): raise CmhgError("%s is not supported by cmunge in 'errors' mode (-zerrors)" % key)
@@ -351,8 +351,17 @@ def parse(text, zerrors=False):
         elif key == "module-is-not-reentrant":
             if r: raise CmhgError("module-is-not-reentrant: takes no value")
             m["notreent"] = True
-        elif key in ("irq-handlers", "vector-handlers", "generic-veneers"):
+        elif key in ("irq-handlers", "vector-handlers", "generic-veneers", "vector-traps"):
             for e, h, o in parse_handlers(key, r): m["veneers"].append((key, e, h, (), o))
+        elif key == "pdriver-handler":
+            # ENTRY, FUNCTION, FUNCTION ...: ENTRY is the symbol whose value is r0 of PDriver_DeclareDriver (not a C function); the functions are those for reason codes 0, 1, 2 ... (CMunge: read_pdriver)
+            if m["pdriver"] is not None: raise CmhgError("Only supply one pdriver-handler!")
+            words = [w for w in re.split(r"[ \t\n\r\v\f]*,[ \t\n\r\v\f]*", r.strip()) if True]
+            if not words or not re.fullmatch(r"[A-Za-z_]\w*", words[0]): raise CmhgError("No entry point defined for pdriver-handler!")
+            if len(words) < 2 and "," not in r: raise CmhgError("Wrong separator found in pdriver-handler!")
+            for w in words[1:]:
+                if w and not re.fullmatch(r"[A-Za-z_]\w*", w): raise CmhgError("Wrong separator found in pdriver-handler!")
+            m["pdriver"] = (words[0], [w for w in words[1:] if w])
         elif key == "event-handler":
             # ENTRY[/HANDLER] [number ...]: a veneer for the event vector; events that are not in the list go on at once, otherwise it works as a vector-handlers veneer
             if re.search(r"\(\s*[A-Za-z]", r): raise CmhgError("Event handlers cannot be passed parameters")        # (the event numbers may be in parentheses: the preprocessor made them)
@@ -635,7 +644,12 @@ def generate_asm(m, src):
         if pw == 12: movs = "\tmov\tr0, sp\t\t\t\t@ the registers as a block\n\tmov\tr1, r12\n"
         else: movs = "\tmov\tr1, r%d\t\t\t\t@ the private word is in r%d (private-word:)\n\tmov\tr0, sp\t\t\t\t@ the registers as a block\n" % (pw, pw)
         A("\tstmfd\tsp!, {r0-%s, lr}\n%s\tmrs\tr6, cpsr\n\torr\tr3, r6, #3\t\t\t@ SVC mode (an interrupt handler is entered in IRQ mode: &12 -> &13)\n\tmsr\tcpsr_c, r3\n\tmov\tr7, lr\t\t\t\t@ lr_svc: the interrupted code's\n\tmov\tr4, sp\n\tbic\tsp, sp, #7" % (top, movs))
-        if kind == "generic-veneers":
+        if kind == "vector-traps":
+            # vector-traps: the vector handler protocol of error-capable: (0 = claim, 1 = pass on, anything else an error block: claim with V set and r0 = the block), and two more arguments for the handler:
+            # trap, a function that runs the rest of the vector chain with the registers of its block (vtcall below), and its argument, the block of this entry
+            A("\tadrl\tr2, vtcall\t\t\t\t@ trap: the rest of the vector chain\n\tmov\tr3, r0\t\t\t\t@ its argument: the block of this entry")
+            A("\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #1\n\tbhi\t%s_err\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr\n%s_err:\n\tstr\tr0, [sp]\t\t\t\t@ the error block goes back into r0\n\torr\tr12, r12, #0x10000000\t\t@ V set\n\tldmfd\tsp!, {r0-r11, lr}\n\tldr\tlr, [sp], #4\t\t\t@ and the vector is claimed\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr" % (handler, entry, entry))
+        elif kind == "generic-veneers":
             # as CMunge's: 0 = return to the caller with the registers as the handler left them in the block and the flags as they were; anything else = return with V set and r0 = that value;
             # carry-capable: 2 = return with C set (and V clear), the registers as the handler left them
             if opts.get("carry-capable"):
@@ -647,6 +661,26 @@ def generate_asm(m, src):
             A("\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #1\n\tbhi\t%s_err\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr\n%s_err:\n\tstr\tr0, [sp]\t\t\t\t@ the error block goes back into r0\n\torr\tr12, r12, #0x10000000\t\t@ V set\n\tldmfd\tsp!, {r0-r11, lr}\n\tldr\tlr, [sp], #4\t\t\t@ and the vector is claimed\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr" % (handler, entry, entry))
         else:
             A("\tbl\t%s\n\tmov\tsp, r4\n\tmov\tlr, r7\n\tmsr\tcpsr_c, r6\t\t\t@ the mode we were called in\n\tmov\tr12, r6\n\tcmp\tr0, #0\n\tldmfd\tsp!, {r0-r11, lr}\n\tldreq\tlr, [sp], #4\t\t\t@ 0: claim the vector: return to the address the kernel stacked\n\tmsr\tcpsr_f, r12\n\tmov\tpc, lr" % handler)
+    if any(v[0] == "vector-traps" for v in m["veneers"]):
+        A("")
+        A("vtcall:\t\t\t\t\t\t@ the trap function of vector-traps: _kernel_oserror *trap (_kernel_swi_regs *regs, void *trappw): the rest of the vector chain, called with r0 - r9 of REGS;\n"
+          "\t\t\t\t\t\t@ TRAPPW (r1) is the block of the entry, whose r10, r11 and lr slots are the chain's continuation (r10, r11, and the pass-on address)\n"
+          "\tstmfd\tsp!, {r0, r4-r11, lr}\n\tadd\tr12, r1, #40\n\tldmia\tr0, {r0-r9}\n\tadrl\tlr, vtresume\n\tstr\tlr, [sp, #-4]!\t\t\t@ the claimant that ends the chain pops this and comes back to vtresume\n"
+          "\tldmia\tr12, {r10, r11, pc}\t\t\t@ on into the chain\n"
+          "vtresume:\t\t\t\t\t@ back: r0 - r9 as the chain left them, V set and r0 = an error block if it claimed with an error\n"
+          "\tldr\tr12, [sp], #4\t\t\t\t@ REGS\n\tstmia\tr12, {r0-r9}\n\tmovvc\tr0, #0\n\tldmfd\tsp!, {r4-r11, pc}")
+    if m["pdriver"] is not None:
+        entry, hs = m["pdriver"]
+        A("")
+        A("\t.global\t%s\n%s:\t\t\t\t\t\t@ pdriver-handler: the entry that is r0 of PDriver_DeclareDriver: r11 = the reason code, r0 - r9 = the registers, r12 = the private word" % (entry, entry))
+        A("\tstmfd\tsp!, {r0-r9, lr}\n\tmrs\tr8, cpsr\n\tmov\tr0, r11\t\t\t\t@ the reason code\n\tmov\tr1, sp\t\t\t\t@ the registers as a block\n\tmov\tr2, r12\n\tmov\tr4, sp\n\tbic\tsp, sp, #7\n"
+          "\tadrl\tlr, pd_ret\t\t\t\t@ the functions below return here\n\tcmp\tr0, #%d\n\taddlo\tpc, pc, r0, lsl #2\n\tb\tpd_bad" % len(hs))
+        for h in hs: A("\tb\t%s" % h)
+        A("pd_bad:\n\tmvn\tr0, #0\t\t\t\t\t@ error_BAD_PDRIVER_SWI\n"
+          "pd_ret:\n\tmov\tsp, r4\n\tcmp\tr0, #0\n\tbne\tpd_err\n\tbic\tr8, r8, #0x10000000\t\t\t@ done: V clear, the other flags as they were\n\tmsr\tcpsr_f, r8\n\tldmfd\tsp!, {r0-r9, pc}\n"
+          "pd_err:\n\tcmn\tr0, #1\n\tbne\tpd_fail\n\tadrl\tr0, pd_badswi\t\t\t@ \"SWI values out of range for this module\": the message BadSWI, looked up with the module title as %0\n\tmov\tr1, #0\n\tmov\tr2, #0\n\tadrl\tr4, title\n\tswi\t0x61506\t\t\t\t@ XMessageTrans_ErrorLookup\n"
+          "pd_fail:\n\torr\tr8, r8, #0x10000000\t\t\t@ V set and r0 = the error block\n\tmsr\tcpsr_f, r8\n\tadd\tsp, sp, #4\t\t\t\t@ (r0 of the block is not restored)\n\tldmfd\tsp!, {r1-r9, pc}\n"
+          "\t.balign\t4\npd_badswi:\n\t.word\t0x1e6\n\t.asciz\t\"BadSWI\"\n\t.balign\t4")
     A("")
     A("done:\t\t\t\t\t\t@ r0 = 0 (V clear) or an error pointer (V set)\n\tcmp\tr0, #0\n\tldmfdeq\tsp!, {r4-r11, pc}\n\tmov\tr1, #0\n\tcmp\tr1, #0x80000000\n\tldmfd\tsp!, {r4-r11, pc}")
     if m["errors"]:                                                                          # error-identifiers: the error blocks (a number and the message), exported as __err_NAME; the header makes _kernel_oserror pointers of them
@@ -694,11 +728,23 @@ def generate_h(m, src, name):
         for i, n in enumerate(m["swi_names"]):
             A("#undef %s_%s\n#undef X%s_%s\n#define %s_%s\t\t(%#x)\n#define X%s_%s\t\t(%#x)" % (m["swi_prefix"], n, m["swi_prefix"], n, m["swi_prefix"], n, m["swi_chunk"] + i, m["swi_prefix"], n, m["swi_chunk"] + i + 0x20000))
         A("\n/* Special error for 'SWI values out of range for this module' */\n#define error_BAD_SWI ((_kernel_oserror *) -1)")
+    if any(v[0] == "vector-traps" for v in m["veneers"]):
+        A("\n/* The function that a vector trap's handler calls to run the rest of the vector chain with the registers of REGS: the result is NULL, or an error block (the chain claimed the vector with V set) */\ntypedef _kernel_oserror *(*vectortrap_f) (_kernel_swi_regs *regs, void *trappw);")
     for kind, entry, handler, _, _o in m["veneers"]:
-        A("extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);" % (entry, "_kernel_oserror *" if kind == "generic-veneers" else "int", handler))        # (CMunge: a generic handler returns an error)
+        if kind == "vector-traps":
+            A("extern void %s (void);\t\t/* the entry point of the vector: not a C function */\n_kernel_oserror *%s (_kernel_swi_regs *r, void *pw, vectortrap_f trap, void *trappw);" % (entry, handler))
+        else: A("extern void %s (void);\n%s %s (_kernel_swi_regs *r, void *pw);" % (entry, "_kernel_oserror *" if kind == "generic-veneers" else "int", handler))        # (CMunge: a generic handler returns an error)
+    if any(v[0] == "vector-traps" for v in m["veneers"]):
+        A("\n/* VECTORTRAP_PASSON should only be returned to pass the call on when you have no interest in it: it is quicker than calling TRAP and returning its result; NULL claims the vector, an error block claims it with V set */\n#define VECTORTRAP_PASSON ((_kernel_oserror *) 1)")
+    if m["pdriver"] is not None:
+        entry, hs = m["pdriver"]
+        A("\nextern void %s (void);\t\t/* the value to give as r0 to PDriver_DeclareDriver: not a C function */" % entry)
+        A("/* Functions called to handle the PDriver SWI calls, one for each reason code from 0 */")
+        for h in dict.fromkeys(hs): A("_kernel_oserror *%s (int number, _kernel_swi_regs *r, void *pw);" % h)
+        A("\n/* Return NULL if the call was handled (r0 - r9 as returned in R), an error block, or error_BAD_PDRIVER_SWI for a reason code that this module does not handle */\n#define error_BAD_PDRIVER_SWI ((_kernel_oserror *) -1)")
     if any(v[0] == "generic-veneers" and v[4].get("carry-capable") for v in m["veneers"]):
         A("\n/* VENEER_SETCARRY can be returned from a generic veneer's function that is carry-capable: return with C set, all other registers as the function left them */\n#define VENEER_SETCARRY ((_kernel_oserror *) 2)")
-    if m["veneers"]:
+    if any(v[0] != "vector-traps" for v in m["veneers"]):
         A("\n/* VECTOR_PASSON can be returned from vectors to pass the call on to other claimants; VECTOR_CLAIM to claim it. */\n#define VECTOR_PASSON (1)\n#define VECTOR_CLAIM (0)")
         if any(v[4].get("error-capable") for v in m["veneers"]):
             A("\n/* VECTOR_ERROR (err) can be returned from a vector handler that is error-capable: claim the vector and return with V set and r0 = the error block */\n#define VECTOR_ERROR(err) ((int) (err))")

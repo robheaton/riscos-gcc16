@@ -13,15 +13,19 @@ dis() { "$OD" -d --no-show-raw-insn "$LIB" | awk -v f="<$1>:" '$0 ~ f {p=1; next
 need() { # function, pattern, what
   if dis "$1" | grep -q -E "$2"; then echo "  ok   $1: $3"; else echo "  FAIL $1: $3 NOT FOUND"; fail=1; fi
 }
+if dis sysconf | grep -q -E 'sub[[:space:]]+r0, r0, #18176' && dis sysconf | grep -q -E 'cmp[[:space:]]+r0, #1$'; then
+  echo "  ok   sysconf: answers the private selectors 0x4700 (fix level) and 0x4701 (compiler version) with one test (both answer 16 in 16.2.0-14, so the compiler merges the two cases)"
+else
 need sysconf   'cmp[[:space:]]+r[0-9]+, #18176'            "answers the private selector 0x4700 (fix level)"
 need sysconf   '#18177'                                    "answers the private selector 0x4701 (compiler version)"
+fi
 need __fsread  'bic[[:space:]]+ip, r[0-9]+, #4080'         "touches the pages of a stack buffer before OS_GBPB"
 need __sockread 'bic[[:space:]]+[a-z0-9]+, r[0-9]+, #4080' "touches the pages of a stack buffer before the socket read"
 need recv      'bic[[:space:]]+[a-z0-9]+, r[0-9]+, #4080'  "touches the pages of a stack buffer before recv"
 need pthread_once 'bl|b' "pthread_once present"
 # 16.2.0-6 (fix level 8): sysconf answers 8; the main stack of an EABI program is allocated in a loop that retries with half the size (stack_try); the heap dynamic area is created
 # in a loop that retries with half the maximum size (da_try: the X form of OS_DynamicArea, a retry on error)
-need sysconf   'mov[[:space:]]+r0, #15([[:space:]]|$)'     "answers fix level 15"
+need sysconf   'mov[[:space:]]+r0, #16([[:space:]]|$)'     "answers fix level 16"
 need stack_try 'svc[[:space:]]+0x00079d02'                  "asks ARMEABISupport for the stack (StackOp)"
 need stack_try 'lsr[[:space:]]+r[0-9]+, r[0-9]+, #1$'       "retries with half the stack size when there is no room"
 need da_try    'svc[[:space:]]+0x00020066'                  "creates the heap dynamic area with the X form of OS_DynamicArea"
@@ -121,4 +125,8 @@ if [ -n "$profsize" ] && [ $(( 0x$profsize )) -gt 288 ]; then echo "  ok   __pro
 else echo "  FAIL __profil is missing or still the HAL profiler (${profsize:-no symbol})"; fail=1; fi
 if "$NM" "$LIB" | grep -q " __pthread_prev_running_thread$"; then echo "  ok   __pthread_prev_running_thread exists (the scheduler remembers the thread it took the processor from)"
 else echo "  FAIL __pthread_prev_running_thread is missing"; fail=1; fi
+# 16.2.0-14 (fix level 16): <errno.h> has EPROTO 92, ENODATA 93, ENOLINK 94, EMULTIHOP 95, ECANCELED 96, ENOTRECOVERABLE 97 and EOWNERDEAD 98, and sys_errlist / strerror () have their texts (sys_nerr 99).
+for s in "Protocol error" "No data available" "Link has been severed" "Multihop attempted" "Operation canceled" "State not recoverable" "Owner died"; do
+  if grep -aq "$s" "$LIB"; then echo "  ok   strerror text '$s'"; else echo "  FAIL the library has no strerror text '$s' (the errno patch is missing)"; fail=1; fi
+done
 [ $fail = 0 ] && echo "libunixlib check: OK" || { echo "libunixlib check: FAILED"; exit 1; }

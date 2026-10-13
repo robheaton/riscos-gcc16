@@ -1,0 +1,10 @@
+; VtHw: vector-traps: and pdriver-handler: on the real machine (pack module64): two vector traps on UserV (OS_CallAVector with r9 = 0), and the printer driver entry called by hand
+title-string:           VtHw
+help-string:            VtHw 1.00
+date-string:            11 Oct 2026
+initialisation-code:    vth_init
+finalisation-code:      vth_fini
+command-keyword-table:  vth_cmd
+  VtHw_Test(min-args: 0, max-args: 0, help-text: "*VtHw_Test runs the vector trap and printer driver tests.\n", invalid-syntax: "Syntax: *VtHw_Test")
+vector-traps:           vta/vta_handler, vtb/vtb_handler
+pdriver-handler:        pdentry, pd_info, pd_set, pd_info

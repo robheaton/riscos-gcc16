@@ -29,6 +29,8 @@
 #include <inttypes.h>
 #include <signal.h>
 #include <math.h>
+#include <complex.h>
+#include <iconv.h>
 #include <wchar.h>
 #include <wctype.h>
 #include <strings.h>
@@ -2014,7 +2016,9 @@ static void test_g1self (void)
   check (streq (strsignal (SIGINT), "Interrupt") && streq (strsignal (SIGSEGV), "Segmentation fault") && streq (strsignal (SIGTERM), "Terminated") && streq (strsignal (99), "Unknown signal 99")
 	 && streq (strsignal (0), "Unknown signal 0") && streq (strsignal (-5), "Unknown signal -5"), "strsignal: the texts and an unknown number");
   check (sys_nsig == NSIG && streq (sys_siglist[SIGABRT], "Aborted") && streq (sys_siglist[SIGUSR2], "User defined signal 2"), "sys_siglist and sys_nsig");
-  { int bad = 0; for (int e = 0; e < sys_nerr; e++) if (!sys_errlist[e] || !streq (strerror (e), sys_errlist[e])) bad++; check (sys_nerr == 92 && !bad, "sys_errlist: every entry is strerror's text"); }
+  { int bad = 0; for (int e = 0; e < sys_nerr; e++) if (!sys_errlist[e] || !streq (strerror (e), sys_errlist[e])) bad++; check (sys_nerr == 99 && !bad, "sys_errlist: every entry is strerror's text"); }
+  check (streq (strerror (EPROTO), "Protocol error") && streq (strerror (ENODATA), "No data available") && streq (strerror (ENOLINK), "Link has been severed") && streq (strerror (EMULTIHOP), "Multihop attempted")
+	 && streq (strerror (ECANCELED), "Operation canceled") && streq (strerror (ENOTRECOVERABLE), "State not recoverable") && streq (strerror (EOWNERDEAD), "Owner died"), "strerror: the seven POSIX codes that UnixLib lacks");
   check (streq (strerror (ENOENT), "No such file or directory") && streq (strerror (ETIMEDOUT), "Connection timed out") && streq (strerror (EILSEQ), "Invalid or incomplete multibyte or wide character")
 	 && streq (strerror (100), "Unknown error 100") && streq (strerror (-1), "Unknown error -1") && streq (strerror (0), "No error"), "strerror: the texts");
   { char b[64]; int r;
@@ -2341,6 +2345,344 @@ static void test_g2self (void)
 }
 #endif
 
+/* ======================================================================== iconv (against glibc's): the encodings, valid and invalid text, small output windows */
+#if defined (T_HOSTLIB)
+# define T_EILSEQ 90                                                                           /* (the number in the library's own errno.h: the test is compiled with the host's) */
+#else
+# define T_EILSEQ EILSEQ
+#endif
+static int cv_err (void) { return T_ERRNO == T_EILSEQ ? 1 : T_ERRNO == EINVAL ? 2 : T_ERRNO == E2BIG ? 3 : T_ERRNO == 0 ? 0 : 9; }
+/* the test's own encoder (not the library's): the code point CP in encoding E (0 UTF-8, 1 ASCII, 2 Latin 1, 3 UTF-16LE, 4 UTF-16BE, 5 UTF-32LE, 6 UTF-32BE) */
+static size_t cv_put (int e, unsigned long cp, unsigned char *o)
+{
+  switch (e)
+    {
+    case 0: if (cp < 0x80) { o[0] = (unsigned char) cp; return 1; } if (cp < 0x800) { o[0] = (unsigned char) (0xC0 | (cp >> 6)); o[1] = (unsigned char) (0x80 | (cp & 63)); return 2; }
+	    if (cp < 0x10000) { o[0] = (unsigned char) (0xE0 | (cp >> 12)); o[1] = (unsigned char) (0x80 | ((cp >> 6) & 63)); o[2] = (unsigned char) (0x80 | (cp & 63)); return 3; }
+	    o[0] = (unsigned char) (0xF0 | (cp >> 18)); o[1] = (unsigned char) (0x80 | ((cp >> 12) & 63)); o[2] = (unsigned char) (0x80 | ((cp >> 6) & 63)); o[3] = (unsigned char) (0x80 | (cp & 63)); return 4;
+    case 1: case 2: o[0] = (unsigned char) cp; return 1;
+    case 3: case 4:
+      { unsigned u[2], n = cp < 0x10000 ? 1 : 2, k; if (n == 1) u[0] = (unsigned) cp; else { u[0] = 0xD800 + (unsigned) ((cp - 0x10000) >> 10); u[1] = 0xDC00 + (unsigned) ((cp - 0x10000) & 0x3FF); }
+	for (k = 0; k < n; k++) { o[2 * k] = (unsigned char) (e == 3 ? u[k] : u[k] >> 8); o[2 * k + 1] = (unsigned char) (e == 3 ? u[k] >> 8 : u[k]); } return 2 * n; }
+    default:
+      if (e == 5) { o[0] = (unsigned char) cp; o[1] = (unsigned char) (cp >> 8); o[2] = (unsigned char) (cp >> 16); o[3] = (unsigned char) (cp >> 24); }
+      else { o[3] = (unsigned char) cp; o[2] = (unsigned char) (cp >> 8); o[1] = (unsigned char) (cp >> 16); o[0] = (unsigned char) (cp >> 24); }
+      return 4;
+    }
+}
+static void test_iconv (void)
+{
+  static const char *const names[] = { "UTF-8", "ASCII", "ISO-8859-1", "UTF-16LE", "UTF-16BE", "UTF-32LE", "UTF-32BE", "latin1", "utf8", "US-ASCII" };         /* (UCS-4 and WCHAR_T are not here: in glibc they take any value to 0x7FFFFFFF, in the library the same range as UTF-32) */
+  static const int enc_of[] = { 0, 1, 2, 3, 4, 5, 6, 2, 0, 1 };
+  sect_begin ("iconv", 34);
+  for (unsigned i = 0; i < N (800); i++)
+    {
+      unsigned fi = rr (10), ti = rr (10), kind = rr (5);
+      unsigned char in[200], out[600];
+      size_t inlen = 0, outlen = 0;
+      iconv_t cd;
+      case_begin (i);
+      cd = iconv_open (names[ti], names[fi]);
+      rec_i (fi); rec_i (ti); rec_i (kind);
+      rec_i (cd != (iconv_t) -1);
+      if (cd == (iconv_t) -1) { case_end (); continue; }
+      if (kind == 0)                                                                            /* bytes at random: mostly not valid */
+	{ inlen = rr (40); for (size_t k = 0; k < inlen; k++) in[k] = (unsigned char) (rr (3) ? rr (128) : rr (256)); }
+      else                                                                                      /* valid text of the encoding; kind 2: one byte changed, kind 3: cut short at a place of its own */
+	{
+	  unsigned n = rr (24);
+	  int e = enc_of[fi];
+	  for (unsigned k = 0; k < n && inlen < 150; k++)
+	    {
+	      unsigned r = rr (10);
+	      unsigned long cp = r < 5 ? rr (128) : r < 7 ? 128 + rr (128) : r < 9 ? (rr (2) ? 0x100 + rr (0xD700 - 0x100) : 0xE000 + rr (0x2000)) : 0x10000 + rr (0x100000);
+	      if (e == 1) cp &= 0x7F; else if (e == 2) cp &= 0xFF;
+	      inlen += cv_put (e, cp, in + inlen);
+	    }
+	  if (kind == 2 && inlen) in[rr ((unsigned) inlen)] = (unsigned char) rr (256);
+	  if (kind == 3 && inlen) inlen -= 1 + rr ((unsigned) (inlen < 4 ? inlen : 4));
+	}
+      rec_i ((long long) inlen);
+      {
+	char *ip = (char *) in, *op;
+	size_t il = inlen, ol, r;
+	int stop = 0;
+	for (int round = 0; round < 80 && !stop; round++)
+	  {
+	    size_t win = rr (3) == 0 ? 1 + rr (4) : 4 + rr (40);
+	    if (outlen + win > sizeof out) win = sizeof out - outlen;
+	    op = (char *) out + outlen; ol = win;
+	    T_ERRNO = 0;
+	    r = iconv (cd, &ip, &il, &op, &ol);
+	    rec_i ((long long) (long) r); rec_i (cv_err ());
+	    rec_i ((long long) (inlen - il)); rec_i ((long long) (win - ol));
+	    outlen += win - ol;
+	    if (r != (size_t) -1 || cv_err () != 3) stop = 1;
+	  }
+	rec_m (out, outlen);
+	{ char *op2 = (char *) out; size_t ol2 = 16; rec_i ((long long) (long) iconv (cd, 0, 0, &op2, &ol2)); rec_i ((long long) (16 - ol2)); }      /* the reset: nothing to write */
+      }
+      rec_i (iconv_close (cd));
+      case_end ();
+    }
+  T_ERRNO = 0; rec_i ((long long) (long) iconv_open ("KLINGON", "UTF-8") == -1); rec_i (cv_err () == 2);
+  T_ERRNO = 0; rec_i ((long long) (long) iconv_open ("UTF-8", "EBCDIC-NOPE") == -1); rec_i (cv_err () == 2);
+  sect_end ();
+}
+
+/* ======================================================================== complex.h: the functions against the values of Python's cmath, and the special values of Annex G (self-checks: glibc passes them too) */
+#include "libtest-complex.inc"
+#if defined (T_HOSTLIB)
+# define CX_MUL mk___muldc3                                                                    /* (the compiler calls __muldc3, which is libgcc's on the host: the test calls the library's own) */
+# define CX_DIV mk___divdc3
+#else
+# define CX_MUL __muldc3
+# define CX_DIV __divdc3
+#endif
+extern double complex CX_MUL (double, double, double, double);
+extern double complex CX_DIV (double, double, double, double);
+typedef double complex (*cx_fn) (double complex);
+static double cx_err (double got_r, double got_i, double er, double ei)                       /* the error relative to the size of the value (an absolute one for 0) */
+{
+  double d = hypot (got_r - er, got_i - ei), m = hypot (er, ei);
+  return m > 0 ? d / m : d;
+}
+static void cx_table (const char *name, const struct cx_case *t, int n, cx_fn f, double tol)
+{
+  double worst = 0;
+  int i, bad = 0;
+  for (i = 0; i < n; i++)
+    {
+      double complex r = f (CMPLX (t[i].zr, t[i].zi));
+      double e = cx_err (creal (r), cimag (r), t[i].er, t[i].ei);
+      if (!(e <= tol)) bad++;
+      if (e > worst || e != e) worst = e;
+    }
+  if (g_verbose) printf ("  complex %-7s worst relative error %.3g (tolerance %.1g)\n", name, worst, tol);
+  check (!bad, name);
+}
+static void cx_pow_table (void)
+{
+  double worst = 0;
+  int i, bad = 0;
+  for (i = 0; i < 60; i++)
+    {
+      double complex r = cpow (CMPLX (cx_cpow[i].zr, cx_cpow[i].zi), CMPLX (cx_cpow[i].wr, cx_cpow[i].wi));
+      double e = cx_err (creal (r), cimag (r), cx_cpow[i].er, cx_cpow[i].ei);
+      if (!(e <= 2e-12)) bad++;
+      if (e > worst || e != e) worst = e;
+    }
+  if (g_verbose) printf ("  complex cpow    worst relative error %.3g\n", worst);
+  check (!bad, "cpow");
+}
+static int cx_same (double complex z, double re, double im)                                    /* the same value, the zeros with their signs */
+{
+  return (creal (z) == re || (re != re && creal (z) != creal (z))) && (cimag (z) == im || (im != im && cimag (z) != cimag (z)))
+	 && (re != 0 || signbit (creal (z)) == signbit (re)) && (im != 0 || signbit (cimag (z)) == signbit (im));
+}
+static int cx_close (double complex z, double re, double im) { return cx_err (creal (z), cimag (z), re, im) < 1e-14; }
+static void test_complex (void)
+{
+  volatile double zero = 0.0, one = 1.0, inf = INFINITY, nan = NAN;
+  double complex z;
+  sect_begin ("complex", 33);
+  cx_table ("cexp", cx_cexp, 60, cexp, 1e-13);
+  cx_table ("clog", cx_clog, 60, clog, 1e-13);
+  cx_table ("csqrt", cx_csqrt, 60, csqrt, 1e-13);
+  cx_table ("csin", cx_csin, 60, csin, 1e-12);
+  cx_table ("ccos", cx_ccos, 60, ccos, 1e-12);
+  cx_table ("ctan", cx_ctan, 60, ctan, 1e-12);
+  cx_table ("csinh", cx_csinh, 60, csinh, 1e-12);
+  cx_table ("ccosh", cx_ccosh, 60, ccosh, 1e-12);
+  cx_table ("ctanh", cx_ctanh, 60, ctanh, 1e-12);
+  cx_table ("casin", cx_casin, 60, casin, 1e-12);
+  cx_table ("cacos", cx_cacos, 60, cacos, 1e-12);
+  cx_table ("catan", cx_catan, 60, catan, 1e-12);
+  cx_table ("casinh", cx_casinh, 60, casinh, 1e-12);
+  cx_table ("cacosh", cx_cacosh, 60, cacosh, 1e-12);
+  cx_table ("catanh", cx_catanh, 60, catanh, 1e-12);
+  cx_pow_table ();
+  { double worst = 0; int bad = 0; for (int i = 0; i < 60; i++) { double a = cabs (CMPLX (cx_cabs[i].zr, cx_cabs[i].zi)), g = carg (CMPLX (cx_cabs[i].zr, cx_cabs[i].zi));
+      double e1 = fabs (a - cx_cabs[i].er) / cx_cabs[i].er, e2 = fabs (g - cx_cabs[i].ei) / (fabs (cx_cabs[i].ei) + 1e-300); if (e1 > 1e-15 || e2 > 4e-16 * 4) bad++; if (e1 > worst) worst = e1; }
+    if (g_verbose) printf ("  complex cabs    worst relative error %.3g\n", worst); check (!bad, "cabs and carg"); }
+  /* the parts, and the simple values */
+  z = CMPLX (3.0, 4.0);
+  check (creal (z) == 3.0 && cimag (z) == 4.0 && cabs (z) == 5.0 && cx_same (conj (z), 3.0, -4.0) && cx_same (conj (CMPLX (1.0, 0.0)), 1.0, -0.0), "creal, cimag, cabs and conj");
+  check (crealf (CMPLXF (1.5f, 2.5f)) == 1.5f && cimagf (CMPLXF (1.5f, 2.5f)) == 2.5f && cabsf (CMPLXF (3.0f, 4.0f)) == 5.0f && creall (CMPLXL (1.0L, 2.0L)) == 1.0L && cabsl (CMPLXL (6.0L, 8.0L)) == 10.0L, "the float and long double names");
+  check (cx_same (cproj (CMPLX (inf, -2.0)), INFINITY, -0.0) && cx_same (cproj (CMPLX (3.0, -inf)), INFINITY, -0.0) && cx_same (cproj (CMPLX (1.0, 2.0)), 1.0, 2.0), "cproj: infinities go to the one point at infinity");
+  /* Annex G: signed zeros and infinities */
+  check (cx_same (cexp (CMPLX (zero, zero)), 1.0, 0.0) && cx_same (cexp (CMPLX (zero, -zero)), 1.0, -0.0) && cx_same (cexp (CMPLX (inf, zero)), INFINITY, 0.0), "cexp of 0, 0 - 0i and +inf");
+  check (cx_same (cexp (CMPLX (-inf, one)), 0.0 * cos (1.0), 0.0 * sin (1.0)), "cexp of -inf + i: zeros with the signs of cos 1 and sin 1");
+  check (cx_same (csqrt (CMPLX (-4.0, zero)), 0.0, 2.0) && cx_same (csqrt (CMPLX (-4.0, -zero)), 0.0, -2.0) && cx_same (csqrt (CMPLX (zero, zero)), 0.0, 0.0) && cx_same (csqrt (CMPLX (4.0, zero)), 2.0, 0.0), "csqrt: the two sides of the cut, zero, a positive real");
+  check (cx_same (csqrt (CMPLX (inf, 1.0)), INFINITY, 0.0) && cx_same (csqrt (CMPLX (-inf, 1.0)), 0.0, INFINITY) && cx_same (csqrt (CMPLX (1.0, -inf)), INFINITY, -INFINITY), "csqrt of the infinities");
+  check (cx_close (csqrt (CMPLX (3.0, 4.0)), 2.0, 1.0) && cx_close (csqrt (CMPLX (-3.0, 4.0)), 1.0, 2.0), "csqrt: 3+4i is 2+i, -3+4i is 1+2i");
+  check (cx_close (csqrt (CMPLX (1e308, 1e308)), 1.09868411346781e+154, 4.5508986056222734e+153) && cx_close (csqrt (CMPLX (1e-310, 1e-310)), 1.0986841134678082e-155, 4.550898605622267e-156), "csqrt of numbers near the limits: no overflow, no underflow");
+  check (cx_same (clog (CMPLX (-1.0, zero)), 0.0, M_PI) && cx_same (clog (CMPLX (-1.0, -zero)), 0.0, -M_PI) && cx_same (clog (CMPLX (zero, zero)), -INFINITY, 0.0) && cx_same (clog (CMPLX (1.0, zero)), 0.0, 0.0), "clog: the two sides of the cut, zero, one");
+  check (cx_close (clog (CMPLX (1.0 + 1e-9, 1e-9)), 1.000000082740371e-09, 9.99999999e-10), "clog of a number near 1 (the log1p form keeps the digits)");
+  check (cx_same (csinh (CMPLX (zero, zero)), 0.0, 0.0) && cx_same (ccosh (CMPLX (zero, zero)), 1.0, 0.0) && cx_same (csin (CMPLX (zero, zero)), 0.0, 0.0) && cx_same (ctanh (CMPLX (inf, one)), 1.0, 0.0 * sin (2.0)), "csinh, ccosh, csin of 0, and ctanh of +inf");
+  check (cx_close (casin (CMPLX (2.0, zero)), 1.5707963267948966, 1.3169578969248166) && cx_same (cacos (CMPLX (2.0, zero)), 0.0, -1.3169578969248166), "casin and cacos of 2 + 0i");
+  check (creal (cacos (CMPLX (2.0, -zero))) == 0.0 && cx_close (cacos (CMPLX (2.0, -zero)), 0.0, 1.3169578969248166) && cimag (cacos (CMPLX (2.0, zero))) < -1.3, "cacos of 2 - 0i and 2 + 0i: the imaginary parts have opposite signs");
+  check (cx_close (catanh (CMPLX (2.0, zero)), 0.5493061443340549, 1.5707963267948966) && cx_close (catanh (CMPLX (2.0, -zero)), 0.5493061443340549, -1.5707963267948966) && cx_close (catan (CMPLX (zero, 2.0)), 1.5707963267948966, 0.5493061443340549), "catanh of 2 + 0i and 2 - 0i, catan of 2i");
+  check (cx_close (casinh (CMPLX (1e-5, 2e-5)), 1.0000000001833332e-05, 2.0000000000333336e-05), "casinh of a small number (the series)");
+  check (cx_close (casinh (CMPLX (1e200, 1e200)), 461.55673936964905, 0.7853981633974483) && cx_close (cacosh (CMPLX (1e200, 1e200)), 461.55673936964905, 0.7853981633974484), "casinh and cacosh of a huge number: no overflow");
+  check (cx_close (cpow (CMPLX (2.0, zero), CMPLX (10.0, zero)), 1024.0, 0.0) && cx_close (cpow (CMPLX (4.0, zero), CMPLX (0.5, zero)), 2.0, 0.0), "cpow: 2^10 and 4^0.5");
+  { double complex r = cpow (CMPLX (zero, 1.0), CMPLX (2.0, zero)); check (fabs (creal (r) + 1.0) < 1e-14 && fabs (cimag (r)) < 1e-14, "cpow: i^2 = -1"); }
+  /* the operators: __muldc3 and __divdc3 */
+  z = CX_MUL (1.0, 2.0, 3.0, 4.0);
+  check (cx_same (z, -5.0, 10.0), "multiplication: (1+2i)(3+4i) = -5+10i");
+  z = CX_DIV (-5.0, 10.0, 3.0, 4.0);
+  check (cx_close (z, 1.0, 2.0) && cx_close (CX_DIV (1.0, 0.0, 0.0, 1.0), 0.0, -1.0), "division: (-5+10i)/(3+4i) = 1+2i; 1/i = -i");
+  z = CX_MUL (nan, inf, 1.0, zero);
+  check (isnan (creal (z)) && isinf (cimag (z)), "multiplication: (NaN + i inf) * 1 keeps the infinity (the NaN recovery of Annex G)");
+  z = CX_MUL (inf, 1.0, inf, -1.0);
+  check (isinf (creal (z)) && creal (z) > 0, "multiplication: (inf + i)(inf - i): an infinite real part");
+  z = CX_DIV (1.0, 1.0, zero, zero);
+  check (isinf (creal (z)) && isinf (cimag (z)), "division by zero: infinities (not NaN)");
+  z = CX_DIV (1e300, 1e300, 1e300, 1e300);
+  check (cx_close (z, 1.0, 0.0), "division of huge numbers: scaled, no overflow");
+  z = CX_DIV (1e-300, 2e-300, 3e-300, 4e-300);
+  check (cx_close (z, 0.43999999999999995, 0.08), "division of tiny numbers: scaled, no underflow");
+  z = CX_DIV (1.0, 2.0, inf, 1.0);
+  check (creal (z) == 0 && cimag (z) == 0, "division by an infinity: zero");
+  { volatile double complex a = CMPLX (1.0, 2.0), b = CMPLX (3.0, -1.0);                      /* and the operators themselves, through the compiler */
+    double complex m = a * b, d = a / b;
+    check (cx_close (m, 5.0, 5.0) && cx_close (d, 0.1, 0.7), "the operators * and / on complex numbers (through the compiler)"); }
+  sect_end ();
+}
+
+/* ======================================================================== group 3: access, dup, dup2, fsync (against glibc's), and stat on the machine */
+static void test_g3 (void)
+{
+  const char *name = fsname (0);
+  sect_begin ("g3", 32);
+  for (unsigned i = 0; i < N (300); i++)
+    {
+      int exists = rr (4) != 0, fd, d, r, t;
+      static const int accs[] = { 0, 4, 2, 1, 6, 5, 7, 8, 12 };
+      unsigned k, nops;
+      case_begin (i);
+      remove (name);
+      if (exists) put_file (name, rr (3) == 0 ? rr (30) : rr (700));
+      for (k = 0; k < sizeof accs / sizeof accs[0]; k++)                                       /* access: the modes F_OK, R_OK, W_OK, X_OK and some together; 8 and 12 are no mode: EINVAL */
+	{
+	  T_ERRNO = 0; r = access (name, accs[k]); rec_i (r);
+	  if (r < 0) rec_i (norm_err2 ());
+	}
+      T_ERRNO = 0; r = dup (4999); rec_i (r); rec_i (norm_err2 ());       /* a descriptor that is not open */
+      T_ERRNO = 0; r = dup2 (4999, 40); rec_i (r); rec_i (norm_err2 ());
+      T_ERRNO = 0; r = fsync (4999); rec_i (r); rec_i (norm_err2 ());
+      T_ERRNO = 0; r = dup2 (-1, 40); rec_i (r); rec_i (norm_err2 ());
+      if (!exists) { case_end (); continue; }
+      fd = open (name, 2);                                                  /* (2 is O_RDWR in both libraries) */
+      rec_i (fd >= 3);
+      if (fd < 0) { rec_i (unlink (name)); case_end (); continue; }
+      d = dup (fd);
+      rec_i (d >= 3 && d != fd);
+      t = 24 + (int) rr (14);
+      nops = 1 + rr (12);
+      for (k = 0; k < nops; k++)
+	{
+	  unsigned op = rr (7);
+	  int use = rr (3) == 0 ? t : rr (2) ? fd : d;
+	  rec_i (-2000 - (long long) op);
+	  if (use == t && t >= 0 && k == 0 && op != 5) { int r2; T_ERRNO = 0; r2 = dup2 (fd, t); rec_i (r2 == t); t = -t; use = d; }          /* dup2 to a number of our own, once */
+	  if (use < 0) use = -use;
+	  switch (op)
+	    {
+	    case 0: case 6:
+	      { unsigned char b[200]; unsigned n = rr (3) == 0 ? rr (150) : rr (20); int w; rtext (b, n); T_ERRNO = 0; w = (int) write (use, b, n); rec_i (w); if (w < 0) rec_i (norm_err2 ()); break; }
+	    case 1:
+	      { unsigned char b[200]; unsigned n = rr (60); int g; t_set (b, 0xA5, sizeof b); T_ERRNO = 0; g = (int) read (use, b, n); rec_i (g); if (g > 0) rec_m (b, (size_t) g); else if (g < 0) rec_i (norm_err2 ()); break; }
+	    case 2: { long off = (long) rr (300) - 20; T_ERRNO = 0; rec_i ((long long) (long) lseek (use, (off_t) off, SEEK_SET)); break; }
+	    case 3: T_ERRNO = 0; rec_i (fsync (use)); break;
+	    case 4: T_ERRNO = 0; rec_i (fdatasync (use)); break;
+	    default:                                                             /* the position is shared: both numbers ask for the same one */
+	      rec_i ((long long) (long) lseek (fd, 0, SEEK_CUR)); rec_i ((long long) (long) lseek (d, 0, SEEK_CUR)); break;
+	    }
+	}
+      if (t < 0)                                                              /* the copy that dup2 made */
+	{
+	  T_ERRNO = 0; rec_i (dup2 (-t, -t)); rec_i (close (-t));
+	  T_ERRNO = 0; rec_i (close (-t)); rec_i (norm_err2 ());
+	}
+      if (rr (2)) { rec_i (close (fd)); rec_i ((int) write (d, "end", 3)); rec_i (close (d)); }
+      else { rec_i (close (d)); rec_i ((int) write (fd, "end", 3)); rec_i (close (fd)); }
+      T_ERRNO = 0; rec_i (close (fd)); rec_i (norm_err2 ());
+      T_ERRNO = 0; rec_i (close (d)); rec_i (norm_err2 ());
+      T_ERRNO = 0; rec_i (fsync (fd)); rec_i (norm_err2 ());
+      rec_file (name);
+      rec_i (unlink (name));
+      case_end ();
+    }
+  sect_end ();
+}
+#if defined (T_ARM)
+static void test_g3self (void)
+{
+  const char *name = fsname (0), *name2 = fsname (1);
+  char dirn[220];
+  struct stat st; struct stat64 st64;
+  int fd, fd2, d, i;
+  _kernel_osfile_block ob = { 0, 0, 0, 0 };
+  sect_begin ("g3self", 1);
+  t_cpy (dirn, g_fsbase); t_cpy (dirn + t_len (dirn), "dg3");                   /* a directory of our own: the base is the start of a file name (on the machine: <scrap directory>.MK) */
+  remove (dirn); remove (name); remove (name2);
+  _kernel_osfile (8, dirn, &ob);
+  T_ERRNO = 0; check (stat (name, &st) == -1 && T_ERRNO == ENOENT && lstat (name, &st) == -1 && T_ERRNO == ENOENT && access (name, F_OK) == -1 && T_ERRNO == ENOENT, "stat, lstat and access of a file that is not there: ENOENT");
+  fd = open (name, O_RDWR | O_CREAT | O_TRUNC);
+  check (fd >= 3 && write (fd, "0123456789", 10) == 10 && close (fd) == 0, "a file of ten bytes is made");
+  check (stat (name, &st) == 0 && S_ISREG (st.st_mode) && st.st_size == 10 && st.st_nlink == 1 && (st.st_mode & 0600) == 0600 && st.st_blocks == 1 && st.st_blksize == 512 && st.st_mtime > 1000000000, "stat of a file: regular, ten bytes, one link, owner read and write, one block, a date");
+  check (lstat (name, &st) == 0 && st.st_size == 10 && stat64 (name, &st64) == 0 && st64.st_size == 10 && lstat64 (name, &st64) == 0 && S_ISREG (st64.st_mode), "lstat, stat64 and lstat64 say the same");
+  fd = open (name, O_RDONLY);
+  { struct stat sf; check (fd >= 3 && fstat (fd, &sf) == 0 && sf.st_size == st.st_size && sf.st_mode == (st.st_mode & ~0222u | (sf.st_mode & 0222u)) && S_ISREG (sf.st_mode), "fstat and stat agree on a file"); }
+  close (fd);
+  check (stat (dirn, &st) == 0 && S_ISDIR (st.st_mode) && (st.st_mode & 0700) == 0700 && st.st_nlink == 2 && lstat (dirn, &st) == 0 && S_ISDIR (st.st_mode), "stat of a directory: S_IFDIR, the owner's three bits, two links");
+  check (access (dirn, F_OK) == 0 && access (dirn, R_OK | W_OK | X_OK) == 0, "access of a directory: everything");
+  check (access (name, F_OK) == 0 && access (name, R_OK) == 0 && access (name, W_OK) == 0 && access (name, R_OK | W_OK) == 0, "access of a file: F_OK, R_OK, W_OK");
+  T_ERRNO = 0; check (access (name, X_OK) == -1 && T_ERRNO == EACCES, "access X_OK of a Text file: EACCES (only a file that is not Text or Data is executable)");
+  T_ERRNO = 0; check (access (name, 8) == -1 && T_ERRNO == EINVAL && access ("nothing-there-at-all", 8) == -1 && T_ERRNO == EINVAL, "access with a mode that is none of them: EINVAL, whether or not the file is there");
+  { _kernel_osfile_block b = { 0, 0, 0, 1 };                                                      /* the attributes: read only */
+    check (_kernel_osfile (4, name, &b) != _kernel_ERROR && stat (name, &st) == 0 && (st.st_mode & 0222) == 0 && (st.st_mode & 0444) == 0444, "a file with the read-only attribute: no write bits");
+    T_ERRNO = 0; check (access (name, W_OK) == -1 && T_ERRNO == EACCES && access (name, R_OK) == 0, "access W_OK of a read-only file: EACCES");
+    b.end = 3; check (_kernel_osfile (4, name, &b) != _kernel_ERROR && access (name, W_OK) == 0, "and read and write again"); }
+  /* dup and dup2 */
+  fd = open (name, O_RDWR);
+  d = dup (fd);
+  check (fd >= 3 && d >= 3 && d != fd, "dup gives another descriptor");
+  check (write (d, "abc", 3) == 3 && lseek (fd, 0, SEEK_CUR) == 3 && lseek (d, 0, SEEK_CUR) == 3, "the position is shared: a write through the copy moves the original");
+  check (close (fd) == 0 && write (d, "def", 3) == 3 && lseek (d, 0, SEEK_CUR) == 6, "closing the original leaves the copy open and usable");
+  T_ERRNO = 0; check (close (fd) == -1 && T_ERRNO == EBADF && write (fd, "x", 1) == -1 && T_ERRNO == EBADF, "the original is closed");
+  check (close (d) == 0, "and the copy closes");
+  T_ERRNO = 0; check (close (d) == -1 && T_ERRNO == EBADF, "closed twice: EBADF");
+  d = dup (1);
+  check (d >= 3 && close (d) == 0, "a copy of stdout, and it closes");
+  check (fprintf (stdout, "") >= 0 && fflush (stdout) == 0 && write (1, "", 0) == 0, "stdout is still open after the copy was closed");
+  fd = open (name, O_RDWR); fd2 = open (name2, O_RDWR | O_CREAT | O_TRUNC);
+  check (fd >= 3 && fd2 >= 3 && dup2 (fd, fd2) == fd2 && dup2 (fd, fd) == fd, "dup2 onto an open descriptor: the old file is closed, and dup2 of a descriptor onto itself is itself");
+  check (write (fd2, "ZZ", 2) == 2 && lseek (fd, 0, SEEK_CUR) == 2, "the new number is the first file, with the shared position");
+  check (close (fd) == 0 && close (fd2) == 0, "both numbers close");
+  T_ERRNO = 0; check (dup2 (1, 0) == -1 && T_ERRNO == ENOSYS && dup2 (fd, 99) == -1 && T_ERRNO == EBADF, "dup2 onto 0..2: ENOSYS (not supported); an unused or out of range number: EBADF");
+  T_ERRNO = 0; check (dup2 (-1, 7) == -1 && T_ERRNO == EBADF && dup (-1) == -1 && T_ERRNO == EBADF, "a descriptor that is not open: EBADF");
+  /* a lot of copies: EMFILE */
+  fd = open (name, O_RDONLY);
+  { int n = 0, last = -1; T_ERRNO = 0; while ((last = dup (fd)) >= 0 && n < 100) n++;
+    check (last == -1 && T_ERRNO == EMFILE && n >= 55 && n <= 60, "dup until there is no number left: EMFILE");
+    for (i = 3; i < 64; i++) if (i != fd) close (i); }
+  check (close (fd) == 0, "and the descriptors close");
+  /* fsync */
+  fd = open (name, O_RDWR | O_TRUNC);
+  check (fd >= 3 && write (fd, "abcd", 4) == 4 && stat (name, &st) == 0 && st.st_size == 4, "stat of a file that is open for writing gives its length, not the allocation");
+  close (fd);
+  fd = open (name, O_RDWR);
+  check (fd >= 3 && write (fd, "sync", 4) == 4 && fsync (fd) == 0 && fdatasync (fd) == 0, "fsync and fdatasync of a file");
+  close (fd);
+  T_ERRNO = 0; check (fsync (fd) == -1 && T_ERRNO == EBADF && fsync (1) == 0 && fsync (0) == -1 && T_ERRNO == EINVAL, "fsync of a closed number: EBADF; of stdout: 0; of stdin: EINVAL");
+  { FILE *f = fopen (name, "wb"); int n = fileno (f); check (f && n >= 3 && fwrite ("buffered", 1, 8, f) == 8 && fsync (n) == 0 && stat (name, &st) == 0 && st.st_size == 8, "fsync of a stream made with fopen writes what is buffered"); fclose (f); }
+  remove (dirn); remove (name); remove (name2);
+  sect_end ();
+}
+#endif
+
 #include "libtest-fp.c"
 
 /* ======================================================================== main */
@@ -2384,9 +2726,13 @@ int main (int argc, char **argv)
   RUN ("fnmatch", test_fnmatch);
   RUN ("getline", test_getline);
   RUN ("fd", test_fd);
+  RUN ("complex", test_complex);
+  RUN ("iconv", test_iconv);
+  RUN ("g3", test_g3);
 #if defined (T_ARM)
   RUN ("g1self", test_g1self);                                                                          /* (before stdio3, which closes the standard streams) */
   RUN ("g2self", test_g2self);
+  RUN ("g3self", test_g3self);
 #endif
   RUN ("fparith", test_fparith);
   RUN ("fpconv", test_fpconv);

@@ -3,8 +3,8 @@
 #include <string.h>
 #include <errno.h>
 
-int sys_nerr = 92;
-const char *sys_errlist[92] =
+int sys_nerr = 99;
+const char *sys_errlist[99] =
 {
   [0] = "No error",
   [EPERM] = "Operation not permitted", [ENOENT] = "No such file or directory", [ESRCH] = "No such process", [EINTR] = "Interrupted", [EIO] = "Input/output error",
@@ -29,6 +29,8 @@ const char *sys_errlist[92] =
   [ELIBVER] = "Shared library version mismatch", [ELIBACC] = "Can not access a needed shared library", [ELIBLIM] = "Attempting to link in too many shared libraries",
   [ELIBNOENT] = "Shared library not found", [ELIBNOEXEC] = "Cannot exec a shared library directly", [ENOSYS] = "Function not implemented", [EOPSYS] = "Operating system error",
   [ESIG] = "Signal not supported", [EILSEQ] = "Invalid or incomplete multibyte or wide character", [EOVERFLOW] = "Value too large for defined data type",
+  [EPROTO] = "Protocol error", [ENODATA] = "No data available", [ENOLINK] = "Link has been severed", [EMULTIHOP] = "Multihop attempted",
+  [ECANCELED] = "Operation canceled", [ENOTRECOVERABLE] = "State not recoverable", [EOWNERDEAD] = "Owner died",
 };
 
 static void unknown (char *buf, int e)

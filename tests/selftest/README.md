@@ -2,7 +2,7 @@
 
 Checks a fresh installation of the native GCC 16 tool chain on RISC OS in about half a minute. It compiles and runs
 
-1. a probe of the runtime (UnixLib **fix level 15**),
+1. a probe of the runtime (UnixLib **fix level 15 or more**),
 2. a C program,
 3. a C++ program with an exception, a thread and `std::async`,
 4. a Fortran program,
@@ -20,7 +20,7 @@ On the test machine (Raspberry Pi Compute Module 4, RISC OS 5.30) it passes all 
 
 ## Get it
 
-**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-21_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-17 (`RunSelfTest` stops with a message if the installed `Gcc16` is another release; the module check uses `cmunge` and `gcc -mmodule`) and installs `!GCC16Test`.
+**The easy way: the `Gcc16SelfTest` package** (on the [releases page](https://github.com/robheaton/riscos-gcc16/releases), next to the compiler). Drag `Gcc16SelfTest_16.2.0-22_arm.zip` onto the PackMan icon like the others; it needs `Gcc16` 16.2.0-17 (`RunSelfTest` stops with a message if the installed `Gcc16` is another release; the module check uses `cmunge` and `gcc -mmodule`) and installs `!GCC16Test`.
 
 Or copy this folder to RISC OS yourself: the files are in the RISC OS layout (directories `c`, `cc`, `f90` and `h`; `RunSelfTest,feb` is the Obey file: on RISC OS it must have the file type Obey, `*SetType RunSelfTest Obey`).
 
@@ -41,7 +41,7 @@ The work is done on the local disc, in `<Wimp$ScrapDir>.GCC16Test`, so the folde
 
 ```
 PASS: compile fixlevel.c
-PASS: the runtime is at fix level 15
+PASS: the runtime is at fix level 15 or more
 PASS: compile hello.c
 PASS: run hello
 ...
