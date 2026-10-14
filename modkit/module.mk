@@ -17,8 +17,9 @@ endif
 OSLIB    ?= $(HOME)/gccsdk/env/include
 BUILD    ?= build
 GCCINC   := $(shell $(CC) -print-file-name=include)
-# -mmodule: ARMv6, soft float, ARM state, freestanding, no PIC, no stack protector, the headers of modkit (see riscos-gnueabihf.h of the compiler); the kit's own include folder first, so that its changes count
-MODCFLAGS = -mmodule -O2 -std=gnu99 -Wall -isystem $(MODKIT)include -I$(OSLIB) -I$(BUILD) $(EXTRA_CFLAGS)
+# -mmodule: ARMv6, soft float, ARM state, freestanding, no PIC, no stack protector, the headers of modkit (see riscos-gnueabihf.h of the compiler: the include-modkit folder of the INSTALLED kit comes first, then -isystem below, so after a change to modkit/include run install-modkit.sh again).
+# -ffunction-sections -fdata-sections: with the --gc-sections of the module link, a function that nothing calls is not in the module (also in your own sources)
+MODCFLAGS = -mmodule -O2 -std=gnu99 -Wall -ffunction-sections -fdata-sections -isystem $(MODKIT)include -I$(OSLIB) -I$(BUILD) $(EXTRA_CFLAGS)
 # C++ sources (.cc .cpp .cxx): g++ -mmodule without exceptions, RTTI and thread-safe statics (a module has one thread of control, and the guard of a local static is an ARMv6 barrier instruction).  There is no libstdc++ in a
 # module (lib/cxxrt.c of the kit has operator new and the rest), but the headers of libstdc++ that need no library work: <new> <array> <algorithm> <vector> <utility> <type_traits> <limits> <initializer_list> ...  They need
 # __STDC_HOSTED__ (-mmodule says freestanding) and must come before the kit's C headers (their <cstdlib> uses #include_next).  Link with the C driver, as for C: the C++ driver would add libstdc++ and libm.
@@ -31,7 +32,7 @@ ifneq ($(CXXSRCS),)
 CXXDIRS := $(shell echo | $(CXX) -x c++ -E -v - 2>&1 | sed -n '/^\#include <...>/,/^End of search/p' | grep '/c++/' | sed 's/^ *//')
 KITINC  := $(shell $(CC) -print-file-name=include-modkit)
 endif
-MODCXXFLAGS = -mmodule -U__STDC_HOSTED__ -D__STDC_HOSTED__=1 -isystem $(MODKIT)include-cxx $(foreach d,$(CXXDIRS),-isystem $(d)) -isystem $(MODKIT)include -isystem $(KITINC) -isystem $(GCCINC) $(CXXSTD) -O2 -Wall -fno-exceptions -fno-rtti -fno-threadsafe-statics -I$(OSLIB) -I$(BUILD) $(EXTRA_CXXFLAGS)
+MODCXXFLAGS = -mmodule -U__STDC_HOSTED__ -D__STDC_HOSTED__=1 -isystem $(MODKIT)include-cxx $(foreach d,$(CXXDIRS),-isystem $(d)) -isystem $(MODKIT)include -isystem $(KITINC) -isystem $(GCCINC) $(CXXSTD) -O2 -Wall -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti -fno-threadsafe-statics -I$(OSLIB) -I$(BUILD) $(EXTRA_CXXFLAGS)
 # the tools of the tool chain (C programs: install-modkit.sh puts them in its bin/); the Python versions in this kit's bin/ do the same when a tool chain has only the older install
 CMUNGE   ?= $(if $(wildcard $(BIN)/cmunge),$(BIN)/cmunge,python3 $(MODKIT)bin/cmunge)
 MKOSLIB  ?= $(if $(wildcard $(BIN)/arm-riscos-gnueabihf-mkoslib),$(BIN)/arm-riscos-gnueabihf-mkoslib,python3 $(MODKIT)bin/mkoslib.py)

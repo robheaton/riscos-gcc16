@@ -9,16 +9,16 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-22-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-22-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-23-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-23-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 
 The tree (about 380 MB unpacked) is relocatable: unpack it anywhere, or move it later. To check an unpacked copy, run [`tests/cross-smoke/cross-smoke.sh`](../tests/cross-smoke/cross-smoke.sh) on it
-(it compiles and links C, C++, Fortran, LTO and shared-library programs and checks that the compiler finds everything inside the tree).
+(it compiles and links C, C++, Fortran, LTO and shared-library programs, modules and C++ modules, coverage and `gprof` programs, the throwback options and the include prefix, and checks that the compiler finds everything inside the tree).
 
-The programs are `arm-riscos-gnueabihf-gcc`, `-g++`, `-gfortran`, `-cpp`, `-gcov` (with `-gcov-dump` and `-gcov-tool`), and the binutils `-gprof`, `-as`, `-ld`, `-ar`, `-nm`, `-objdump`, `-objcopy`, `-readelf`, `-strip`, `-ranlib`, `-size`, `-strings`, `-addr2line`, `-c++filt` and `-elfedit`.
-The UnixLib headers and libraries (the "sysroot") are inside the tree, so no `--sysroot` option is needed. RISC OS libraries such as OSLib are not included.
+The programs are `arm-riscos-gnueabihf-gcc` (also `-c++`, `-gcc-16.2.0`), `-g++`, `-gfortran`, `-cpp`, `-gcov` (with `-gcov-dump` and `-gcov-tool`), `-lto-dump`, `-gcc-ar`, `-gcc-nm` and `-gcc-ranlib` (use these three, not the plain `-ar`, `-nm` and `-ranlib`, for archives of `-flto` objects: the plain `-ar` stops with "plugin needed to handle lto object"), and the binutils `-gprof`, `-as`, `-ld`, `-ar`, `-nm`, `-objdump`, `-objcopy`, `-readelf`, `-strip`, `-ranlib`, `-size`, `-strings`, `-addr2line`, `-c++filt` and `-elfedit`. The module tools are `cmunge`, `arm-riscos-gnueabihf-modreloc`, `arm-riscos-gnueabihf-mkoslib` and `arm-riscos-gnueabihf-asasm-fix` (there is no bare `modreloc` or `mkoslib`); see [RISC OS modules](#risc-os-modules--mmodule-cmunge).
+The UnixLib headers and libraries (the "sysroot") are inside the tree, so no `--sysroot` option is needed. RISC OS libraries such as OSLib, DeskLib and the Toolbox are not included: they are built for the tool chain by scripts, see [OSLIB.md](OSLIB.md), [DESKLIB.md](DESKLIB.md), [FLEXLIB.md](FLEXLIB.md), [RUFL.md](RUFL.md) and, for a program that uses them, [NETSURF.md](NETSURF.md).
 
 ## Compile
 
@@ -26,7 +26,7 @@ The UnixLib headers and libraries (the "sysroot") are inside the tree, so no `--
 arm-riscos-gnueabihf-gcc      -O2 -o hello,e1f hello.c          # C        (default -std=gnu23)
 arm-riscos-gnueabihf-g++      -O2 -o hello,e1f hello.cc         # C++      (default -std=gnu++20; -std=c++23 for <print>, <expected> ...)
 arm-riscos-gnueabihf-gfortran -O2 -o hello,e1f hello.f90        # Fortran
-arm-riscos-gnueabihf-gcc -O2 -flto -o prog,e1f a.c b.c          # link time optimisation (uses the linker plugin: archives are optimised too)
+arm-riscos-gnueabihf-gcc -O2 -flto -o prog,e1f a.c b.c          # link time optimisation (uses the linker plugin: archives made with `arm-riscos-gnueabihf-gcc-ar` are optimised too)
 arm-riscos-gnueabihf-gcc -O2 -fPIC -shared -o libfoo.so foo.c   # a shared library
 arm-riscos-gnueabihf-gcc -O2 -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -o hello,e1f hello.c   # tuned for the Cortex-A72
 ```
@@ -92,7 +92,7 @@ arm-riscos-gnueabihf-gcc -O1 -pg -o prog,e1f prog.c        # -pg on every compil
 arm-riscos-gnueabihf-gprof prog,e1f gmon.out               # the flat profile and the call graph (-b: without the explanations)
 ```
 
-The program is linked against the `libunixlib.so` that is inside the tool chain (the one of 16.2.0-13, which exports `__gnu_mcount_nc`) and `gcrt0.o` (the start file for `-pg`). The calls are counted exactly, the time is sampled 50 times a second by a thread that UnixLib starts, so give the program some seconds of work; a sample belongs to a function, not to a line; only the program's own code is profiled. The limits are listed in [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [KNOWN-ISSUES.md](KNOWN-ISSUES.md). `gmon.out` has the program's addresses (it is not specific to the machine): copy it from the RISC OS Samba share under the name `gmon.out`.
+The program is linked against the `libunixlib.so` that is inside the tool chain (the one of the runtime package, 16.2.0-14, which exports `__gnu_mcount_nc`) and `gcrt0.o` (the start file for `-pg`). The calls are counted exactly, the time is sampled 50 times a second by a thread that UnixLib starts, so give the program some seconds of work; a sample belongs to a function, not to a line; only the program's own code is profiled. The limits are listed in [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [KNOWN-ISSUES.md](KNOWN-ISSUES.md). `gmon.out` has the program's addresses (it is not specific to the machine): copy it from the RISC OS Samba share under the name `gmon.out`.
 `tests/gprof/` has a test program for it ([README](../tests/gprof/README.md)).
 
 ## Throwback from the cross compiler
@@ -109,7 +109,7 @@ Set `THROWBACK_DEBUG` to any value to be told why nothing arrives. This path was
 
 ## RISC OS modules (`-mmodule`, `cmunge`)
 
-Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 440 functions, `stdio` files and floating point among them; 30 in 16.2.0-14), for small and medium C and C++ modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
+Since 16.2.0-14 the tool chain builds relocatable modules the way GCCSDK 4.7.4 did, but **without UnixLib or the Shared C Library**: modkit has a C library of its own (about 590 functions, `stdio` files, sockets and floating point among them; 30 in 16.2.0-14), for small and medium C and C++ modules for now: [what can and cannot be built](MODULES.md#what-can-be-built-today-and-what-cannot).
 
 ```bash
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg          # the CMHG file: header, veneers, C header
@@ -117,7 +117,9 @@ arm-riscos-gnueabihf-gcc -mmodule -O2 -c main.c -o main.o           # ARMv6, sof
 arm-riscos-gnueabihf-gcc -mmodule -o MyModule,ffa main.o header.o   # module linker script and libmodkit.a, then modreloc: the flat image that RMLoad takes
 ```
 
-What it is, what `libmodkit.a` has and the limits: [MODULES.md](MODULES.md). C++ modules (since 16.2.0-17) are built with the make rules of `share/riscos-modkit/module.mk`, which put the kit's `include-cxx` folder before libstdc++'s headers (`g++ -mmodule` alone does not): [C++ in modules](MODULES.md#c-in-modules). `cmunge`, `modreloc` and `mkoslib` (the OSLib veneers, in place of `-lOSLib32`) are small C programs (no Python); the native compiler on RISC OS has the same ones. The example makefiles are in `modkit/` of this repository.
+What it is, what `libmodkit.a` has and the limits: [MODULES.md](MODULES.md). C++ modules (since 16.2.0-17) are built with the make rules of `share/riscos-modkit/module.mk`, which put the kit's `include-cxx` folder before libstdc++'s headers (`g++ -mmodule` alone does not): [C++ in modules](MODULES.md#c-in-modules). `cmunge`, `modreloc` and `mkoslib` (the OSLib veneers, in place of `-lOSLib32`) are small C programs (no Python); the native compiler on RISC OS has the same ones. With OSLib installed into the tool chain by `install-oslib.py` ([OSLIB.md](OSLIB.md)) the link line is `-LOSLib: -lOSLib32`, as in GCCSDK. The module code is linked function by function (`-ffunction-sections`, `--gc-sections`): a function that the module does not call is not in it. The example makefiles are in `modkit/` of this repository.
+
+**Moving a module from GCCSDK 4.7.4:** [PORTING-FROM-4.7.4.md](PORTING-FROM-4.7.4.md) has what changes and [why move, and who should not](PORTING-FROM-4.7.4.md#why-move-and-who-should-not). Objects of GCCSDK's assembler `asasm` link with the kit after `arm-riscos-gnueabihf-asasm-fix` (it sets the EABI version and renames the `AREA` sections).
 
 ## Using it from a build system
 
@@ -130,7 +132,7 @@ FC  = arm-riscos-gnueabihf-gfortran
 AR  = arm-riscos-gnueabihf-ar
 ```
 
-For autoconf projects `./configure --host=arm-riscos-gnueabihf` is the usual way. Neither that nor CMake or Meson cross files have been tried with this tool chain.
+For autoconf projects `./configure --host=arm-riscos-gnueabihf` is the usual way, and it worked for expat and curl in the NetSurf build ([NETSURF.md](NETSURF.md)); the same build used a CMake toolchain file (`CMAKE_SYSTEM_NAME Generic`) for libjpeg-turbo and libpng, zlib's own `configure` and OpenSSL's `Configure BSD-generic32`. Meson cross files have not been tried.
 
 ## Differences from GCCSDK's GCC 10.2.0 cross compiler
 
@@ -142,7 +144,7 @@ For autoconf projects `./configure --host=arm-riscos-gnueabihf` is the usual way
 | UnixLib | 5.0 as built by GCCSDK | 5.0 rebuilt with GCC 16 and fixed ([RUNTIME.md](RUNTIME.md)) |
 | Throwback | accepted, ignored by the EABI compilers | works |
 
-GCC 16 is much stricter than GCC 10 about old C: for example implicit function declarations are errors by default (use `-std=gnu17` or `-Wno-implicit-function-declaration` to build old code).
+GCC 16 is much stricter than GCC 10 about old C: for example implicit function declarations are errors by default (use `-Wno-implicit-function-declaration`, `-fpermissive` or `-std=gnu89` to build old code: `-std=gnu99` to `-std=gnu17` still reject them).
 Programs built by the GCCSDK 10.2.0 compilers keep working on the same runtime.
 
 ## Building the tool chain yourself

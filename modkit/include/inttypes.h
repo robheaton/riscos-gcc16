@@ -164,10 +164,10 @@ extern "C" {
 #define SCNxPTR	"x"
 
 typedef struct { intmax_t quot, rem; } imaxdiv_t;
-static inline intmax_t imaxabs (intmax_t j) { return llabs (j); }
-static inline imaxdiv_t imaxdiv (intmax_t n, intmax_t d) { lldiv_t q = lldiv (n, d); imaxdiv_t r; r.quot = q.quot; r.rem = q.rem; return r; }
-static inline intmax_t strtoimax (const char *s, char **end, int base) { return strtoll (s, end, base); }
-static inline uintmax_t strtoumax (const char *s, char **end, int base) { return strtoull (s, end, base); }
+extern intmax_t imaxabs (intmax_t j);
+extern imaxdiv_t imaxdiv (intmax_t n, intmax_t d);
+extern intmax_t strtoimax (const char *s, char **end, int base);
+extern uintmax_t strtoumax (const char *s, char **end, int base);
 #ifdef __cplusplus
 }
 #endif

@@ -52,7 +52,7 @@ def build_program():
     r = subprocess.run([CC, "-mmodule", "-O2", "-std=gnu99", "-Wall", "-Wextra", "-c", HERE + "/hwpack/romcmp.c", "-o", o], capture_output=True, text=True)
     if r.returncode: sys.exit("romcmp.c does not compile:\n" + r.stderr)
     if r.stderr.strip(): print("compiler messages:\n" + r.stderr)
-    r = subprocess.run([CC, "-mmodule", "-o", e, o], capture_output=True, text=True)
+    r = subprocess.run([CC, "-mmodule", "-Wl,-u,main", "-o", e, o], capture_output=True, text=True)
     if r.returncode: sys.exit("link:\n" + r.stderr)
     return e
 

@@ -13,7 +13,7 @@ def check(ok, what, detail=""):
     if not ok: fails += 1; print("        " + detail[:600].replace("\n", "\n        "))
 r = subprocess.run([CC, "-mmodule", "-O2", "-std=gnu99", "-Wall", "-c", os.path.join(HERE, "g1", "g1io.c"), "-o", W + "/g1io.o"], capture_output=True, text=True)
 if r.returncode: sys.exit(r.stderr)
-r = subprocess.run([CC, "-mmodule", "-o", W + "/g1io.elf", W + "/g1io.o"], capture_output=True, text=True)
+r = subprocess.run([CC, "-mmodule", "-Wl,-u,main", "-o", W + "/g1io.elf", W + "/g1io.o"], capture_output=True, text=True)
 if r.returncode: sys.exit(r.stderr)
 def run(var=None):
     cmd = [sys.executable, os.path.join(HERE, "libtest", "armrun.py"), W + "/g1io.elf", "--steps", "20000000"] + (["--var", "G1Mode=" + var] if var else [])

@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <math.h>
 #include <complex.h>
+#include <fenv.h>
 #include <iconv.h>
 #include <wchar.h>
 #include <wctype.h>
@@ -210,6 +211,11 @@ static long off (const char *base, const char *p) { return p ? (long) (p - base)
 #endif
 static void test_string (void)
 {
+#if defined (T_ORACLE)
+  locale_t L = newlocale (LC_ALL_MASK, "C", (locale_t) 0);                 /* glibc needs a locale object; the library has the "C" locale only and takes LC_GLOBAL_LOCALE (its _l functions ignore the locale) */
+#else
+  locale_t L = LC_GLOBAL_LOCALE;
+#endif
   sect_begin ("string", 2);
   for (unsigned i = 0; i < N (400); i++)
     {
@@ -222,6 +228,7 @@ static void test_string (void)
       rec_i ((long) strlen (a)); rec_i ((long) strnlen (a, n));
       rec_i (sgn (strcmp (a, b))); rec_i (sgn (strncmp (a, b, n))); rec_i (sgn (strcasecmp (a, b))); rec_i (sgn (strncasecmp (a, b, n)));
       rec_i (sgn (t_stricmp (a, b))); rec_i (sgn (t_strnicmp (a, b, n))); rec_i (sgn (strcoll (a, b)));
+      rec_i (sgn (strcasecmp_l (a, b, L))); rec_i (sgn (strncasecmp_l (a, b, n, L)));
       rec_i (off (a, strchr (a, c))); rec_i (off (a, strrchr (a, c))); rec_i (off (a, strstr (a, b))); rec_i (off (a, memchr (a, c, n)));
       rec_i ((long) strspn (a, set)); rec_i ((long) strcspn (a, set)); rec_i (off (a, strpbrk (a, set)));
       t_set (buf, 0xA5, sizeof buf); strcpy (buf, a); rec_m (buf, 48);
@@ -1371,6 +1378,11 @@ static void test_inttypes (void)
       intmax_t am = a64 >> rr (40); uintmax_t um = u64 >> rr (40); intptr_t ap = (intptr_t) (int32_t) rnd (); uintptr_t up = (uintptr_t) (uint32_t) rnd ();                    /* (the values of a 32 bit pointer: the host's are wider) */
       int_least8_t l8 = a8; int_least16_t l16 = a16; int_least32_t l32 = a32; int_least64_t l64 = a64; int_fast8_t f8 = a8; int_fast16_t f16 = a16; int_fast32_t f32 = a32; int_fast64_t f64 = a64;
       case_begin (i);
+      { intmax_t dv = (intmax_t) (rnd () | 1) * (rr (2) ? 1 : -1); imaxdiv_t q = imaxdiv (am, dv); char nb[40], *e1, *e2;                       /* the functions of <inttypes.h> (real functions of the library since 16.2.0-23) */
+        rec_i (imaxabs (am / 7)); rec_i (imaxabs (-am)); rec_i (q.quot); rec_i (q.rem);
+        snprintf (nb, sizeof nb, "%" PRIdMAX, am); rec_i (strtoimax (nb, &e1, 10)); rec_i (e1 - nb);
+        snprintf (nb, sizeof nb, "%" PRIuMAX, um); rec_u (strtoumax (nb, &e2, 10)); rec_i (e2 - nb);
+        snprintf (nb, sizeof nb, "-%" PRIxMAX "z", (uintmax_t) (am < 0 ? -am : am)); rec_i (strtoimax (nb, &e1, 16)); rec_i (e1 - nb); }
       snprintf (b, sizeof b, "%" PRId8 " %" PRIi8 " %" PRIu8 " %" PRIx8 " %" PRIX8 " %" PRIo8, a8, a8, u8, u8, u8, u8); rec_s (b);
       snprintf (b, sizeof b, "%" PRId16 " %" PRIi16 " %" PRIu16 " %" PRIx16 " %" PRIX16 " %" PRIo16, a16, a16, u16, u16, u16, u16); rec_s (b);
       snprintf (b, sizeof b, "%" PRId32 " %" PRIi32 " %" PRIu32 " %" PRIx32 " %" PRIX32 " %" PRIo32, a32, a32, u32, u32, u32, u32); rec_s (b);
@@ -1894,6 +1906,100 @@ static char *ref_strrichr (const char *s, int c)
 # define strichr ref_strichr
 # define strrichr ref_strrichr
 #endif
+/* ======================================================================== the C99 functions of the Shared C Library: fma, remquo, scalbln, nexttoward, nanf (and fenv, below) */
+static double c99_dbl_of (uint64_t u) { union { double d; uint64_t u; } x; x.u = u; return x.d; }
+static uint64_t c99_bits (double d) { union { double d; uint64_t u; } x; x.d = d; return x.u; }
+static uint32_t c99_fbits (float f) { union { float f; uint32_t u; } x; x.f = f; return x.u; }
+static uint64_t c99_u64 (void) { uint64_t hi = rnd (), lo = rnd (); return (hi << 32) | lo; }       /* (the order of the two calls is fixed) */
+static double c99_dbl (void)
+{
+  /* doubles of every kind: random bits, short mantissas (ties), a narrow range of exponents (so that products and sums meet), huge and tiny exponents, subnormals */
+  uint64_t m, e, sign;
+  unsigned kind = rr (6), bits, sh, w;
+  switch (kind)
+    {
+    case 0: return c99_dbl_of (c99_u64 ());
+    case 1: bits = 1 + rr (31); sh = rr (22); w = rnd (); m = (uint64_t) (w & ((1u << bits) - 1)) << sh; e = 1023 - 8 + rr (17); break;
+    case 2: m = c99_u64 (); e = 1023 - 30 + rr (61); break;
+    case 3: m = c99_u64 (); e = rr (2) ? 1023 + 400 + rr (600) : 1023 - 500 - rr (500); break;
+    case 4: m = c99_u64 (); e = rr (3); break;                                              /* subnormals and the smallest normals */
+    default: w = rnd (); m = (uint64_t) (w & 0xFFFFF) << 20; e = 1023 + 510 + rr (3); break;
+    }
+  sign = rr (2);
+  return c99_dbl_of ((sign << 63) | (e << 52) | (m & 0xFFFFFFFFFFFFFULL));
+}
+static void c99_quo (int qv) { int l = (qv < 0 ? -qv : qv) & 7; rec_i (l ? (qv < 0 ? -1 : 1) : 0); rec_i (l); }       /* (glibc keeps 3 bits and the sign: a quotient of 8 is 0) */
+static uint64_t c99_norm (double d) { return d != d ? 0x7FF8000000000000ULL : c99_bits (d); }
+static void test_c99 (void)
+{
+  sect_begin ("c99", 4);
+  for (unsigned i = 0; i < N (6000); i++)
+    {
+      double x = c99_dbl (), y, z, p, r;
+      int q1 = 0, q2 = 0, qv;
+      y = c99_dbl (); z = c99_dbl ();
+      case_begin (i);
+      rec_u (c99_norm (fma (x, y, z)));
+      p = x * y;
+      if (p == p && p - p == 0) { rec_u (c99_norm (fma (x, y, -p))); rec_u (c99_norm (fma (x, y, -p * (1 + 1.1102230246251565e-16)))); rec_u (c99_norm (fma (x, y, -p * (1 - 2.220446049250313e-16)))); }       /* cancellation */
+      rec_u (c99_norm (fma (x, 1.0, z))); rec_u (c99_norm (fma (1.0, y, z))); rec_u (c99_norm (fma (x, y, 0.0))); rec_u (c99_norm (fma (x, y, -0.0)));
+      q1 = q2 = 0; r = remquo (x, y, &q1); qv = q1;
+      rec_u (c99_norm (r)); c99_quo (qv);
+      r = remquo (x, y / 1024.0, &q2); qv = q2;
+      rec_u (c99_norm (r)); c99_quo (qv);
+      { double ax = x < 0 ? -x : x; q1 = 0; r = remquo (ax, ax * 0.5, &q1); rec_u (c99_norm (r)); c99_quo (q1); q1 = 0; r = remquo (ax * 3.0, ax * 2.0, &q1); rec_u (c99_norm (r)); c99_quo (q1); }       /* ties */
+      { long n1 = (long) rr (4400) - 2200, n2 = rr (2) ? 2000000000L : -2000000000L; rec_u (c99_norm (scalbln (x, n1))); rec_u (c99_norm (scalbln (x, n2))); }
+      rec_u (c99_norm (nexttoward (x, y))); rec_u (c99_norm (nexttoward (x, (long double) x)));
+      case_end ();
+    }
+  { unsigned long long b[4];
+    float f0 = nanf (""), f1 = nanf ("123"), f2 = nanf ("0x7fffff"), f3 = nanf ("junk");
+    b[0] = c99_fbits (f0); b[1] = c99_fbits (f1); b[2] = c99_fbits (f2); b[3] = c99_fbits (f3);
+    case_begin (0);
+    rec_u (b[0]); rec_u (b[1]); rec_u (b[2]); rec_u (b[3]);
+    case_end (); }
+  sect_end ();
+}
+
+/* ======================================================================== erf, erfc, lgamma, tgamma against the values of Python's math module (tolerances: the ones the library claims) */
+#include "libtest-gamma.inc"
+static double gm_err (double got, double want, double tiny)       /* the relative error, with an absolute floor of TINY for results near zero */
+{
+  double d = got - want, s = (want < 0 ? -want : want);
+  if (got != got || want != want) return (got != got) == (want != want) ? 0.0 : 1e9;
+  if (got == want) return 0.0;
+  if (d - d != 0) return 1e9;
+  return (d < 0 ? -d : d) / (s > tiny ? s : tiny);
+}
+static void test_gamma (void)
+{
+  double w_erf = 0, w_erfc = 0, w_lg = 0, w_tg = 0, w_tgs = 0;
+  int bad = 0;
+  sect_begin ("gamma", 5);
+  for (unsigned i = 0; i < 400; i++)
+    {
+      const struct gm_case *c = &gm_cases[i];
+      double e, ec, lg, tg, a;
+      int sg = 0, ok;
+      case_begin (i);
+      e = erf (c->x); ec = erfc (c->x); lg = lgamma_r (c->x, &sg); tg = tgamma (c->x);
+      a = gm_err (e, c->erf, 1e-300); if (a > w_erf) w_erf = a; ok = a < 4e-16 * 3; rec_i (ok); bad += !ok;
+      a = gm_err (ec, c->erfc, 1e-300); if (a > w_erfc) w_erfc = a; ok = a < 4e-16 * 3; rec_i (ok); bad += !ok;
+      if (c->lgamma == c->lgamma) { a = gm_err (lg, c->lgamma, 1e-2); if (a > w_lg) w_lg = a; ok = a < 1e-13; } else ok = 1;       /* (near the zeros of lgamma, at 1 and 2, the error is counted against 1e-2) */
+      rec_i (ok); bad += !ok;
+      if (c->tgamma == c->tgamma) { a = gm_err (tg, c->tgamma, 1e-300); if (a > w_tg) w_tg = a; if (c->x > 0 && a > w_tgs) w_tgs = a; ok = a < (c->x > 20 || c->x < -20 ? 2e-13 : 1e-14); if (g_verbose && !ok) printf ("  gamma  tgamma (%a = %.17g) is %.17g, wanted %.17g\n", c->x, c->x, tg, c->tgamma); } else ok = 1;
+      rec_i (ok); bad += !ok;
+      rec_i (c->x < 0 && lg == lg && ((tg < 0) != (sg < 0)) && c->tgamma == c->tgamma && tg != 0 ? 0 : 1);       /* the sign of lgamma_r is the sign of tgamma */
+      case_end ();
+    }
+  if (g_verbose) printf ("  gamma  worst relative error: erf %.3g erfc %.3g lgamma %.3g tgamma %.3g (positive x: %.3g)\n", w_erf, w_erfc, w_lg, w_tg, w_tgs);
+  check (!bad, "erf, erfc, lgamma and tgamma against Python's math module");
+  check (erf (0.0) == 0.0 && erf (INFINITY) == 1.0 && erf (-INFINITY) == -1.0 && erfc (INFINITY) == 0.0 && erfc (-INFINITY) == 2.0 && erfc (0.0) == 1.0 && isnan (erf (NAN)), "erf and erfc: the special values");
+  check (tgamma (1.0) == 1.0 && tgamma (2.0) == 1.0 && tgamma (5.0) == 24.0 && tgamma (23.0) == 1124000727777607680000.0 && tgamma (0.5) > 1.77245385090551 && tgamma (0.5) < 1.77245385090552 && isinf (tgamma (172.0)) && isinf (tgamma (0.0)) && isnan (tgamma (-2.0)) && isnan (tgamma (-INFINITY)) && tgamma (INFINITY) == INFINITY, "tgamma: integers, 1/2 and the special values");
+  { int s = 0; check (lgamma_r (1.0, &s) == 0.0 && s == 1 && lgamma_r (2.0, &s) == 0.0 && isinf (lgamma_r (0.0, &s)) && isinf (lgamma_r (-3.0, &s)) && lgamma_r (-0.5, &s) > 1.26 && s == -1 && lgamma_r (-1.5, &s) > 0.8 && s == 1, "lgamma_r: zeros, poles and signs"); }
+  sect_end ();
+}
+
 static void test_g1 (void)
 {
   static const char alpha[] = "abcABC xyz.-";
@@ -2013,6 +2119,27 @@ static void g1_q2 (void) { g1_order[g1_n++] = 2; }
 static void test_g1self (void)
 {
   sect_begin ("g1self", 1);
+  { fenv_t env, env2; fexcept_t fl;
+    feclearexcept (FE_ALL_EXCEPT);
+    check (fetestexcept (FE_ALL_EXCEPT) == 0 && fegetround () == FE_TONEAREST && fesetround (FE_TONEAREST) == 0 && fesetround (FE_UPWARD) != 0 && fegetround () == FE_TONEAREST, "fenv: no flags at the start, the rounding mode is FE_TONEAREST and stays");
+    check (feraiseexcept (FE_INEXACT | FE_OVERFLOW) == 0 && fetestexcept (FE_ALL_EXCEPT) == (FE_INEXACT | FE_OVERFLOW) && fetestexcept (FE_OVERFLOW) == FE_OVERFLOW && fetestexcept (FE_INVALID) == 0, "feraiseexcept and fetestexcept");
+    check (fegetexceptflag (&fl, FE_OVERFLOW | FE_INVALID) == 0 && fl == FE_OVERFLOW && feclearexcept (FE_OVERFLOW) == 0 && fetestexcept (FE_ALL_EXCEPT) == FE_INEXACT && fesetexceptflag (&fl, FE_OVERFLOW) == 0 && fetestexcept (FE_ALL_EXCEPT) == (FE_INEXACT | FE_OVERFLOW), "fegetexceptflag, feclearexcept and fesetexceptflag");
+    check (fegetenv (&env) == 0 && feclearexcept (FE_ALL_EXCEPT) == 0 && fetestexcept (FE_ALL_EXCEPT) == 0 && fesetenv (&env) == 0 && fetestexcept (FE_ALL_EXCEPT) == (FE_INEXACT | FE_OVERFLOW), "fegetenv and fesetenv");
+    check (feholdexcept (&env2) == 0 && fetestexcept (FE_ALL_EXCEPT) == 0 && feraiseexcept (FE_UNDERFLOW) == 0 && feupdateenv (&env2) == 0 && fetestexcept (FE_ALL_EXCEPT) == (FE_INEXACT | FE_OVERFLOW | FE_UNDERFLOW), "feholdexcept and feupdateenv (the flags raised in between are kept)");
+    check (fesetenv (FE_DFL_ENV) == 0 && fetestexcept (FE_ALL_EXCEPT) == 0, "fesetenv (FE_DFL_ENV)"); }
+  { struct timeval tv = { 0, 0 }; struct timezone tz = { 0, 0 }; struct timespec ts = { 0, 0 };
+    errno = 0; check (sethostname ("host", 4) == -1 && errno == EPERM, "sethostname: -1 and EPERM (as in UnixLib: a module does not set the name of the machine)");
+    errno = 0; check (setdomainname ("dom", 3) == -1 && errno == EPERM, "setdomainname: -1 and EPERM");
+    errno = 0; check (settimeofday (&tv, &tz) == -1 && errno == EPERM, "settimeofday: -1 and EPERM");
+    errno = 0; check (settimeofday (0, 0) == -1 && errno == EPERM, "settimeofday (NULL, NULL): -1 and EPERM");
+    errno = 0; check (clock_settime (CLOCK_REALTIME, &ts) == -1 && errno == EPERM, "clock_settime (CLOCK_REALTIME): -1 and EPERM");
+    errno = 0; check (clock_settime (CLOCK_MONOTONIC, &ts) == -1 && errno == EPERM, "clock_settime (CLOCK_MONOTONIC): -1 and EPERM");
+    errno = 0; check (clock_settime (77, &ts) == -1 && errno == EINVAL, "clock_settime of a clock that does not exist: -1 and EINVAL"); }
+  check (strcasecmp_l ("Hello", "hELLO", LC_GLOBAL_LOCALE) == 0 && strcasecmp_l ("a", "b", LC_GLOBAL_LOCALE) < 0 && strcasecmp_l ("b", "A", LC_GLOBAL_LOCALE) > 0
+	 && strncasecmp_l ("ABCx", "abcy", 3, LC_GLOBAL_LOCALE) == 0 && strncasecmp_l ("ABCx", "abcy", 4, LC_GLOBAL_LOCALE) < 0 && strncasecmp_l ("xyz", "XYZ", 0, LC_GLOBAL_LOCALE) == 0,
+	 "strcasecmp_l and strncasecmp_l: ASCII case folding, the locale is ignored");
+  check (streq (strerror_l (ENOENT, LC_GLOBAL_LOCALE), strerror (ENOENT)) && streq (strerror_l (EPROTO, LC_GLOBAL_LOCALE), "Protocol error") && streq (strerror_l (999, LC_GLOBAL_LOCALE), "Unknown error 999"),
+	 "strerror_l: the texts of strerror");
   check (streq (strsignal (SIGINT), "Interrupt") && streq (strsignal (SIGSEGV), "Segmentation fault") && streq (strsignal (SIGTERM), "Terminated") && streq (strsignal (99), "Unknown signal 99")
 	 && streq (strsignal (0), "Unknown signal 0") && streq (strsignal (-5), "Unknown signal -5"), "strsignal: the texts and an unknown number");
   check (sys_nsig == NSIG && streq (sys_siglist[SIGABRT], "Aborted") && streq (sys_siglist[SIGUSR2], "User defined signal 2"), "sys_siglist and sys_nsig");
@@ -2729,6 +2856,8 @@ int main (int argc, char **argv)
   RUN ("complex", test_complex);
   RUN ("iconv", test_iconv);
   RUN ("g3", test_g3);
+  RUN ("c99", test_c99);
+  RUN ("gamma", test_gamma);
 #if defined (T_ARM)
   RUN ("g1self", test_g1self);                                                                          /* (before stdio3, which closes the standard streams) */
   RUN ("g2self", test_g2self);

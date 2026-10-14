@@ -31,11 +31,11 @@ The library has no C library of its own (the veneers only call SWIs), so the sam
 #include "oslib/wimp.h"
 ```
 ```bash
-arm-riscos-gnueabihf-gcc -O2 -o prog,ff8 main.c -lOSLib32                 # a program
-arm-riscos-gnueabihf-gcc -mmodule -O2 -o mod.elf mod.o header.o -lOSLib32  # a module
+arm-riscos-gnueabihf-gcc -O2 -o prog,e1f main.c -lOSLib32                 # a program
+arm-riscos-gnueabihf-gcc -mmodule -O2 -o mod,ffa mod.o header.o -lOSLib32      # a module (on RISC OS: -o mod; a name ending in .elf stays an ELF file)
 ```
 
-A 4.7.4 Makefile (`-LOSLib: -lOSLib32`, `-lOSLibH32`) links unchanged. The X functions return the error block; the non-X ones return the result register OSLib's header names and raise an error with `OS_GenerateError` (which ends the command line: use X functions where an error is expected).
+A 4.7.4 Makefile (`-LOSLib: -lOSLib32`, `-lOSLibH32`) links unchanged ([PORTING-FROM-4.7.4.md](PORTING-FROM-4.7.4.md)). The X functions return the error block; the non-X ones return the result register OSLib's header names and raise an error with `OS_GenerateError` (which ends the command line: use X functions where an error is expected).
 
 ## The finding: non-X veneers in SVC mode
 
@@ -43,13 +43,13 @@ OSLib assumes that a non-X function is only called in user mode, and its veneers
 
 ## What was tested
 
-* `modkit/tests/sim-oslib.py` (on the ARM interpreter and the kernel model): the veneers of X and non-X functions with 0 to 8 arguments, outputs, errors, and the whole-library link: 20 checks.
-* On the Raspberry Pi (RISC OS 5.30, 2026-10-11, `pack/module54`): **OlHw**, a module linked with the real `libOSLib32.a` in SVC mode: 21 checks, 0 failed (`os_read_monotonic_time`, `os_convert_cardinal4`, the X forms, a SWI with seven and with eight arguments, `xos_gs_trans`, `xos_cli`, errors, mode variables, files); **SockHw**, the 53-check socket test of `pack/module45`, built again with it: 53 checks, 0 failed; a failing non-X call ended the command line as described.
+* `modkit/tests/sim-oslib.py` (on the ARM interpreter and the kernel model): 20 checks: no undefined symbol in the library and no VFP or ARMv7-only code in it, and, at two load addresses, the X functions' outputs and error block, the non-X functions' result registers, `os_write0` and `os_new_line`, `OS_GenerateError` and no complaint from the model. (The whole-library link is done by `install-oslib.py`, and the SWIs with seven and eight arguments are in the hardware test below.)
+* On the Raspberry Pi (RISC OS 5.30, 2026-10-11, `modkit/tests/hwpack/olhw.c`): **OlHw**, a module linked with the real `libOSLib32.a` in SVC mode: 21 checks, 0 failed (`os_read_monotonic_time`, `os_convert_cardinal4`, the X forms, a SWI with seven and with eight arguments, `xos_gs_trans`, `xos_cli`, errors, mode variables, files); **SockHw**, the 53-check socket test `modkit/tests/hwpack/sockhw.c`, built again with it: 53 checks, 0 failed; a failing non-X call ended the command line as described.
 * GCCSDK's own examples and modules build with the real library (`test-gccsdk-modules.py`, `test-gccsdk-examples.py`).
 
 ## The older route
 
-`modkit/bin/mkoslib-lib.sh` and `mkoslib` (with `OSLIB=<headers>`) make veneers from OSLib's headers without building OSLib. They are kept for a tool chain without the OSLib source: `mkoslib` writes only the functions your objects use, and its library lacks 494 functions (the Toolbox calls that are messages, and those that do not compile with OSLib's types). When you have a checkout, `install-oslib.py` is better: the library is OSLib's own.
+`modkit/bin/mkoslib-lib.sh` and `mkoslib` (with `OSLIB=<headers>`) make veneers from OSLib's headers without building OSLib. They are kept for a tool chain without the OSLib source: `mkoslib` writes only the functions your objects use, and its library lacks 494 symbols: 367 Toolbox message calls that it skips, 34 that do not compile with OSLib's types, and 93 old spellings of functions whose `...w` form it has (`os_bget` and the like; the 32-bit headers use the `w` forms). When you have a checkout, `install-oslib.py` is better: the library is OSLib's own.
 
 ## Not done
 

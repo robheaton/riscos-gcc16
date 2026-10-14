@@ -35,6 +35,7 @@ extern double difftime (time_t end, time_t start);
 extern int clock_gettime (clockid_t id, struct timespec *ts);
 extern int timespec_get (struct timespec *ts, int base);
 extern int clock_getres (clockid_t id, struct timespec *res);           /* 10 ms: the resolution of the RISC OS clock */
+extern int clock_settime (clockid_t id, const struct timespec *ts);       /* CLOCK_REALTIME and CLOCK_MONOTONIC: -1 and EPERM (a module does not set the clock, as in UnixLib); another clock: -1 and EINVAL */
 #endif
 extern struct tm *gmtime (const time_t *t);
 extern struct tm *localtime (const time_t *t);

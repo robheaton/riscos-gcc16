@@ -3,18 +3,26 @@
                      functions and the OSLib calls
      *SockHw_Raise   a non-X OSLib function that fails: the error ends the command (OS_GenerateError)
      *SockHw_Try     runs *SockHw_Raise through OS_CLI and prints the error that comes back (an Obey file stops at an error)
+     *SockHw_Fds     sockets as descriptors (16.2.0-23): fcntl, ioctl, read, write, readv, writev, dup, select with a descriptor that is not a socket, fstat, the full table, a socket made with the raw SWI; and the
+                     interface requests (SIOCGIFCONF, SIOCGIFADDR, SIOCGIFFLAGS, SIOCGIFNETMASK of lo0)
+     *SockHw_Raw     a socket made with the raw SWI and turned into a descriptor, closed by close () with no socket () call before it (run it first after RMLoad)
      *SockHw_Serve   an echo server on port 6000 for a client on another machine (tests/hw-sockets.py) */
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/uio.h>
 #include <kernel.h>
 #include <swis.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -131,6 +139,188 @@ static void udp (void)
   check (socketclose (s1) == 0 && socketclose (s2) == 0, "socketclose of the two");
 }
 
+#define EN(e) ((e) == 0 ? "0" : (e) == EBADF ? "EBADF" : (e) == ENOTSOCK ? "ENOTSOCK" : (e) == EMFILE ? "EMFILE" : (e) == ENFILE ? "ENFILE" : "other")
+
+/* sockets as descriptors, on the real Internet module (16.2.0-23) */
+static void fds (void)
+{
+  struct sockaddr_in a, peer;
+  socklen_t pl = sizeof peer;
+  int l, c, k, d, l2, on = 1, v, r, n, i, made = 0, raw = -1, fd;
+  char buf[32], b2[8], b3[8];
+  struct stat st;
+  struct iovec iv[2];
+  fd_set rd, wr;
+  struct timeval tv;
+  static int many[80];
+  _kernel_oserror *e;
+  printf ("Sockets as descriptors\n");
+  l = socket (AF_INET, SOCK_STREAM, 0); c = socket (AF_INET, SOCK_STREAM, 0);
+  check (l >= 3 && c >= 3 && l != c, "socket () gives descriptors: 3 or more, and different");
+  printf ("  INFO  descriptors %d and %d are the Internet module's sockets %d and %d\n", l, c, __modlib_socket_handle (l), __modlib_socket_handle (c));
+  check (fcntl (l, F_GETFL) == O_RDWR, "fcntl F_GETFL: O_RDWR");
+  r = ioctl (l, FIONBIO, &on); n = fcntl (l, F_GETFL);
+  check (r == 0 && n == (O_RDWR | O_NONBLOCK), "ioctl (FIONBIO) on the descriptor works, and F_GETFL shows O_NONBLOCK");
+  r = fcntl (c, F_SETFL, O_NONBLOCK); n = fcntl (c, F_GETFL);
+  check (r == 0 && (n & O_NONBLOCK), "fcntl F_SETFL with O_NONBLOCK");
+  memset (&st, 0, sizeof st);
+  check (fstat (l, &st) == 0 && S_ISSOCK (st.st_mode), "fstat: a socket (S_IFSOCK)");
+  setsockopt (l, SOL_SOCKET, SO_REUSEADDR, &on, sizeof on);
+  a = addr_of ("0.0.0.0", 6000);
+  check (bind (l, (struct sockaddr *) &a, sizeof a) == 0 && listen (l, 5) == 0, "bind and listen on port 6000");
+  a = addr_of ("127.0.0.1", 6000);
+  r = connect (c, (struct sockaddr *) &a, sizeof a);
+  check (r == 0 || (r < 0 && errno == EINPROGRESS), "connect (non-blocking)");
+  check (wait_for (l, 0, 3) == 1, "select on the descriptor: the listener is readable");
+  memset (&peer, 0, sizeof peer); pl = sizeof peer;
+  k = accept (l, (struct sockaddr *) &peer, &pl);
+  check (k >= 3 && k != l && k != c, "accept () gives a descriptor");
+  fcntl (k, F_SETFL, O_NONBLOCK);
+  check (wait_for (c, 1, 3) == 1, "select: the connecting socket is writable");
+  check (write (c, "ping", 4) == 4, "write () on a socket");
+  check (wait_for (k, 0, 3) == 1, "select: the accepted socket is readable");
+  memset (buf, 0, sizeof buf);
+  check (read (k, buf, sizeof buf) == 4 && !memcmp (buf, "ping", 4), "read () on a socket: \"ping\"");
+  check (write (c, "abc", 3) == 3, "write \"abc\"");
+  check (wait_for (k, 0, 3) == 1, "select: readable again");
+  v = -1;
+  check (ioctl (k, FIONREAD, &v) == 0 && v == 3, "ioctl (FIONREAD): 3 bytes waiting");
+  memset (b2, 0, sizeof b2); memset (b3, 0, sizeof b3);
+  iv[0].iov_base = b2; iv[0].iov_len = 2; iv[1].iov_base = b3; iv[1].iov_len = 6;
+  check (readv (k, iv, 2) == 3 && !memcmp (b2, "ab", 2) && b3[0] == 'c', "readv () into two buffers: \"ab\" and \"c\"");
+  iv[0].iov_base = (void *) "PO"; iv[0].iov_len = 2; iv[1].iov_base = (void *) "NG"; iv[1].iov_len = 2;
+  check (writev (k, iv, 2) == 4, "writev () from two buffers");
+  check (wait_for (c, 0, 3) == 1, "select: the other side is readable");
+  memset (buf, 0, sizeof buf);
+  check (read (c, buf, sizeof buf) == 4 && !memcmp (buf, "PONG", 4), "read: \"PONG\"");
+  /* select with a descriptor that is not a socket: the screen (1) is always writable (the Internet module is polled, not waited for, when something is ready already) */
+  write (k, "Z", 1);
+  check (wait_for (c, 0, 3) == 1, "the byte \"Z\" has arrived");
+  FD_ZERO (&rd); FD_ZERO (&wr); FD_SET (c, &rd); FD_SET (1, &wr);
+  tv.tv_sec = 3; tv.tv_usec = 0;
+  n = select (c + 1, &rd, &wr, NULL, &tv);
+  check (n == 2 && FD_ISSET (c, &rd) && FD_ISSET (1, &wr), "select with a socket that has data and the screen: both ready");
+  check (read (c, buf, sizeof buf) == 1, "read the byte");
+  FD_ZERO (&rd); FD_ZERO (&wr); FD_SET (c, &rd); FD_SET (1, &wr);
+  tv.tv_sec = 3; tv.tv_usec = 0;
+  n = select (c + 1, &rd, &wr, NULL, &tv);
+  check (n == 1 && !FD_ISSET (c, &rd) && FD_ISSET (1, &wr), "select with a socket that has nothing and the screen: only the screen is ready");
+  /* dup: the Internet module's socket stays open until the last descriptor of it is closed */
+  d = dup (k);
+  check (d >= 3 && d != k, "dup () of a socket");
+  check (close (k) == 0, "close () of the original");
+  check (wait_for (c, 0, 1) == 0, "the other side has not seen the end of file: the socket is still open through the copy");
+  check (write (d, "x", 1) == 1, "write () through the copy");
+  check (wait_for (c, 0, 3) == 1 && read (c, buf, sizeof buf) == 1 && buf[0] == 'x', "the other side reads \"x\"");
+  check (close (d) == 0, "close () of the copy");
+  check (wait_for (c, 0, 3) == 1 && read (c, buf, sizeof buf) == 0, "now the other side reads the end of file: the Internet module's socket is closed");
+  errno = 0;
+  check (write (d, "y", 1) == -1 && errno == EBADF, "write () on the closed descriptor: -1 and EBADF");
+  check (close (c) == 0 && close (l) == 0, "close () of the other two");
+  /* errors */
+  errno = 0; r = socketclose (1);
+  check (r == -1 && errno == ENOTSOCK, "socketclose (1) (the screen): -1 and ENOTSOCK");
+  errno = 0; r = bind (1, (struct sockaddr *) &a, sizeof a);
+  check (r == -1 && errno == ENOTSOCK, "bind (1, ...): -1 and ENOTSOCK");
+  errno = 0; r = (int) read (97, buf, 1);
+  check (r == -1 && errno == EBADF, "read (97) (no descriptor): -1 and EBADF");
+  l2 = socket (AF_INET, SOCK_STREAM, 0);
+  errno = 0; r = accept (l2, 0, 0);
+  check (r == -1 && _inet_err ()[0], "accept () on a socket that does not listen: -1 and the Internet module's message");
+  printf ("  INFO  errno %d, _inet_err: \"%s\"\n", errno, _inet_err ());
+  close (l2);
+  /* a socket made with the raw SWI Socket_Creat becomes a descriptor with __modlib_socket_fd () */
+  e = _swix (0x61200, _INR (0, 2) | _OUT (0), AF_INET, SOCK_DGRAM, 0, &raw);
+  check (e == NULL && raw >= 0, "the raw SWI Socket_Creat");
+  fd = raw >= 0 ? __modlib_socket_fd (raw) : -1;
+  v = -1; pl = sizeof v;
+  check (fd >= 3 && __modlib_socket_handle (fd) == raw && getsockopt (fd, SOL_SOCKET, SO_TYPE, &v, &pl) == 0 && v == SOCK_DGRAM, "__modlib_socket_fd (): a descriptor for it, and the call works");
+  check (close (fd) == 0, "close () of that descriptor closes the Internet module's socket");
+  errno = 0;
+  check (getsockopt (fd, SOL_SOCKET, SO_TYPE, &v, &pl) == -1 && errno == EBADF, "and it is gone");
+  /* the table: how many sockets can be open at once; none is lost when it is full; and many can be opened and closed */
+  for (i = 0; i < 80; i++)
+    {
+      many[i] = socket (AF_INET, SOCK_DGRAM, 0);
+      if (many[i] < 0) break;
+      made++;
+    }
+  r = errno;
+  printf ("  INFO  %d sockets made, then errno %d (%s)\n", made, r, EN (r));
+  check (made >= 10 && made <= 61 && (r == EMFILE || r == ENFILE), "the table (or the Internet module) fills up with EMFILE or ENFILE, after 10 to 61 sockets");
+  for (i = 0; i < made; i++) close (many[i]);
+  for (i = 0; i < 200; i++) { int s = socket (AF_INET, SOCK_DGRAM, 0); if (s < 0) break; close (s); }
+  check (i == 200, "200 times socket () and close (): nothing is lost");
+  /* the end of a module: __modlib_closeall () closes the sockets (also a dup'ed one) */
+  { int s1 = socket (AF_INET, SOCK_STREAM, 0), s2 = socket (AF_INET, SOCK_DGRAM, 0), s3 = s1 >= 0 ? dup (s1) : -1, cnt;
+    cnt = __modlib_closeall ();
+    errno = 0;
+    check (s1 >= 3 && s2 >= 3 && s3 >= 3 && cnt == 3 && close (s1) == -1 && errno == EBADF, "__modlib_closeall () closes the three descriptors (two sockets, one a dup)"); }
+}
+
+/* the interface requests of <sys/ioctl.h> and <net/if.h> on the real Internet module (16.2.0-23): their numbers are those of the RISC OS TCPIPLibs (96 to 99 and 95 for the "get" requests), not 4.4BSD's */
+static void ifcheck (void)
+{
+  char cbuf[1024];
+  struct ifconf ifc;
+  struct ifreq *p, one;
+  struct sockaddr_in *sin;
+  int u, r, off, count = 0, lo = 0;
+  printf ("Interface requests\n");
+  u = socket (AF_INET, SOCK_DGRAM, 0);
+  check (u >= 3, "a datagram socket");
+  memset (cbuf, 0, sizeof cbuf);
+  ifc.ifc_len = sizeof cbuf; ifc.ifc_buf = cbuf;
+  r = ioctl (u, SIOCGIFCONF, &ifc);
+  printf ("  INFO  SIOCGIFCONF gave %d, length %d\n", r, ifc.ifc_len);
+  check (r == 0 && ifc.ifc_len > 0 && ifc.ifc_len <= (int) sizeof cbuf, "ioctl (SIOCGIFCONF): the list of interfaces");
+  for (off = 0; off + (int) sizeof (struct ifreq) <= ifc.ifc_len && off + (int) sizeof (struct ifreq) <= (int) sizeof cbuf; off += (int) _SIZEOF_ADDR_IFREQ (*p))
+    {
+      p = (struct ifreq *) (cbuf + off);
+      sin = (struct sockaddr_in *) &p->ifr_addr;
+      printf ("  INFO  interface %.16s: family %d, length %d, address %s\n", p->ifr_name, p->ifr_addr.sa_family, p->ifr_addr.sa_len, inet_ntoa (sin->sin_addr));
+      if (!strcmp (p->ifr_name, "lo0") && sin->sin_addr.s_addr == inet_addr ("127.0.0.1")) lo = 1;
+      count++;
+      if (count > 16) break;
+    }
+  check (count >= 1 && lo, "the list has lo0 with 127.0.0.1");
+  memset (&one, 0, sizeof one); strcpy (one.ifr_name, "lo0");
+  r = ioctl (u, SIOCGIFADDR, &one); sin = (struct sockaddr_in *) &one.ifr_addr;
+  printf ("  INFO  SIOCGIFADDR gave %d, family %d, address %s\n", r, one.ifr_addr.sa_family, inet_ntoa (sin->sin_addr));
+  check (r == 0 && sin->sin_addr.s_addr == inet_addr ("127.0.0.1"), "ioctl (SIOCGIFADDR) of lo0: 127.0.0.1");
+  memset (&one, 0, sizeof one); strcpy (one.ifr_name, "lo0");
+  r = ioctl (u, SIOCGIFFLAGS, &one);
+  printf ("  INFO  SIOCGIFFLAGS gave %d, flags &%X\n", r, (unsigned) (unsigned short) one.ifr_flags);
+  check (r == 0 && (one.ifr_flags & IFF_UP) && (one.ifr_flags & IFF_LOOPBACK), "ioctl (SIOCGIFFLAGS) of lo0: up and loopback");
+  memset (&one, 0, sizeof one); strcpy (one.ifr_name, "lo0");
+  r = ioctl (u, SIOCGIFNETMASK, &one); sin = (struct sockaddr_in *) &one.ifr_addr;
+  printf ("  INFO  SIOCGIFNETMASK gave %d, mask %s\n", r, inet_ntoa (sin->sin_addr));
+  check (r == 0 && sin->sin_addr.s_addr == htonl (0xFF000000), "ioctl (SIOCGIFNETMASK) of lo0: 255.0.0.0");
+  memset (&one, 0, sizeof one); strcpy (one.ifr_name, "nonesuch9");
+  errno = 0;
+  r = ioctl (u, SIOCGIFADDR, &one);
+  printf ("  INFO  SIOCGIFADDR of nonesuch9 gave %d, errno %d\n", r, errno);
+  check (r == -1, "ioctl (SIOCGIFADDR) of an interface that does not exist: -1");
+  check (close (u) == 0, "close ()");
+}
+
+/* a socket made with the raw SWI Socket_Creat, turned into a descriptor and closed with close (), with no socket () or accept () before it in this module (the descriptor layer must find the Internet module's
+   side of close () by itself: this crashed in the first 16.2.0-23 kit when it was the module's first socket call) */
+static void raw (void)
+{
+  int h = -1, fd, r;
+  _kernel_oserror *e;
+  printf ("A raw socket as the first socket call\n");
+  e = _swix (0x61200, _INR (0, 2) | _OUT (0), AF_INET, SOCK_STREAM, 0, &h);
+  check (e == NULL && h >= 0, "the raw SWI Socket_Creat");
+  fd = h >= 0 ? __modlib_socket_fd (h) : -1;
+  check (fd >= 3 && __modlib_socket_handle (fd) == h, "__modlib_socket_fd (): a descriptor for it");
+  r = fd >= 0 ? close (fd) : -2;
+  check (r == 0, "close () of the descriptor closes the Internet module's socket");
+  errno = 0;
+  check (fd >= 0 && close (fd) == -1 && errno == EBADF, "and the descriptor is gone");
+}
+
 static void errors (void)
 {
   struct sockaddr_in a;
@@ -140,8 +330,8 @@ static void errors (void)
   a = addr_of ("0.0.0.0", 6002);
   errno = 0;
   r = bind (9999, (struct sockaddr *) &a, sizeof a);
-  check (r == -1 && errno == EBADF && _inet_err ()[0], "bind on socket 9999: -1, EBADF and a message");
-  printf ("  INFO  errno %d, _inet_err: \"%s\"\n", errno, _inet_err ());
+  check (r == -1 && errno == EBADF, "bind on 9999 (no descriptor): -1 and EBADF (from the descriptor table: the Internet module is not asked)");
+  printf ("  INFO  errno %d\n", errno);
   s = socket (AF_INET, SOCK_STREAM, 0);
   nonblocking (s);
   a = addr_of ("127.0.0.1", 1);
@@ -256,8 +446,22 @@ _kernel_oserror *sh_table (const char *arg_string, int argc, int number, void *p
     {
     case CMD_SockHw_Test:
       printf ("SockHw_Test\n");
+      checks = fails = 0;
       tcp (); udp (); errors (); names (); oslib ();
       printf ("SockHw_Test: %d checks, %d FAILED\n", checks, fails);
+      return 0;
+    case CMD_SockHw_Raw:
+      printf ("SockHw_Raw\n");
+      checks = fails = 0;
+      raw ();
+      printf ("SockHw_Raw: %d checks, %d FAILED\n", checks, fails);
+      return 0;
+    case CMD_SockHw_Fds:
+      printf ("SockHw_Fds\n");
+      checks = fails = 0;
+      fds ();
+      ifcheck ();
+      printf ("SockHw_Fds: %d checks, %d FAILED\n", checks, fails);
       return 0;
     case CMD_SockHw_Raise:
       {

@@ -7,6 +7,7 @@
 #                                                               the module (found by the driver, -mmodule links them)
 #   <tc>/bin/cmunge, arm-riscos-gnueabihf-modreloc, -mkoslib    the three commands of a module's Makefile (programs of the host, made from modkit/src: C, no Python):
 #                                                               cmunge (CMHG file -> header and veneers), mkoslib (the OSLib veneers, made from the objects: replaces -lOSLib32), modreloc (the flat module image)
+#   <tc>/bin/arm-riscos-gnueabihf-asasm-fix                    makes the ELF objects of GCCSDK's asasm linkable into a module (the EABI version, the names of the sections)
 #   <tc>/arm-riscos-gnueabihf/bin/modreloc                     the link that the driver runs after the link of a module (gcc -mmodule -o Module,ffa makes the flat module image)
 #   <tc>/share/riscos-modkit/                                  module.mk, the library sources and the headers (what module.mk needs)
 # usage: install-modkit.sh TOOLCHAIN_DIR [MODKIT_DIR]      (MODKIT_DIR: the modkit folder of this repository, found from the place of this script by default; HOSTCC: the host compiler, cc)
@@ -22,9 +23,9 @@ INC=$TC/lib/gcc/$T/$VER/include-modkit
 rm -rf "$INC" && mkdir -p "$INC" && cp -r "$K"/include/. "$INC/"
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 # the library of the module: built with the compiler of the tool chain, -mmodule
-# every lib/*.c (one object each: a module only gets the objects that it uses) and lib/*.S
+# every lib/*.c (one object each, and a section for each function: the link of a module drops what it does not call, -mmodule links with --gc-sections) and lib/*.S
 OBJS=
-for src in "$K"/lib/*.c; do f=$(basename "$src" .c); "$CC" -mmodule -O2 -std=gnu99 -Wall -c "$src" -o "$W/$f.o"; OBJS="$OBJS $W/$f.o"; done
+for src in "$K"/lib/*.c; do f=$(basename "$src" .c); "$CC" -mmodule -O2 -std=gnu99 -Wall -ffunction-sections -fdata-sections -c "$src" -o "$W/$f.o"; OBJS="$OBJS $W/$f.o"; done
 for src in "$K"/lib/*.S; do f=$(basename "$src" .S); "$CC" -march=armv6 -c "$src" -o "$W/$f.o"; OBJS="$OBJS $W/$f.o"; done
 rm -f "$TC/$T/lib/libmodkit.a" "$TC/$T/lib/libmodkit-core.a"
 "$AR" rcs "$TC/$T/lib/libmodkit-core.a" $OBJS
@@ -52,6 +53,7 @@ for t in cmunge modreloc mkoslib; do "$HOSTCC" -O2 -Wall -o "$W/$t" "$K/src/$t.c
 install -m 755 "$W/cmunge" "$TC/bin/cmunge"
 install -m 755 "$W/modreloc" "$TC/bin/$T-modreloc"
 install -m 755 "$W/mkoslib" "$TC/bin/$T-mkoslib"
+install -m 755 "$K/bin/asasm-fix.sh" "$TC/bin/$T-asasm-fix"         # (a shell script: makes the objects of GCCSDK's asasm linkable)
 ln -sf ../../bin/$T-modreloc "$TC/$T/bin/modreloc"
 # what module.mk needs
 S=$TC/share/riscos-modkit

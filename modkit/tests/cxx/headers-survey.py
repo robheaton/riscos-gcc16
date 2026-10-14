@@ -58,7 +58,7 @@ snip("optional", "#include <optional>", "std::optional<int> o; if (x > 1) o = x;
 snip("variant", "#include <variant>", "std::variant<int, double> v = x; if (x > 100) v = 2.5; return std::holds_alternative<int> (v) ? std::get<int> (v) : (int) std::get<double> (v);", flags="-std=gnu++17")
 snip("string_view", "#include <string_view>", "std::string_view s (\"hello world\"); return (int) s.size () + (int) s.find ('w') + (int) s.substr (6).size () + x;", flags="-std=gnu++17")
 snip("bitset", "#include <bitset>", "std::bitset<32> b (x); b.set (5); return (int) b.count () + (int) b.size ();")
-snip("random", "#include <random>", "std::mt19937 g (x); std::uniform_int_distribution<int> d (1, 6); return d (g) + (int) (g () & 3);", expect="error")   # needs std::lgamma (poisson, binomial): not in the kit yet
+snip("random", "#include <random>", "std::mt19937 g (x); std::uniform_int_distribution<int> d (1, 6); return d (g) + (int) (g () & 3);")   # compiles and links since 16.2.0-23 (lgamma is in the kit)
 snip("chrono", "#include <chrono>", "std::chrono::milliseconds ms (x); std::chrono::seconds s = std::chrono::duration_cast<std::chrono::seconds> (ms * 5000); return (int) s.count ();")
 snip("atomic", "#include <atomic>", "std::atomic<int> a (x); a.fetch_add (2); int e = 5; a.compare_exchange_strong (e, 9); return a.load () + (int) a.exchange (3);")
 snip("span", "#include <span>\n#include <array>", "std::array<int, 4> a = {{1, 2, 3, x}}; std::span<int> s (a); return (int) s.size () + s[3] + (int) s.first (2).size ();", flags="-std=gnu++20")

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """cmunge - a CMunge-compatible command line for the modules of modkit (GCC 16 EABI, no C library).
 
-  cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] FILE.cmhg
+  cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] [-xh FILE.h] [-xhdr FILE.hdr] [-zbase] [-zoslib] [-zerrors] [-depend FILE] FILE.cmhg
 
 The command line of GCCSDK's CMunge 0.xx (what its makefiles use: cmunge -tgcc -32bit -p -d header.h -o header.o file.cmhg), with the work done by mkmodhdr.py:
   -o FILE   the object: the generated assembler source assembled for ARMv6 (arm-riscos-gnueabihf-gcc, the one next to this script or on PATH; CMUNGE_CC overrides it)
   -s FILE   the generated assembler source (kept)          -d FILE   the C header (Module_Title, CMD_<name>, ... and the prototypes of your handlers)
   -p, -px   run the C preprocessor over the file first (-D, -U and -I go to it); the included files are processed as part of the text in both modes
-  -zbase    Image__RO_Base: a constant that holds Image$$RO$$Base, declared in the header (GCCSDK 4.7.4's CMunge; its examples use it)
+  -zbase    Image__RO_Base: a constant that holds Image$$RO$$Base, declared in the header (GCCSDK 4.7.4's CMunge; its examples use it); -zoslib, -zerrors, -xh FILE and -xhdr FILE as CMunge has them
+  -depend FILE  accepted with CMunge's warning that GCC has no such flag (no file is written)
 Accepted and without effect, because the model has nothing to switch: -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of
-anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -blank, -x<type>) is refused with a message instead of being ignored: a module that needs it would be built wrong.
+anyway (nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  Everything else that CMunge has (-tnorcroft, -tlcc, -26bit, -apcs 26|reent|pic, -blank, any other -t, -x or -z) is refused with a message instead of being ignored: a module that needs it would be built wrong.
 What of the CMHG language is supported: bin/mkmodhdr.py.  The RISC OS numbers come from the RISC OS Open sources: set RISCOS_SOURCES to a checkout (see modkit/README.md)."""
 import os, shutil, subprocess, sys, tempfile
 

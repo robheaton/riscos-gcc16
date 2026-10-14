@@ -1,7 +1,8 @@
-// cmath - the C++ face of <math.h> for modules.  libstdc++'s own <cmath> asks the C library for functions that the kit does not have (erf, lgamma, tgamma, fma, remquo, nexttoward and every long double
-// function), so a module gets this one instead (module.mk puts include-cxx before the headers of libstdc++).  It has what math.h of the kit declares, with the overloads that C++ adds: float (the kit's ...f
+// cmath - the C++ face of <math.h> for modules.  libstdc++'s own <cmath> asks the C library for functions that the kit does not have (the float forms of erf, lgamma, tgamma and fma, and the special
+// functions of C++17), so a module gets this one instead (module.mk puts include-cxx before the headers of libstdc++).  It has what math.h of the kit declares, with the overloads that C++ adds: float (the kit's ...f
 // functions), long double (long double is double on this target: the double function is called) and integer arguments (converted to double); the classification macros as functions; std::abs.
-// Not there: the special functions of C++17 (std::beta, std::legendre ...), std::lerp, std::hypot with three arguments, and the functions the C library lacks (erf, gamma, fma ...).
+// erf, erfc, lgamma, tgamma, fma, remquo, scalbln and nexttoward (16.2.0-23) have the float and long double overloads too (they call the double function).  Not there: the special functions of C++17
+// (std::beta, std::legendre ...), std::lerp, std::hypot with three arguments.
 #ifndef _MODKIT_CMATH
 #define _MODKIT_CMATH 1
 #include <bits/c++config.h>
@@ -97,6 +98,26 @@ namespace std
   _MK_CMP (islessgreater, __builtin_islessgreater) _MK_CMP (isunordered, __builtin_isunordered)
 
   using ::nan;
+  // 16.2.0-23: the functions that have no float form in the kit's C library: through double
+#define _MK_VIA_DOUBLE(F) \
+  using ::F; \
+  inline float F (float x) { return (float) ::F ((double) x); } \
+  inline long double F (long double x) { return (long double) ::F ((double) x); } \
+  template<typename T> inline typename std::enable_if<std::is_integral<T>::value, double>::type F (T x) { return ::F ((double) x); }
+  _MK_VIA_DOUBLE (erf) _MK_VIA_DOUBLE (erfc) _MK_VIA_DOUBLE (lgamma) _MK_VIA_DOUBLE (tgamma)
+  using ::fma;
+  inline float fma (float x, float y, float z) { return (float) ::fma ((double) x, (double) y, (double) z); }
+  inline long double fma (long double x, long double y, long double z) { return (long double) ::fma ((double) x, (double) y, (double) z); }
+  using ::remquo;
+  inline float remquo (float x, float y, int *q) { return (float) ::remquo ((double) x, (double) y, q); }
+  inline long double remquo (long double x, long double y, int *q) { return (long double) ::remquo ((double) x, (double) y, q); }
+  using ::scalbln;
+  inline float scalbln (float x, long n) { return (float) ::scalbln ((double) x, n); }
+  inline long double scalbln (long double x, long n) { return (long double) ::scalbln ((double) x, n); }
+  using ::nexttoward;
+  inline float nexttoward (float x, long double y) { return x != x || y != y ? x + (float) y : (long double) x < y ? ::nextafterf (x, __builtin_inff ()) : (long double) x > y ? ::nextafterf (x, -__builtin_inff ()) : (float) y; }
+  inline long double nexttoward (long double x, long double y) { return ::nextafter ((double) x, (double) y); }
+#undef _MK_VIA_DOUBLE
 #undef _MK_UNARY
 #undef _MK_BINARY
 #undef _MK_INTRESULT

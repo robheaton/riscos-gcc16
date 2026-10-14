@@ -9,9 +9,9 @@
    (EEXIST), nor does it cross file systems (EXDEV).  What FileSwitch writes late shows at fflush / fclose: they return EOF with errno set (and ferror) for a disc error.  errno is set from the OS error
    (ENOENT, EISDIR, EACCES, EBADF, EBUSY, EEXIST, ENOTEMPTY, EMFILE, EROFS, ENOSPC, EINVAL, EFBIG, EOVERFLOW, EXDEV, otherwise EIO); the OS error itself stays available as _kernel_last_oserror ().
    Streams: one character can be pushed back with ungetc (a second one is refused); a seek discards it.  exit () and the return from main of a runnable module flush and close the files; _Exit and abort close
-   them without writing what is in the buffers.  A module that is killed does not: its finalisation calls __modlib_closeall ().  A FILE is freed by fclose (a second fclose of it is as undefined as in C; of a
-   standard stream it is EOF); fclose (NULL) is EOF.  The buffers and the FILEs are malloc blocks, i.e. RMA blocks that a runnable program that does not free them leaves behind.
-   Not here: freopen (NULL, ...), fseeko / ftello (use fseek and ftell), the wide character input and output functions. */
+   them without writing what is in the buffers.  A module that is killed does not: its finalisation calls __modlib_closeall () (which closes the sockets too).  A FILE is freed by fclose (a second fclose of it is as undefined as in C; of a
+   standard stream it is EOF); fclose (NULL) is EOF.  The buffers and the FILEs are malloc blocks; those of the files that are still open are closed and freed when the program ends with exit () or a return from main, as above (the other malloc blocks of a program that are not freed stay in the RMA).
+   Not here: freopen (NULL, ...) (EINVAL) and the wide character input and output functions. */
 #ifndef _STDIO_H
 #define _STDIO_H
 #ifdef __cplusplus

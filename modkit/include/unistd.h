@@ -1,4 +1,4 @@
-/* unistd.h - the POSIX functions of <unistd.h> that a module has: the descriptor functions on files (read, write, close, lseek, isatty, unlink, ftruncate, truncate; open is in <fcntl.h>) and the host and domain name.  No process functions. */
+/* unistd.h - the POSIX functions of <unistd.h> that a module has: the descriptor functions on files and sockets (read, write, close, lseek, isatty, unlink, ftruncate, truncate; open is in <fcntl.h>, socket in <sys/socket.h>) and the host and domain name.  No process functions. */
 #ifndef _UNISTD_H
 #define _UNISTD_H
 #include <stddef.h>
@@ -14,7 +14,7 @@ extern "C" {
 #define SEEK_CUR	1
 #define SEEK_END	2
 #endif
-extern ssize_t read (int fd, void *buf, size_t n);                         /* the descriptors are those of open () and fileno (): files and the standard streams; not sockets (see <sys/socket.h>) */
+extern ssize_t read (int fd, void *buf, size_t n);                         /* the descriptors are those of open (), fileno (), socket () and accept (): files, the standard streams and sockets (see <sys/socket.h>) */
 extern ssize_t write (int fd, const void *buf, size_t n);
 extern int close (int fd);
 extern off_t lseek (int fd, off_t offset, int whence);
@@ -34,6 +34,8 @@ extern int ftruncate (int fd, off_t length);
 extern int truncate (const char *path, off_t length);
 extern int gethostname (char *name, size_t len);                           /* Inet$HostName (with Inet$LocalDomain added when it has no dot), else "acorn" and the station number */
 extern int getdomainname (char *name, size_t len);                         /* Inet$LocalDomain, else what follows the first dot of Inet$HostName, else ENOSYS */
+extern int sethostname (const char *name, size_t len);                    /* always -1 and EPERM, as in UnixLib: a module does not set the name of the machine */
+extern int setdomainname (const char *name, size_t len);                  /* always -1 and EPERM */
 #ifdef __cplusplus
 }
 #endif

@@ -49,19 +49,74 @@ for base in (0x01C21000, 0x02008040):
     mod = k.load(data, base); k.cpu.r[13] = k.sp0
     r0, v = k.init(mod)
     check(r0 == 0 and v == 0, "initialisation returns no error")
+    # a socket made with the raw SWI, turned into a descriptor and closed with close (), before any other socket call of the module
+    err, out = k.command(mod, "SockTest_Raw"); out = norm(out)
+    check(err is None, "*SockTest_Raw returns no error: %s" % (err,))
+    check(out == "raw: socket ok, descriptor ok, handle back ok\nraw: close 0\nraw: close again -1 EBADF\n", "a raw socket as a descriptor, closed by close () with no socket () call before: %r" % out)
+    check(not k.net.sockets and 0x41210 in k.net.calls, "the raw socket was closed in the Internet module by close ()")
     # the server
     k.net.connect(); k.net.client_send(b"hello world"); k.net.client_close()
     err, out = k.command(mod, "SockTest_Server"); out = norm(out)
     check(err is None, "*SockTest_Server returns no error: %s" % (err,))
-    want = "socket: 5\nbind: 0\nlisten: 0\nioctl: 0\nselect: 1, listener ready\naccept: connected\nrecv: 0 after 11 bytes\nclose: 0 0\n"
+    want = "socket: 3\nbind: 0\nlisten: 0\nioctl: 0\nselect: 1, listener ready\naccept: connected\nrecv: 0 after 11 bytes\nclose: 0 0\n"
     check(out == want, "the server's output: %r" % out)
     check(bytes(k.net.to_client) == b"HELLO WORLD", "the client received %r" % bytes(k.net.to_client))
+    check(not k.net.sockets, "no socket of the Internet module is left open: %s" % sorted(k.net.sockets))
     check(0x4121B in k.net.calls and 0x41211 in k.net.calls, "the SWIs used include Socket_Accept_1 and Socket_Select")
     # the errors
     err, out = k.command(mod, "SockTest_Errors"); out = norm(out)
-    check("bind(99): -1 errno 9 'Socket error 9'\n" in out, "bind on a bad socket: -1, EBADF and the message: %r" % out.split("\n")[0])
-    check("send(98): -1 errno 9\n" in out, "send on a bad socket: -1, EBADF")
-    check("socketclose(97): 0 errno 0\n" in out, "socketclose of an unknown socket (the model accepts it): 0")
+    check("bind(99): -1 errno 9 ''\n" in out, "bind on a number that is no descriptor: -1, EBADF from the descriptor table (the Internet module is not asked: no message): %r" % out.split("\n")[0])
+    check("send(98): -1 errno 9\n" in out, "send on a number that is no descriptor: -1, EBADF")
+    check("socketclose(97): -1 errno 9\n" in out, "socketclose of a number that is no descriptor: -1, EBADF")
+    check("accept: -1 errno 22 'Socket error 22'\n" in out, "accept on a socket that does not listen: the Internet module's error, errno 22 and its message in _inet_err ()")
+    check(not k.net.sockets, "no socket of the Internet module is left open after the errors: %s" % sorted(k.net.sockets))
+    # the sockets as descriptors
+    k.net.to_client.clear(); k.net.connect(); k.net.client_send(b"abcdefgh"); k.net.client_close()
+    err, out = k.command(mod, "SockTest_Fds"); out = norm(out)
+    check(err is None, "*SockTest_Fds returns no error: %s" % (err,))
+    want_fds = [
+        "descriptor: 3 or more, the Internet module's number is another",
+        "getfl: 2",
+        "ioctl FIONBIO: 0, getfl: 6",
+        "setfl 0: 0, getfl: 2",
+        "setfl O_NONBLOCK: 0, getfl: 6",
+        "getfd: 0, setfd: 0",
+        "fstat: 0, S_ISSOCK 1",
+        "lseek: -1 ESPIPE",
+        "isatty: 0 ENOTTY",
+        "fdopen: NULL ENOTSUP",
+        "dup: another descriptor",
+        "close the original: 0, getsockname through the copy: 0",
+        "close the copy: 0",
+        "getsockname after both are closed: -1 EBADF",
+        "close again: -1 EBADF",
+        "bind: 0, listen: 0",
+        "select: 2, the listener is ready, the screen (1) is ready for writing",
+        "accept: connected, descriptor after the listener",
+        "read: 3 'abc'",
+        "readv: 5 'de' 'fgh'",
+        "read at the end: 0",
+        "write: 3",
+        "writev: 5",
+        "close: 0, 0",
+        "socketclose(1): -1 ENOTSOCK",
+        "bind(1): -1 ENOTSOCK",
+        "read(97): -1 EBADF",
+        "ioctl(97): -1 EBADF",
+        "select(97): -1 EBADF",
+        "select(too many): -1 EINVAL",
+        "sockets made: 61, then EMFILE",
+        "all closed"]
+    got = out.split("\n")
+    for i, w in enumerate(want_fds):
+        check(i < len(got) and got[i] == w, w if i < len(got) and got[i] == w else "%s   (got %r)" % (w, got[i] if i < len(got) else None))
+    check(bytes(k.net.to_client) == b"XYZABCDE", "write and writev reached the client: %r" % bytes(k.net.to_client))
+    check(not k.net.sockets, "no socket of the Internet module is left open after the descriptor test (the 62nd socket was closed again when the table was full): %s" % sorted(k.net.sockets))
+    check(0x41216 in k.net.calls and 0x41217 in k.net.calls and 0x41213 in k.net.calls and 0x41214 in k.net.calls, "the SWIs used include Socket_Read, Socket_Write, Socket_Readv and Socket_Writev")
+    # the end: __modlib_closeall () closes the sockets (also the dup'ed one: three descriptors, two Internet sockets)
+    err, out = k.command(mod, "SockTest_End"); out = norm(out)
+    check(err is None and out == "end: three descriptors ok\nend: __modlib_closeall closed 3\nend: close again -1 EBADF\n", "__modlib_closeall closes the sockets: %r" % out)
+    check(not k.net.sockets, "no socket of the Internet module is left open after the end: %s" % sorted(k.net.sockets))
     # the names
     err, out = k.command(mod, "SockTest_Names"); out = norm(out)
     lines = out.split("\n")

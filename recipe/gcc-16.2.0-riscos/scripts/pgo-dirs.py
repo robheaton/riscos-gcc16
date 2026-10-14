@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """pgo-dirs.py --work DIR --out DIR PROGRAM... - make the folders that the profile files of instrumented programs need.
 
-libgcov of this tool chain cannot create directories (its create_file_directory is compiled out for this target), so a .gcda file whose folder does not exist is skipped ("profiling:...:Skip").  The folders are
+libgcov of a tool chain before 16.2.0-22 cannot create directories (its create_file_directory was compiled out for this target; from 16.2.0-22 it can, and this script is then optional), so a .gcda file whose folder does not exist is skipped ("profiling:...:Skip").  The folders are
 known: the path of every object file is in the program that was built with -fprofile-generate.  This script reads the paths below --work from the PROGRAMs (ELF files), cuts off the directories of --work itself (the
 GCOV_PREFIX_STRIP of docs/NETSURF.md) and makes the folders below --out: copy that tree to RISC OS and set  GCOV_PREFIX  to it."""
 import argparse, os, re, sys

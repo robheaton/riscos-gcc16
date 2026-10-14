@@ -1,4 +1,4 @@
-/* fcntl.h - the constants of open () and fcntl () as GCCSDK's UnixLib has them (a module that serves UnixLib programs, ARMEABISupport, uses them); the functions are not here: a module has no file descriptors. */
+/* fcntl.h - open (), creat () and fcntl () and their constants as GCCSDK's UnixLib has them (a module that serves UnixLib programs, ARMEABISupport, uses them). */
 #ifndef _FCNTL_H
 #define _FCNTL_H
 #include <sys/types.h>
@@ -47,6 +47,9 @@ extern int open (const char *path, int flags, ...);                        /* a 
 extern int open64 (const char *path, int flags, ...);
 extern int creat (const char *path, mode_t mode);
 extern int creat64 (const char *path, mode_t mode);
+/* F_DUPFD (the lowest free descriptor of the argument or more), F_GETFD and F_SETFD (there is no close on exec: always 0), F_GETFL (the access mode, O_APPEND and O_NONBLOCK) and F_SETFL (O_NONBLOCK of a
+   socket: FIONBIO; the other flags cannot be changed).  Other commands: EINVAL. */
+extern int fcntl (int fd, int cmd, ...);
 #ifdef __cplusplus
 }
 #endif

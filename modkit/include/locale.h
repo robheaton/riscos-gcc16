@@ -1,4 +1,5 @@
-/* locale.h - the "C" locale only: setlocale accepts "C", "POSIX" and "" and nothing else. */
+/* locale.h - the "C" locale only: setlocale accepts "C", "POSIX" and "" and nothing else.  locale_t and LC_GLOBAL_LOCALE (POSIX.1-2008) are there for strcasecmp_l, strncasecmp_l and strerror_l; there are no
+   locale objects (no newlocale, uselocale ...). */
 #ifndef _LOCALE_H
 #define _LOCALE_H
 #ifdef __cplusplus
@@ -19,6 +20,10 @@ struct lconv
 };
 extern char *setlocale (int category, const char *locale);
 extern struct lconv *localeconv (void);
+#include <_modlib_ext.h>
+#ifdef __MODLIB_EXT
+#include <_modlib_locale.h>
+#endif
 #ifdef __cplusplus
 }
 #endif

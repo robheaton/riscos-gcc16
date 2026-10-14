@@ -4,7 +4,7 @@ This page assumes the packages are installed ([INSTALL-RISCOS.md](INSTALL-RISCOS
 
 ## Every session
 
-1. Double-click `!GCC16` once after each boot: its `!Run` puts `GCC16bin:` (the drivers `gcc`, `g++`, `gfortran`, `cpp`, and `make`, `gcov` and `gprof`) and `GCC16tbin:` (the binutils) on `Run$Path`, sets the return-code limit
+1. Double-click `!GCC16` once after each boot: its `!Run` puts `GCC16bin:` (the drivers `gcc`, `g++`, `gfortran`, `cpp`, and `make`, `gcov`, `gprof` and the module tools `cmunge`, `mkoslib` and `modreloc`) and `GCC16tbin:` (the binutils) on `Run$Path`, sets the return-code limit
    (`Sys$RCLimit`) and sets UnixLib's filename suffix swapping for every tool.
 2. Open a Task window and give it room: the C++ compiler is a 30 MB program and the driver that starts it is saved next to it.
 
@@ -22,7 +22,8 @@ The tools use Unix-style names on the command line and UnixLib translates them: 
 |---|---|
 | `hello.c` | `c.hello` |
 | `hello.cc`, `hello.cpp`, `hello.cxx` | `cc.hello`, `cpp.hello`, `cxx.hello` |
-| `hello.f90` (also `f95`, `f03`, `f08`, `for`, `f`) | `f90.hello` |
+| `hello.f90` | `f90.hello` |
+| `hello.f95`, `hello.f03`, `hello.f08`, `hello.for`, `hello.f` | `f95.hello`, `f03.hello`, `f08.hello`, `for.hello`, `f.hello` (the suffix is the directory name) |
 | `util.h` | `h.util` |
 | `main.o` | `o.main` |
 | `hello.s` | `s.hello` |
@@ -130,7 +131,7 @@ The compiler counts every call exactly; the time is sampled 50 times a second, s
 * **Lost ticks.** The samples come from a second thread that UnixLib starts behind `profil ()`, at the ticks of the ticker that its threads use. A tick that falls into a part of UnixLib that must not be interrupted (`malloc`, stdio) is lost, and so is time when the Wimp is running other tasks: expect about 80 percent of the elapsed time of a CPU-bound program (4.7 of 6 seconds in the test).
 * **Threads.** A program that has threads of its own is sampled only at every other thread's turn: the profile has the right shape and too little time. The sampler is a thread too: a program that counts its threads will see it.
 * The program must end by returning from `main` or by `exit`: `_exit`, `abort` and a crash leave no `gmon.out`. Set `GMON_VERBOSE` (to anything) to have the number of samples printed when it ends.
-* Needs the runtime 16.2.0-13 (UnixLib fix level 15). `gmon.out` is `gmon/out`: `gprof prog gmon.out` finds it by the Unix name, as for the other files ([File names](#file-names-unix-names-risc-os-directories)).
+* Needs the runtime 16.2.0-13 or later (UnixLib fix level 15). `gmon.out` is `gmon/out`: `gprof prog gmon.out` finds it by the Unix name, as for the other files ([File names](#file-names-unix-names-risc-os-directories)).
 * The Linux cross compiler's gprof reads the same file: copy `gmon.out` to Linux and run `arm-riscos-gnueabihf-gprof prog gmon.out` ([CROSS-COMPILER.md](CROSS-COMPILER.md#profiling-with-gprof)).
 
 ## Throwback
@@ -149,7 +150,7 @@ neither does the generated code. Put `-mthrowback` in the compiler options of yo
 
 ## Modules (`-mmodule`, `cmunge`), new in 16.2.0-14
 
-Relocatable modules with the small C library of the module kit (about 440 functions, `stdio` files and floating point among them; 16.2.0-14 had 30; no UnixLib), built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
+Relocatable modules with the small C library of the module kit (about 590 functions, `stdio` files, sockets and floating point among them; 16.2.0-14 had 30; no UnixLib), built on RISC OS ([MODULES.md](MODULES.md) says what a module of this kind is, how it is made and what the limits are):
 
 ```
 cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg     the CMHG file (cmhg/header or cmhg.module: any name): the module header and its veneers (o.header) and the C header (h.header)
@@ -160,16 +161,16 @@ RMLoad MyModule
 ```
 
 * **Name the output without `,ffa`** on RISC OS: a UnixLib program does not take a `,ffa` at the end of a name as a file type unless it asks to, so `-o MyModule,ffa` would make a file whose name has a comma in it. The file type &FFA is set by `modreloc`, which is what the driver's post-link step is for. An output named `x.elf` stays an ELF file (for a debugger).
-* **OSLib**: `mkoslib` reads OSLib's C headers (the register layout of every function is in the comment above it): `-I` is the `oslib` folder, with the headers as the compiler finds them (`h.os`, `h.wimp` ... : the OSLib that GCCSDK installs on Linux has `os.h`: copy it as `oslib/h/os`). A module needs the headers that its source includes and what they include (`osf32.h` with `os.h`, for instance). The compile of the generated `oslibv.c` needs the same folder: `-I<the folder that has oslib>`.
+* **OSLib**: `mkoslib` reads OSLib's C headers (the register layout of every function is in the comment above it): `-I` is the `oslib` folder, with the headers as the compiler finds them (`h.os`, `h.wimp` ... : the OSLib that GCCSDK installs on Linux has `os.h`: copy it as `oslib/h/os`). A module needs the headers that its source includes and what they include (`osf32.h` with `os.h`, for instance). `mkoslib` takes the `oslib` folder itself (`-I <x>/oslib`); the compile of the generated `oslibv.c` takes its parent (`-I <x>`), because the sources say `#include <oslib/os.h>`. When it has no `-I`, `mkoslib` takes the folder named by the environment variable `OSLIB` (the folder that has `oslib` in it). `cmunge` finds the compiler for `-p` and `-o` through `CMUNGE_CC`, else `gcc` next to it or on the path.
 * The tools run in a Task window with the same slot as the compiler (`WimpSlot -min 48M -max 48M`). `cmunge -p` starts `gcc` for the preprocessor; `cmunge -o` starts it for the assembler.
 * **Save your work before `RMLoad`ing a module that is new**: a mistake in a module can crash the machine (the self-test's checker looks at the header and the relocation table of the module it built before it loads it).
-* Tested on the Raspberry Pi: the C library of the kit, modules made with `cmunge` (a module that is run as a program, international help, generic veneers called from SVC code, from user code and in interrupt time) and the `stdio` files, keyboard and screen streams were run there on 2026-10-07, and three modules of the RISC OS Open sources built with the kit gave the same results as the ROM's in everything the test program compares, on 2026-10-08 ([what was proven on hardware](MODULES.md#what-was-proven-on-hardware)). Floating point in modules was run on 2026-10-09 and C++ in modules on 2026-10-10, both passed ([what was proven on hardware](MODULES.md#what-was-proven-on-hardware)); C++ modules are built with the cross compiler on Linux, not on RISC OS (the C++ headers of the kit are not in the native package). With 16.2.0-14, a network module of 800 lines (sockets, files and OS calls through 23 OSLib functions) was built by these commands in 3 seconds and is **byte for byte the module that the Linux cross compiler makes from the same source**; loaded, it passed the network tests (39 checks: banner, commands, files up to 500 KB, a vanishing client, a soak of 300 commands). The same test with 16.2.0-15 (the new kit): 4 seconds, the same file, the same 39 checks. Check 12 of the self-test builds a small module, loads it, runs its command and removes it.
-* A makefile written for GCCSDK 4.7.4 needs the compiler names changed, OSLib veneers instead of `-lOSLibH32`, and nothing for the link: see the porting section of [MODULES.md](MODULES.md).
+* Tested on the Raspberry Pi: the C library of the kit, modules made with `cmunge` (a module that is run as a program, international help, generic veneers called from SVC code, from user code and in interrupt time) and the `stdio` files, keyboard and screen streams were run there on 2026-10-07, and three modules of the RISC OS Open sources built with the kit gave the same results as the ROM's in everything the test program compares, on 2026-10-08 ([what was proven on hardware](MODULES.md#what-was-proven-on-hardware)). Floating point in modules was run on 2026-10-09 and C++ in modules on 2026-10-10, both passed ([what was proven on hardware](MODULES.md#what-was-proven-on-hardware)); C++ modules are built with the cross compiler on Linux, not on RISC OS (the C++ headers of the kit are not in the native package). With 16.2.0-14, a network module of 800 lines (sockets, files and OS calls through 23 OSLib functions) was built by these commands in 3 seconds and is **byte for byte the module that the Linux cross compiler makes from the same source**; loaded, it passed the network tests (39 checks: banner, commands, files up to 500 KB, a vanishing client, a soak of 300 commands). The same test with the packages of 16.2.0-22 (the latest run on the Pi): 4 seconds, a module of 23,504 bytes, again byte for byte the Linux build, and the same 39 checks. With the kit of 16.2.0-23 the module (21,644 bytes) is again byte for byte the Linux build and passed the same 39 checks; it was built in 6 seconds (the first run took 25: the step that makes the OSLib veneers took 20 seconds of them, and a second run did not repeat it; the cause was not found). Check 12 of the self-test builds a small module, loads it, runs its command and removes it.
+* A makefile written for GCCSDK 4.7.4 needs the compiler names changed, OSLib veneers instead of `-lOSLibH32` (or `-lOSLib32` where OSLib is installed), and nothing for the link: [PORTING-FROM-4.7.4.md](PORTING-FROM-4.7.4.md) is the page for moving a 4.7.4 module (and [why move, and who should not](PORTING-FROM-4.7.4.md#why-move-and-who-should-not)); [MODULES.md](MODULES.md) has the details of the kit.
 
 ## Memory, stacks and temporary files
 
 * Every tool keeps its heap in a dynamic area. The maximum is only **reserved address space**: 32 MB for the drivers and `make`, 512 MB for `cc1`, `cc1plus`, `f951` and the binutils. `<program>$HeapMax` (an integer, in MB) changes it, e.g. `SetEval cc1plus$HeapMax 1024`.
-* The main stacks are built in: `cc1`, `cc1plus` and `f951` get 64 MB (deeply recursive templates and constexpr evaluation need about 4 KB per level), `make` 8 MB, the binutils and the drivers 1 MB (UnixLib's default). They need the runtime package 16.2.0-6 or later.
+* The main stacks are built in: `cc1`, `cc1plus`, `f951` and `lto1` get 64 MB (deeply recursive templates and constexpr evaluation need about 4 KB per level), `make` and the binutils programs 8 MB, the drivers 1 MB (UnixLib's default). They need the runtime package 16.2.0-6 or later.
 * Temporary files go to `TMPDIR`, or `UnixFS$/tmp` (`<Wimp$ScrapDir>` by default). **Keep them on a local disc**: with `TMPDIR` on a network share the compiler was about 20% slower.
 * RISC OS can limit the maximum size of a dynamic area (128 MB on the test machine), so the compilers get less than the 512 MB they ask for. That is enough for ordinary sources; a compile that ends with `out of memory` or `virtual memory exhausted` has run into it. Split the source file or lower the optimisation level.
 
@@ -183,6 +184,9 @@ RMLoad MyModule
 | `UnixEnv$<tool>$sfix` | the suffix list for the filename translation (above) |
 | `TMPDIR` | where temporary files go |
 | `<program>$HeapMax` | maximum heap of one program, in MB |
+| `OSLIB` | the folder that has `oslib` in it, which `mkoslib` uses when it is given no `-I` |
+| `CMUNGE_CC` | the compiler that `cmunge` starts for `-p` and `-o` (default: `gcc` next to `cmunge`, or on the path) |
+| `GCOV_PREFIX`, `GCOV_PREFIX_STRIP` | where a program built with `--coverage` or `-fprofile-generate` writes its `.gcda` file, and how many leading directories of the built-in path to drop |
 | `THROWBACK_DEBUG` | any value: explain on the screen why throwback does not work |
 | `GMON_VERBOSE` | any value: a program built with `-pg` prints how many samples it took when it ends |
 

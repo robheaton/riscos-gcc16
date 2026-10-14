@@ -294,6 +294,24 @@ class RiscosModel(Kernel):
                 del net.to_module[:k]; cpu.r[0] = k; cpu.v = 0
             elif net.client_closed: cpu.r[0] = 0; cpu.v = 0
             else: err(EWOULDBLOCK)
+        elif n == 0x41216:                                               # Socket_Readv: r1 = the iovec array {base, len}, r2 = the count; the bytes of the client go into the buffers in turn
+            if s != net.conn: err(9); return
+            total = 0
+            for j in range(cpu.r[2]):
+                base, ln = cpu.rd32(cpu.r[1] + 8 * j), cpu.rd32(cpu.r[1] + 8 * j + 4)
+                k = min(ln, len(net.to_module))
+                for i in range(k): cpu.wr8(base + i, net.to_module[i])
+                del net.to_module[:k]; total += k
+                if k < ln: break
+            if total == 0 and not net.client_closed: err(EWOULDBLOCK); return
+            cpu.r[0] = total; cpu.v = 0
+        elif n == 0x41217:                                               # Socket_Writev
+            if s != net.conn: err(9); return
+            total = 0
+            for j in range(cpu.r[2]):
+                base, ln = cpu.rd32(cpu.r[1] + 8 * j), cpu.rd32(cpu.r[1] + 8 * j + 4)
+                net.to_client += bytes(cpu.rd8(base + i) for i in range(ln)); total += ln
+            cpu.r[0] = total; cpu.v = 0
         elif n in (0x41208, 0x41214):                                    # send, write
             if s != net.conn: err(9); return
             buf, ln = cpu.r[1], cpu.r[2]

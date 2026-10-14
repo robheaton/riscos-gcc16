@@ -12,6 +12,7 @@
 | top-level `*.c`, `ulinfo.c`, [`unixlib16/`](unixlib16) | small code-generation probes and the library checks (`ulinfo`: 48 checks) | the cross toolchain |
 | [`unixlib17/`](unixlib17), [`unixlib18/`](unixlib18), [`unixlib24/`](unixlib24), [`unixlib25/`](unixlib25), [`upstream20/`](upstream20) | stack and heap sizes, `mmap` limits, process exit, `scanf`, `vfork` heap, the `.fini_array`, `getrlimit`, semaphores, `.gcda` files: the runtime tests | the cross toolchain |
 | [`gprof/`](gprof) | `-pg` and gprof: `pgtest` (heavy and light functions for a fixed time) must write `gmon.out` and show its own call counts | the cross toolchain, then RISC OS |
+| [`sunfish/`](sunfish) | the module kit on a large module: builds Alex Waugh's Sunfish NFS filing system unmodified (`build-sunfish.sh`), with two small programs to run on RISC OS | the cross toolchain, GCCSDK's `asasm`, OSLib's headers, Perl; then RISC OS and an NFS server |
 | [`unixlib19/`](unixlib19), [`sulfix/`](sulfix) | `vfork` children and SharedUnixLibrary. **Can freeze a machine that has the stock module** | the fixed SharedUnixLibrary |
 | [`throwback/`](throwback) | host test of the throwback code (66 checks, 27 mutations) and the programs of the hardware test | a host C++ compiler |
 | [`armeabisupport-model/`](armeabisupport-model), [`unixlib-fix/`](unixlib-fix) | host models of ARMEABISupport's memory code and of UnixLib fixes | a host C compiler |

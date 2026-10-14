@@ -34,7 +34,10 @@ relocates itself once, in its initialisation (modkit/bin/modreloc.py appends the
                                    __modlib_start, exit () and atexit () work then).  The module is initialised first, as any module is
   flags of a command (no value):   international: (help-text and invalid-syntax are tokens of the Messages file), add-syntax: (the syntax text follows the help text: *Help shows both), configure: / status:
                                    (a *Configure / *Status command), fs-command: (a command of this filing system module).  help: is refused, as CMunge refuses it
-Anything else is an error, not silently dropped (CMunge's module-is-runnable: simple-app: is not supported).  All the RISC OS numbers in the output come from the RISC OS headers (riscos_consts.py)."""
+Also supported (their rules are in the C version, src/cmunge.c, and in the tests): event-handler: (a veneer for an OS event, with the event numbers), error-chunk-base-number: (also error-base:) with error-identifiers:
+  (the error blocks and the names err_<id> in the C header; without a base number cmunge refuses the identifiers even when each has its own number, which CMunge accepts), vector-traps: (a vector handler that is given a
+  function that runs the rest of the chain: 16.2.0-22) and pdriver-handler: (the entry of a printer driver, with a function for each reason code: 16.2.0-22).
+Anything else is an error, not silently dropped (CMunge's library-enter-code:, library-initialisation-code:, the help: flag of a command, swi-handler-code: f (flags-capable:) and module-is-runnable: simple-app: are not supported).  All the RISC OS numbers in the output come from the RISC OS headers (riscos_consts.py)."""
 import argparse, os, re, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))

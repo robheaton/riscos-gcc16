@@ -1,5 +1,5 @@
-/* sys/stat.h - struct stat and fstat () for the descriptors of open ().  RISC OS has no owners, links or device numbers: they are 0 (st_nlink 1).  A file is S_IFREG, mode 0444 or 0666 by its attributes, a
-   standard stream is S_IFCHR.  The times are the modification time from the file's date stamp (0 for a file with no stamp, and for a stream that was not made by open ()). */
+/* sys/stat.h - struct stat and fstat () for the descriptors of open () and of sockets.  RISC OS has no owners, links or device numbers: they are 0 (st_nlink 1).  A file is S_IFREG, mode 0444 or 0666 by its attributes, a
+   standard stream is S_IFCHR, a socket S_IFSOCK (0666).  The times are the modification time from the file's date stamp (0 for a file with no stamp, and for a stream that was not made by open ()). */
 #ifndef _SYS_STAT_H
 #define _SYS_STAT_H
 #include <sys/types.h>

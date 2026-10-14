@@ -1,7 +1,9 @@
 /* sys/socket.h - the BSD socket calls on the RISC OS Internet module, for a module (no UnixLib, no Shared C Library): each call is a Socket_* SWI (the XSocket_* SWIs: an error is the
-   return value -1 with errno set, as in the socklib of the RISC OS sources).  A socket is a small integer that is not a file handle: close it with socketclose (), read and write it with socketread ()
-   and socketwrite () (or recv and send): the names of the Shared C Library's socket calls, which GCCSDK 4.7.4's modules used.  The numbers are the BSD ones that the Internet module expects: the
-   sockaddr has a length byte first (sa_len). */
+   return value -1 with errno set, as in the socklib of the RISC OS sources).  A socket is a DESCRIPTOR, a number of the table of open () (3 or more; since 16.2.0-23): close (), read (), write (), readv (),
+   writev (), ioctl (), fcntl () (F_GETFL, F_SETFL with O_NONBLOCK), fstat () (S_IFSOCK), dup () and select () work on it as they do in GCCSDK's UnixLib, and socketclose (), socketread (), socketwrite (),
+   socketioctl () ... (the names of the Shared C Library's / TCPIPLibs' socket calls, which GCCSDK 4.7.4's modules used) are the same calls.  Before 16.2.0-23 a socket was the Internet module's own small
+   number, and ioctl, close, read and write did not work on it.  Code that calls the Socket_ SWIs itself needs __modlib_socket_handle () and __modlib_socket_fd () below.  The numbers are the BSD ones that
+   the Internet module expects: the sockaddr has a length byte first (sa_len). */
 #ifndef _SYS_SOCKET_H
 #define _SYS_SOCKET_H
 #include <sys/types.h>
@@ -78,7 +80,7 @@ extern int getsockname (int s, struct sockaddr *addr, socklen_t *len);
 extern int getpeername (int s, struct sockaddr *addr, socklen_t *len);
 extern int setsockopt (int s, int level, int name, const void *value, socklen_t len);
 extern int getsockopt (int s, int level, int name, void *value, socklen_t *len);
-/* the Shared C Library's names (the sockets are not files) */
+/* the Shared C Library's names (the same calls as close, read ..., which also work on a socket) */
 extern int socketclose (int s);
 extern int socketioctl (int s, unsigned long cmd, void *arg);
 extern ssize_t socketread (int s, void *buf, size_t len);
@@ -87,6 +89,10 @@ extern ssize_t socketreadv (int s, const struct iovec *iov, int iovcnt);
 extern ssize_t socketwritev (int s, const struct iovec *iov, int iovcnt);
 extern int socketstat (int s, void *stat);
 extern int getstablesize (void);
+/* the Internet module's own number of socket (descriptor) S, for the Socket_ SWIs that a program calls itself; -1 with errno EBADF or ENOTSOCK */
+extern int __modlib_socket_handle (int s);
+/* a descriptor for a socket that the program made with the SWI Socket_Creat or Socket_Accept itself (the socket is closed with it: close ()); -1 with errno EMFILE */
+extern int __modlib_socket_fd (int handle);
 /* the text of the last error of the Internet module (the error block itself is _inet_error) */
 extern char *_inet_err (void);
 #ifdef __cplusplus

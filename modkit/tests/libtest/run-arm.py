@@ -13,7 +13,7 @@ os.makedirs(B, exist_ok=True)
 FS = tempfile.mkdtemp(prefix="mkstdio-") + "/"                  # the folder of the files of the stdio test (the interpreter's file system model works on the files of the host)
 subprocess.run([os.path.join(HERE, "run-host.sh"), scale], check=True, stdout=subprocess.DEVNULL, env=dict(os.environ, FSDIR=FS.rstrip("/")))
 subprocess.run([CC, "-mmodule", "-O2", "-std=gnu99", "-Wall", "-Wno-unused-function", "-Wno-infinite-recursion", "-DT_ARM", '-DT_FSDIR="%s"' % FS, "-DSCALE=" + scale, "-c", os.path.join(HERE, "libtest.c"), "-o", os.path.join(B, "libtest-arm.o")], check=True)
-r = subprocess.run([CC, "-mmodule", "-o", os.path.join(B, "libtest-arm.elf"), os.path.join(B, "libtest-arm.o")], capture_output=True, text=True)
+r = subprocess.run([CC, "-mmodule", "-Wl,-u,main", "-o", os.path.join(B, "libtest-arm.elf"), os.path.join(B, "libtest-arm.o")], capture_output=True, text=True)
 if r.returncode:
     sys.exit(r.stderr)
 only = os.environ.get("LT_ONLY")                                  # run only these sections (the host run above has the variable in its environment as well)

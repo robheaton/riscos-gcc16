@@ -1,7 +1,8 @@
 /* fdio.c - the descriptor functions on files: open, creat, close, read, write, readv, writev, lseek, stat, lstat, fstat, access, dup, dup2, fsync, fdatasync, ftruncate, truncate, isatty, ioctl, unlink, utime, utimes, fdopen and fileno, and the *64 names.
    A descriptor is a FILE of the stdio code of the kit (fcore.c): 0, 1 and 2 are stdin, stdout and stderr; open () makes a stream that is read and written with no buffer (the OS calls are OS_GBPB and
    OS_Args, as fread and fwrite make them), and fopen / fileno give a descriptor to a stream that has none.  The same object is both: fdopen returns the FILE of the descriptor, and fclose closes
-   the descriptor.  Only files (and the three standard streams): a socket has its own numbers (<sys/socket.h>).  RISC OS has no permissions, owners or links. */
+   the descriptor.  Files, the three standard streams and sockets: socket () and accept () (sockets.c) give a descriptor of this table, of kind K_SOCKET (the number of the Internet module's own socket is inside), and close,
+   read, write, readv, writev, ioctl, fcntl, fstat, dup and select (sockets.c) work on it as they do in UnixLib.  RISC OS has no permissions, owners or links. */
 #pragma GCC optimize ("Os")                       /* not a hot path: the smaller code is the better one in a module */
 #include <stdlib.h>
 #include <stdarg.h>
@@ -44,6 +45,43 @@ static FILE *get (int fd)
   return f;
 }
 
+/* ---- sockets as descriptors (see fileimpl.h) */
+int (*__modlib_sock_op) (int op, int handle, void *buf, unsigned long n, void *arg);
+
+int __modlib_socket_new (int handle)
+{
+  FILE *f = calloc (1, sizeof *f);
+  int fd;
+  if (!f) { errno = ENOMEM; return -1; }
+  f->kind = K_SOCKET; f->handle = (unsigned) handle; f->mode = M_READ | M_WRITE; f->unget = -1; f->fd = -1;
+  fd = alloc_fd (f);
+  if (fd < 0) free (f);
+  return fd;
+}
+/* the end of a program and __modlib_closeall (): every socket descriptor is closed (the Internet module's socket goes with the last descriptor of it); the number of descriptors */
+int __modlib_sockets_closeall (void)
+{
+  int fd, n = 0;
+  for (fd = 3; fd < FDMAX; fd++)
+    if (fdtab[fd] && fdtab[fd]->kind == K_SOCKET) { close (fd); n++; }
+  return n;
+}
+int __modlib_socket_handle (int fd)
+{
+  FILE *f = get (fd);
+  if (!f) return -1;
+  if (f->kind != K_SOCKET) { errno = ENOTSOCK; return -1; }
+  return (int) f->handle;
+}
+int __modlib_fd_info (int fd, int *handle)
+{
+  FILE *f = get (fd);
+  if (!f) return 0;
+  if (f->kind != K_SOCKET) return 2;
+  *handle = (int) f->handle;
+  return 1;
+}
+
 int fileno (FILE *f)
 {
   if (!f || f->kind == K_CLOSED) { errno = EBADF; return -1; }
@@ -59,6 +97,7 @@ FILE *fdopen (int fd, const char *mode)
   int c = mode ? mode[0] : 0, plus = 0;
   const char *p;
   if (!f) return 0;
+  if (f->kind == K_SOCKET) { errno = ENOTSUP; return 0; }         /* (stdio on a socket is not there: use recv / send or read / write) */
   if (c != 'r' && c != 'w' && c != 'a') { errno = EINVAL; return 0; }
   for (p = mode + 1; *p; p++) if (*p == '+') plus = 1;
   if (((c == 'r' || plus) && !(f->mode & M_READ)) || ((c != 'r' || plus) && !(f->mode & M_WRITE))) { errno = EINVAL; return 0; }          /* the mode must fit how the descriptor was opened */
@@ -119,6 +158,15 @@ int close (int fd)
 {
   FILE *f = get (fd);
   if (!f) return -1;
+  if (f->kind == K_SOCKET)                                       /* the Internet module's socket is closed with the last descriptor of it (dup () makes more) */
+    {
+      int last = refs (f) <= 1, r = 0, i;
+      if (last) r = __modlib_sock_op (SOP_CLOSE, (int) f->handle, 0, 0, 0);
+      fdtab[fd] = 0;
+      if (last) free (f);
+      else if (f->fd == fd) { f->fd = -1; for (i = 3; i < FDMAX; i++) if (fdtab[i] == f) { f->fd = i; break; } }
+      return r;
+    }
   if (fd >= 3 && (is_std (f) || refs (f) > 1))                  /* a copy that dup () made: the descriptor goes, the stream stays while it has another (a copy of a standard stream is never closed) */
     {
       int i;
@@ -180,6 +228,7 @@ ssize_t read (int fd, void *buf, size_t n)
   int got;
   if (!f) return -1;
   if (n > (size_t) INT_MAX) { errno = EINVAL; return -1; }
+  if (f->kind == K_SOCKET) return n ? __modlib_sock_op (SOP_READ, (int) f->handle, buf, n, 0) : 0;
   if (f->kind == K_KEYBOARD)                                      /* the keyboard gives a line at a time */
     {
       char *p = buf;
@@ -202,6 +251,7 @@ ssize_t write (int fd, const void *buf, size_t n)
   FILE *f = get (fd);
   if (!f) return -1;
   if (n > (size_t) INT_MAX) { errno = EINVAL; return -1; }
+  if (f->kind == K_SOCKET) return n ? __modlib_sock_op (SOP_WRITE, (int) f->handle, (void *) buf, n, 0) : 0;
   if (f->kind == K_SCREEN)
     {
       if (fwrite (buf, 1, n, f) != n) return -1;
@@ -217,7 +267,10 @@ ssize_t readv (int fd, const struct iovec *iov, int count)
 {
   ssize_t total = 0;
   int i;
+  FILE *sf = get (fd);
+  if (!sf) return -1;
   if (count <= 0 || count > 1024) { errno = EINVAL; return -1; }
+  if (sf->kind == K_SOCKET) return __modlib_sock_op (SOP_READV, (int) sf->handle, (void *) iov, (unsigned long) count, 0);
   for (i = 0; i < count; i++)
     {
       ssize_t r;
@@ -233,7 +286,10 @@ ssize_t writev (int fd, const struct iovec *iov, int count)
 {
   ssize_t total = 0;
   int i;
+  FILE *sf = get (fd);
+  if (!sf) return -1;
   if (count <= 0 || count > 1024) { errno = EINVAL; return -1; }
+  if (sf->kind == K_SOCKET) return __modlib_sock_op (SOP_WRITEV, (int) sf->handle, (void *) iov, (unsigned long) count, 0);
   for (i = 0; i < count; i++)
     if (iov[i].iov_len > (size_t) (INT_MAX - total)) { errno = EINVAL; return -1; }
     else total += (ssize_t) iov[i].iov_len;
@@ -362,6 +418,7 @@ static int fill_stat (int fd, struct stat64 *st)
 	}
       st->st_mode = S_IFREG | file_mode ((unsigned) b.load, attr);
     }
+  else if (f->kind == K_SOCKET) st->st_mode = S_IFSOCK | 0666;
   else st->st_mode = S_IFCHR | 0620;                              /* the keyboard and the screen */
   return 0;
 }
@@ -405,6 +462,17 @@ int ioctl (int fd, unsigned long request, ...)
   FILE *f = get (fd);
   va_list ap;
   if (!f) return -1;
+  if (f->kind == K_SOCKET)                                        /* the requests of the Internet module: FIONBIO, FIONREAD, FIOASYNC, SIOCGIFCONF ... (the argument is a pointer) */
+    {
+      void *arg;
+      int r;
+      va_start (ap, request);
+      arg = va_arg (ap, void *);
+      va_end (ap);
+      r = __modlib_sock_op (SOP_IOCTL, (int) f->handle, 0, request, arg);
+      if (r == 0 && request == FIONBIO && arg) { if (*(int *) arg) f->mode |= M_NONBLOCK; else f->mode &= ~M_NONBLOCK; }
+      return r;
+    }
   if (request == FIONREAD && f->kind == K_FILE)
     {
       long ext, pos;
@@ -419,6 +487,55 @@ int ioctl (int fd, unsigned long request, ...)
     }
   errno = ENOTTY;
   return -1;
+}
+
+/* fcntl: F_DUPFD (the lowest free descriptor of ARG or more), F_GETFD / F_SETFD (there is no close on exec), F_GETFL / F_SETFL (the access mode, O_APPEND; O_NONBLOCK of a socket, which is FIONBIO) */
+int fcntl (int fd, int cmd, ...)
+{
+  FILE *f = get (fd);
+  va_list ap;
+  int arg = 0, i;
+  if (!f) return -1;
+  if (cmd == F_DUPFD || cmd == F_SETFL || cmd == F_SETFD)         /* (the others have no third argument) */
+    {
+      va_start (ap, cmd);
+      arg = va_arg (ap, int);
+      va_end (ap);
+    }
+  switch (cmd)
+    {
+    case F_DUPFD:
+      if (arg < 3) arg = 3;
+      for (i = arg; i < FDMAX; i++)
+	if (!fdtab[i])
+	  {
+	    fdtab[i] = f;
+	    if (f->fd < 0 && !is_std (f)) f->fd = i;
+	    __modlib_fd_hook = release;
+	    return i;
+	  }
+      errno = EMFILE;
+      return -1;
+    case F_GETFD:
+    case F_SETFD:
+      return 0;
+    case F_GETFL:
+      i = (f->mode & M_READ) && (f->mode & M_WRITE) ? O_RDWR : (f->mode & M_WRITE) ? O_WRONLY : O_RDONLY;
+      if (f->mode & M_APPEND) i |= O_APPEND;
+      if (f->mode & M_NONBLOCK) i |= O_NONBLOCK;
+      return i;
+    case F_SETFL:
+      if (f->kind == K_SOCKET)
+	{
+	  int on = (arg & O_NONBLOCK) != 0;
+	  if (__modlib_sock_op (SOP_IOCTL, (int) f->handle, 0, FIONBIO, &on)) return -1;
+	  if (on) f->mode |= M_NONBLOCK; else f->mode &= ~M_NONBLOCK;
+	}
+      return 0;
+    default:
+      errno = EINVAL;
+      return -1;
+    }
 }
 
 int unlink (const char *path)

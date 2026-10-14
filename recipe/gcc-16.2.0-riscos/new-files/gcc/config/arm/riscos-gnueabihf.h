@@ -127,7 +127,7 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
 #define SUBTARGET_EXTRA_ASM_SPEC " %{mthrowback:--throwback}"
 
 #undef  LINK_SPEC
-#define LINK_SPEC "%{mmodule:-m armelf_riscos_eabi -T module.ld%s -static -q -X --no-warn-rwx-segments %{h*} %{version:-v} %{b} %{Wl,*:%*} %{mthrowback:--throwback};: \
+#define LINK_SPEC "%{mmodule:-m armelf_riscos_eabi -T module.ld%s -static -q -X --no-warn-rwx-segments --gc-sections %{h*} %{version:-v} %{b} %{Wl,*:%*} %{mthrowback:--throwback};: \
    %{h*} %{version:-v} \
    %{b} %{Wl,*:%*} %{mthrowback:--throwback} \
    %{static:-Bstatic} \
@@ -140,6 +140,10 @@ extern const char * riscos_multilib_dir (int argc, const char **argv);
    -X \
    %{mbig-endian:-EB}" \
    SUBTARGET_EXTRA_LINK_SPEC "}"
+
+/* -mmodule: the link drops every section that nothing in the module refers to (--gc-sections: the roots are the header of the module, which is KEPT by module.ld, and the constructor tables), so
+   of the C library (libmodkit-core.a is built with a section for each function) only the functions that the module calls are in the image; a link with -Wl,--no-gc-sections keeps everything.  A program
+   without the header of cmunge (the test programs of modkit/tests) must name its start with -Wl,-u,main.  */
 
 /* -mmodule: after the link the output file is a module ELF file; modreloc (modkit: <prefix>/arm-riscos-gnueabihf/bin/modreloc, next to as and ld, in the cross compiler and in the native one)
    replaces it by the flat module image, as the linker of GCCSDK 4.7.4 wrote one: gcc -mmodule -o Module,ffa main.o header.o makes the module.  An output named *.elf is left alone (for a

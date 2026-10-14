@@ -22,7 +22,7 @@ The library file's name does not change, and the Shared Object Manager keeps the
 
 | Fix level | Package | What changed | The symptom it cured | Report |
 |---|---|---|---|---|
-| none | GCCSDK 10.2.0-1 to -4 | (the stock library) | | |
+| none | GCCSDK 10.2.0-1 | (the stock library) | | |
 | 5 | 16.2.0-1, -2 | `pthread_once` without a global lock and exception safe; `pthread_cond_timedwait` with centisecond deadlines; `sleep`/`usleep`/`nanosleep` with several threads; `sysconf (_SC_NPROCESSORS_ONLN)` is 1; `fread`/`fwrite` after a short `read`/`write`; five implicit declarations that GCC 14+ rejects | `std::async` deadlocked; timed waits overran by up to a second; a second sleeper woke the first early; `hardware_concurrency()` said 2048; data written or read twice after a short transfer | 09, 10, 11, 12, 13, 14 |
 | (none) | 16.2.0-3 | stack buffers are touched before `read`/`fread`/`recv`/`recvfrom` | wrong bytes in a fresh stack buffer: RISC OS (SVC mode) loses the store that takes the page fault of a lazily mapped stack page | 15 (a workaround for 07) |
 | 6 | 16.2.0-4 | the same code as -3, now answering the fix level query (-3 did not, through a packaging error) | | |
@@ -47,5 +47,5 @@ Nothing has been sent to the GCCSDK maintainers yet.
 
 ## What did not change
 
-The dynamic loader, `libgcc_s.so.1` (GCC 10.2.0's) and `libdl` are GCCSDK's files from the 10.2.0-1 package. `libunixlib.a` (static UnixLib) is not rebuilt: the cross compiler's tree still carries the 10.2.0 one.
-The SharedUnixLibrary module (`System:Modules.SharedULib`) is the one that RISC OS ships; its known bugs are in [KNOWN-ISSUES.md](KNOWN-ISSUES.md); the fixed module is the optional [`SharedULibFix`](SHAREDULIB-FIX.md) package (it needs a runtime at fix level 10 or later).
+The dynamic loader, `libgcc_s.so.1` (GCC 10.2.0's) and `libdl` are GCCSDK's files from the 10.2.0-1 package. The runtime packages carry `libunixlib.so` and `libm` only. The cross compiler's tree has the rebuilt `libunixlib.a`, `libunixlib.so`, `libm`, `crt0.o` and `gcrt0.o` (all built with GCC 16, since 16.2.0-13); the native package has no `libunixlib.a`.
+The SharedUnixLibrary module (`System:Modules.SharedULib`) is the one that RISC OS ships; its known bugs are in [KNOWN-ISSUES.md](KNOWN-ISSUES.md); the fixed module is the optional [`SharedULibFix`](SHAREDULIB-FIX.md) package (it needs a runtime at fix level 10 or later: that is what its installer checks; `Gcc16` itself depends on the runtime package 16.2.0-13 or later, fix level 15, which is a stricter test of a different thing).

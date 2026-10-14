@@ -31,6 +31,7 @@ FILE __modlib_stdout = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0,
 FILE __modlib_stderr = { 0, K_SCREEN, M_WRITE, S_IDLE, B_STATIC, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static FILE *files;                             /* the open files */
 void (*__modlib_fd_hook) (FILE *f);               /* fdio.c: the stream had a descriptor, which is free now */
+int (*__modlib_sock_end_hook) (void);              /* sockets.c: closes the sockets (descriptors that are not streams) */
 void (*__modlib_tmp_hook) (FILE *f);              /* tmpfile.c: called when a stream made by tmpfile has been closed (its file is to go) */
 
 /* errno from an OS error (the numbers of FileSwitch, FileCore and the other file systems).  The error itself stays for _kernel_last_oserror. */
@@ -428,16 +429,18 @@ static void stdio_end (int flush)
       if (!flush) { f->wlen = 0; f->state = S_IDLE; }            /* (_Exit, abort: what waits in the buffer is not written) */
       fclose (f);
     }
+  if (__modlib_sock_end_hook) __modlib_sock_end_hook ();           /* the sockets: the Internet module does not close them when the program ends either */
   reset_stream (&__modlib_stdin, K_KEYBOARD, M_READ, kbbuf, sizeof kbbuf);
   reset_stream (&__modlib_stdout, K_SCREEN, M_WRITE, 0, 0);
   reset_stream (&__modlib_stderr, K_SCREEN, M_WRITE, 0, 0);
   __modlib_stdout_hook = 0;
 }
-/* for the finalisation of a module that opened files: close them all (a module that is killed does not close its files by itself); the number of files that were open */
+/* for the finalisation of a module that opened files or sockets: close them all (a module that is killed does not close its files by itself); the number of files and sockets that were open */
 int __modlib_closeall (void)
 {
   int n = 0;
   while (files) { FILE *f = files; fclose (f); n++; }
+  if (__modlib_sock_end_hook) n += __modlib_sock_end_hook ();
   return n;
 }
 

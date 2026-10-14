@@ -3,9 +3,10 @@
 You only need this to change the tool chain or to rebuild it. To **use** it, install the [packages](INSTALL-RISCOS.md) or the [cross compiler tarball](CROSS-COMPILER.md).
 
 > **Status of these instructions.** They are the scripts that built the released binaries, on one machine (Ubuntu 26.04, host GCC 15.2, 22 cores) in September and October 2026.
-Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). The run took 32 minutes of working time: steps 1 to 3 in 15 minutes; step 4 then stopped at its first check, because `tools/check-libunixlib.sh` looked for two separate tests of the private selectors of `sysconf` (the fix level and the compiler version) and, with both answers now 16, the compiler had merged them into one (the library was right; the check now accepts both forms); the run continued from step 4 on a fresh UnixLib work folder (steps 4 to 8: 17 minutes). Nothing else was built twice.
-> **The `Gcc16` package, the C and C++ runtime packages and the Linux tarball on the releases page are the output of that run**, and the packages are the files that were installed and tested on the Raspberry Pi. There are two exceptions. `Gcc16SelfTest` was built again from the same tree after the first run on the Pi, with a corrected `fixlevel` program (the self-test had asked for exactly fix level 15, and the new runtime is level 16). The Fortran runtime and `SharedULibFix` are the files of 16.2.0-21: this run built the same code (only the build directory in the debug strings differs).
-> Compared with the `Gcc16` package of 16.2.0-21, 1124 of its 1161 files are byte for byte the same; 2 are new (the module kit's `complex` and `iconv` headers); and 35 differ. Of the static libraries, `libmodkit-core.a` has three new members (`complex`, `complexrt`, `iconv`) and three changed ones (`fcore`, `fdio`, `strerror`), `libstdc++.a` one changed member (`system_error.o`), `libgcov.a` one (`_gcov.o`), and nine more are the same in every member (only the timestamps inside differ). The others are UnixLib's `errno.h` and `libunixlib.so`, four headers of the module kit (`errno.h`, `math.h`, `unistd.h`, `sys/stat.h`), `cmunge`, `!Boot`, `!Run`, the `ReadMe`, `RiscPkg/Control`, `RiscPkg/Copyright`, and the compiler's programs, which differ by 12 bytes each (28 for `cc1` and `cc1plus`): six of the seven new error numbers (all but `EMULTIHOP`) in the switch of `std::system_category ().default_error_condition ()`, in the `system_error.o` of libstdc++ that every one of these C++ programs links statically (the other 16 bytes of `cc1` and `cc1plus` are the checksum that GCC keeps in its own executables); the regression run passed with them.
+**This describes the run made for 16.2.0-23.** Before the release every command on this page was run again, in order, from a fresh copy of this repository in an empty home directory (same machine; the GCCSDK of step 1 was reused). The run took 19 minutes of working time and did not stop: binutils, the host libraries and the cross compiler in 7 minutes, UnixLib and the C runtime package in 1 minute and a half, the native tool chain (GCC, binutils and make built for RISC OS) in 9 minutes, the Linux tarball and its smoke test in 1 minute and a half. Nothing was built twice.
+> **The `Gcc16` package, `Gcc16SelfTest` and the Linux tarball on the releases page are the output of that run**, and the packages are the files that were installed and tested on the Raspberry Pi. The four runtime packages (the C runtime 16.2.0-14, C++ 16.2.0-6, Fortran 16.2.0-2 and `SharedULibFix`) are the files of 16.2.0-22: this run built them again, and every file in each zip is byte for byte the same (only the dates in the zip files differ), so the published files were kept.
+> 16.2.0-23 is a release of the module kit: it is in `modkit/` and is installed by `install-modkit.sh` (step 5), with one option of the module link (`--gc-sections`) in the driver.
+> Compared with the `Gcc16` package of 16.2.0-22, 1,123 of its 1,161 files are byte for byte the same; 5 are new (the module kit's headers `_modlib_locale`, `fenv`, `net/if`, `sys/errno` and `sys/param`); and 38 differ. Of those, `libmodkit-core.a` has 8 new members and 130 changed ones (the library is now compiled with `-ffunction-sections -fdata-sections`, and the new functions), and fourteen headers of the kit changed; the other eleven static libraries (`libgcc.a`, `libgcc_eh.a`, `libgcov.a`, `libcaf_single.a`, `libstdc++.a`, `libstdc++exp.a`, `libstdc++fs.a`, `libsupc++.a`, `libgfortran.a`, `libgcc-mod.a` and `libstdcxx-mod.a`) are the same in every member, only the timestamps inside differ; `cmunge` has its new text; the four drivers (`gcc`, `g++`, `gfortran`, `cpp`) differ because the specs of the driver changed (8 bytes longer: `--gc-sections` in the link of `-mmodule`); `cc1` and `cc1plus` differ in 16 bytes each, the checksum that GCC keeps in its own executables; and `!Boot`, `!Run`, the `ReadMe` and the two `RiscPkg` files carry the new version and text. The regression run passed with them.
 
 ## What gets built
 
@@ -13,6 +14,8 @@ Before the release every command on this page was run again, in order, from a fr
 GCC 16.2.0 + binutils 2.45.1  --->  cross compiler (Linux, x86-64)  --->  UnixLib 5.0 rebuilt (libunixlib, libm)
                                           |                                      |
                                           +--->  libstdc++, libgfortran         +--->  SharedLibs-C-armeabihf package
+                                          |
+                                          +--->  the module kit (modkit/: libmodkit, cmunge, modreloc, mkoslib), installed by install-modkit.sh
                                           |
                                           +--->  the native compiler (cc1, cc1plus, f951, lto1 ... for RISC OS)  +  native binutils  +  GNU make
                                                                                         |
@@ -32,7 +35,7 @@ The scripts take their defaults from two directories under your home directory. 
 git clone https://github.com/robheaton/riscos-gcc16 ~/gccsdk-next
 ```
 
-Host tools: a C and C++ compiler (GCC 13 or newer; 15.2 was used), `make`, `patch`, `autoconf2.69` (the binary must be called `autoconf2.69`; it regenerates libstdc++'s `configure`), `python3`, `rsync`, `xz`, `tar`, `file`, `subversion` (to fetch GCCSDK).
+Host tools: a C and C++ compiler (GCC 13 or newer; 15.2 was used), `make`, `patch`, `autoconf2.69` (the binary must be called `autoconf2.69`; it regenerates libstdc++'s `configure`), `python3`, `rsync`, `xz`, `tar`, `file`, `subversion` (to fetch GCCSDK). Only for the optional libraries built on top of the tool chain: `bison` and `flex` ([OSLIB.md](OSLIB.md)), `perl` ([RUFL.md](RUFL.md)), `cmake`, `git`, `gperf` and `pkg-config` ([NETSURF.md](NETSURF.md)).
 
 ## 0. The upstream sources
 
@@ -40,7 +43,7 @@ Put these in `~/gccsdk-next/src/` (URLs and checksums in [SOURCES.md](../SOURCES
 
 ## 1. The GCCSDK seed
 
-The recipe reads two things from a GCCSDK 10.2.0 EABI build: the **sysroot pieces** (UnixLib and OSLib headers, `crt0.o`, the dynamic loader and the 10.2.0 `libunixlib`/`libdl`, from `~/gccsdk/env`) and the **UnixLib source tree with its generated build files** (`~/gccsdk/build/gcc/gcc-10.2.0/libunixlib`).
+The recipe reads two things from a GCCSDK 10.2.0 EABI build: the **sysroot pieces** (the UnixLib headers, `crt0.o`, the dynamic loader and the 10.2.0 `libunixlib`/`libdl`, from `~/gccsdk/env`) and the **UnixLib source tree with its generated build files** (`~/gccsdk/build/gcc/gcc-10.2.0/libunixlib`).
 Build GCCSDK as its own instructions say ([GCCSDK on riscos.info](https://www.riscos.info/index.php/GCCSDK)); the author used svn trunk r7800 (`svn://svn.riscos.info/gccsdk/trunk`) and its autobuilder recipe for GCC 10.2.0. This is the least reproducible step.
 Two packages made by GCCSDK's autobuilder are also read, from `~/gccsdk/autobuilder/autobuilder_packages/arm/Development/`: `SharedLibs-C-armeabihf_10.2.0-1_arm.zip` (the base of the C runtime package: its loader, `libgcc_s` and `libdl` are used unchanged) and `gcc_10.2.0-1_arm.zip` (the icon sprites of `!GCC16`).
 Nothing under `~/gccsdk` is modified by the scripts here.
@@ -88,7 +91,7 @@ $R/install-unixlib-sysroot.sh ~/gccsdk-next/env-f ~/gccsdk-next/unixlib/build   
 $R/install-modkit.sh ~/gccsdk-next/env-f                                 # gcc -mmodule and cmunge: libmodkit.a, module.ld, the headers and scripts of modkit (see MODULES.md)
 ```
 
-`install-modkit.sh` builds `libmodkit-core.a` (one object per source of `modkit/lib`) with the compiler of step 4 (`-mmodule`), makes `libgcc-mod.a` (`modkit/bin/mklibgcc.sh`: the `libgcc.a` of the tool chain without the members that contain VFP or ARMv7 instructions, which a module must not run), makes `libstdcxx-mod.a` from the `libstdc++.a` of the tool chain the same way (the members that are plain ARMv6 code and not position independent, without the exception runtime: 35 of 199; the red-black tree behind `std::map`, the list nodes ...), writes `libmodkit.a` as a linker script that names the library, `libgcc-mod.a` and `libstdcxx-mod.a` (since 16.2.0-17; the releases before it named `libgcc.a`), and puts them, the linker script, the headers (`include`, and `include-cxx` for C++) and the scripts into the tool chain; it is part of the tarball of step 8.
+`install-modkit.sh` builds `libmodkit-core.a` (one object per source of `modkit/lib`, each function and data item in a section of its own: `-ffunction-sections -fdata-sections`, so that the link of a module, which `-mmodule` runs with `--gc-sections`, drops what the module does not call) with the compiler of step 4 (`-mmodule`), makes `libgcc-mod.a` (`modkit/bin/mklibgcc.sh`: the `libgcc.a` of the tool chain without the members that contain VFP or ARMv7 instructions, which a module must not run), makes `libstdcxx-mod.a` from the `libstdc++.a` of the tool chain the same way (the members that are plain ARMv6 code and not position independent, without the exception runtime: 35 of 199; the red-black tree behind `std::map`, the list nodes ...), writes `libmodkit.a` as a linker script that names the library, `libgcc-mod.a` and `libstdcxx-mod.a` (since 16.2.0-17; the releases before it named `libgcc.a`), and puts them and the linker script into the tool chain. It also compiles `cmunge`, `modreloc` and `mkoslib` from `modkit/src` with the host compiler (`HOSTCC`, default `cc`) and installs them as `bin/cmunge`, `bin/arm-riscos-gnueabihf-modreloc` and `bin/arm-riscos-gnueabihf-mkoslib`, installs `bin/arm-riscos-gnueabihf-asasm-fix` (the shell script that makes the objects of GCCSDK's `asasm` linkable), puts the headers (`include`, and `include-cxx` for C++) where the driver finds them, and copies the library sources, the headers and `module.mk` to `share/riscos-modkit/`. It builds `libOSLib32.a` only when the environment variable `OSLIB` names a folder that has `oslib/os.h`; OSLib is not part of this project's releases, so the tool chains of the releases do not have it (use [`install-oslib.py`](OSLIB.md)). The result is part of the tarball of step 8.
 
 `build-unixlib.sh` refuses to build with a compiler that does not have stack probing on by default, and a patch that does not apply is a hard error. `check-libunixlib.sh` looks for the code of every fix in the built library.
 (`libunixlib.a` is built too, for `-static`; the SharedUnixLibrary module is built separately by `build-sul.sh`.)
@@ -118,8 +121,8 @@ B=~/gccsdk-next/recipe/binutils-2.45.1-riscos/scripts
 $B/build-binutils-native.sh ~/gccsdk-next/src/binutils-2.45.1 ~/gccsdk-next/build-binutils-native ~/gccsdk-next/binutils-native-install   # as, ld, ar, nm ... for RISC OS (8 MB stacks)
 ~/gccsdk-next/recipe/make-4.4.1-riscos/scripts/build-make.sh                                                                           # GNU make 4.4.1 for RISC OS -> make-riscos/install/bin/make
 $R/make-native-tree.sh ~/gccsdk-next/native-tree ~/gccsdk-next/native-stage3-lto ~/gccsdk-next/binutils-native-install ~/gccsdk-next/make-riscos/install/bin/make
-PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 22                                           # Gcc16_16.2.0-22_arm.zip
-PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 22                                                                    # Gcc16SelfTest_16.2.0-22_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-native-package.py ~/gccsdk-next/native-tree 23                                           # Gcc16_16.2.0-23_arm.zip
+PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 23                                                                    # Gcc16SelfTest_16.2.0-23_arm.zip
 ```
 
 `make-native-tree.sh` and `build-native-lto.sh` take their stage directories as arguments or defaults (read their headers); the LTO build uses `recipe/gcc-16.2.0-riscos/data/no-plugin-ld` so that configure accepts a native `ld` without plugin support.
@@ -129,15 +132,15 @@ What the native build needed, each point learned on the hardware, is in `recipe/
 ## 8. The Linux tarball and the release
 
 ```bash
-$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-22 <a README file>
+$R/package-cross-toolchain.sh ~/gccsdk-next/env-f ~/gccsdk-next/release 16.2.0-23 <a README file>
 ```
 
-It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-22-x86_64-linux.tar.xz`. Check the result the way the release was checked:
+It copies the install tree, replaces the binutils symbolic links by the real files, strips the host programs, adds the licence texts and writes `riscos-gcc16-cross-16.2.0-23-x86_64-linux.tar.xz`. Check the result the way the release was checked:
 
 ```bash
 cd ~/gccsdk-next/release
-tar -xf riscos-gcc16-cross-16.2.0-22-x86_64-linux.tar.xz
-~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-22-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
+tar -xf riscos-gcc16-cross-16.2.0-23-x86_64-linux.tar.xz
+~/gccsdk-next/tests/cross-smoke/cross-smoke.sh riscos-gcc16-cross-16.2.0-23-x86_64-linux ~/gccsdk-next/env-f     # works relocated, and gives byte-identical programs
 ```
 
 ## Changing something

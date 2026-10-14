@@ -2,22 +2,27 @@
 
 Experimental.  Everything here was built and tested on one machine (Ubuntu 26.04, host GCC 15.2, 22 cores) and the results were run on a
 real RISC OS machine (Cortex-A72).  This file describes the recipe; the user documentation is in `docs/` (start with the top-level `README.md`), the build instructions in `docs/BUILDING.md`.
-Nothing under `~/gccsdk` is modified by any of this: it is only read (UnixLib sources, the 10.2.0 install used as sysroot, GMP/MPFR/MPC).
+Nothing under `~/gccsdk` is modified by any of this: it is only read (UnixLib sources, the 10.2.0 install used as sysroot). GMP, MPFR and MPC are not read from there any more: they come from `src/prereq` (`docs/BUILDING.md`, step 0).
 
 ## What is here
     patches-oslib/     five patches for building OSLib from its own sources (scripts/install-oslib.py; docs/OSLIB.md)
     patches-flexlib/   one patch for building FlexLib for UnixLib (scripts/install-flexlib.py and install-sflib.py; docs/FLEXLIB.md)
     patches-rufl/      one patch for building RUfl (scripts/install-rufl.py; docs/RUFL.md)
-    patches/            GCC core: arm backend, config.gcc, dwarf2cfi, ira, libgcc, libgcov, -fstack-clash-protection on by default, and libcpp: `#include "Prefix:Name.h"` as GCCSDK's cross compiler read it (`DeskLib:Core.h`; the cross compiler only, see [DESKLIB.md](../../docs/DESKLIB.md)) (11 patches, ~370 lines)
+    patches/            GCC core: arm backend, config.gcc, dwarf2cfi, ira, libgcc, libgcov, -fstack-clash-protection on by default, and libcpp: `#include "Prefix:Name.h"` as GCCSDK's cross compiler read it (`DeskLib:Core.h`; the cross compiler only, see [DESKLIB.md](../../docs/DESKLIB.md)) (11 patches, ~417 lines)
     new-files/          the RISC OS target files (gcc/config/arm/riscos-elf.h, riscos.opt, t-riscos..., libgcc crt files)
-    patches-cxx/        libstdc++ (8 patches: crossconfig, cmath long-double guards, EH personality, timed-wait and hardware_concurrency fixes)
+    patches-cxx/        libstdc++ (10 patches: crossconfig, cmath long-double guards, EH personality, timed-wait and hardware_concurrency fixes, the error constants, `random`, `atomic`)
     new-files-cxx/      libstdc++ os/riscos glue
+    patches-fortran/    libgfortran (4 patches: configure; no shared-memory coarray library)
     patches-unixlib/    UnixLib 5.0 fixes (applied by scripts/build-unixlib.sh to a copy; the originals in ~/gccsdk are never touched)
     patches-native/     the compiler as a program that runs ON RISC OS: host config, libiberty (response files, RAM size), libcpp (see "The native compiler" below)
     new-files-native/   the driver hooks of that compiler (riscos-gcc.c)
     data/               riscos-da.c (every native program's heap in a dynamic area) and nolibm/libm.so (an empty libm)
     scripts/            apply / configure / make / package scripts (see below)
+    sulfix/             the optional SharedULibFix package: Obey files and the programs of its installer and checks (docs/SHAREDULIB-FIX.md)
+    tools/              fix-unixlib-regvars.py (rewrites UnixLib's inline SWI wrappers; used by build-unixlib.sh)
     tests/              rotest (C, ~34.5k checks), cxx (C++ suite, threadtest), bench, shlib, unixlib-fix (host models), fortran (see tests/fortran)
+
+The module kit (`gcc -mmodule`, `cmunge`, `modreloc`, `mkoslib`, `libmodkit-core.a`) is not in this directory: it is `modkit/` at the top of the repository, and `scripts/install-modkit.sh TOOLCHAIN` installs it into a cross tool chain (`docs/MODULES.md`, `modkit/README.md`).
 
 ## Reproduce (about 15 minutes on 22 cores)
 Needs: the binutils 2.45.1 port installed (`recipe/binutils-2.45.1-riscos`), a GCCSDK 10.2.0 install (for the UnixLib headers/libs used as
@@ -26,7 +31,7 @@ sysroot), autoconf 2.69 as `autoconf2.69` (regenerates libstdc++-v3/configure), 
     tar -xf gcc-16.2.0.tar.xz                                   # https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/
     scripts/apply-port.sh      gcc-16.2.0                       # patches/ + new-files/
     scripts/apply-port-cxx.sh  gcc-16.2.0                       # patches-cxx/ + new-files-cxx/ + regenerate libstdc++-v3/configure
-    scripts/prepare-sysroot.sh PREFIX                           # UnixLib/OSLib headers + libs from the 10.2.0 install, binutils 2.45.1 symlinks
+    scripts/prepare-sysroot.sh PREFIX                           # UnixLib headers + libs from the 10.2.0 install, binutils 2.45.1 symlinks
     scripts/configure-gcc16-full.sh gcc-16.2.0 BUILD PREFIX     # C, C++, Fortran, LTO; shared libgcc/libstdc++/libgfortran
     scripts/make-gcc16-full.sh BUILD PREFIX all
     scripts/make-gcc16-full.sh BUILD PREFIX install
@@ -41,7 +46,8 @@ cross compiler above (host = target = arm-riscos-gnueabihf; the driver then uses
 
     scripts/build-native-prereqs.sh                  # GMP/MPFR/MPC for RISC OS (hostlibs-riscos)
     scripts/prepare-native-src.sh                    # a fresh source tree from the pristine tarball: apply-port, apply-port-cxx, apply-port-native (patches-native/, new-files-native/)
-    scripts/build-native-all.sh O2                   # about 13 minutes: cc1, cc1plus, gcc, g++, cpp, collect2, `make install-gcc` into native-stage2-O2.  `Os` builds a 21% smaller
+    scripts/build-native-lto.sh                      # what the releases use: the same with LTO support (cc1, cc1plus, f951, lto1, lto-wrapper, collect2)
+    scripts/build-native-all.sh O2                   # without LTO; about 13 minutes: cc1, cc1plus, gcc, g++, cpp, collect2, `make install-gcc` into native-stage2-O2.  `Os` builds a 21% smaller
                                                      # compiler (cc1plus 24 MB instead of 30) that compiles 7-28% slower (measured on the machine); the generated code is identical
     ../binutils-2.45.1-riscos/scripts/build-binutils-native.sh SRC BUILD PREFIX     # as, ld, ar, nm, objdump, ... about a minute
     scripts/make-native-tree.sh OUTDIR               # OUTDIR/gcc16: the tree (stripped, executables named ,e1f for a Samba share)
@@ -68,9 +74,10 @@ What the native build needed, each learned on the hardware:
     word, the high word untouched), `%hhd` stored a short, `%jd %zu %td %qd` were not understood, `%Lf` stored a float.  That was the ROOT CAUSE of every LTO link failing ("bytecode stream ... generated with GCC compiler older than 10.0"); with the
     fixed library the UNPATCHED lto1 links (RunLto6 step 1).  The lto-common patch above stays as a safety net for the older libraries (Gcc16 -10 and -11 both run on libunixlib 16.2.0-10 or later).
 
-Running it: the tree is Unix-named, so switch UnixLib's filename suffix swapping off per program (`Set UnixEnv$gcc$sfix xyzzy`, same for g++ cpp cc1 cc1plus collect2 as ld ar ...), `Set Sys$RCLimit 65536`,
-and give the task an application space of at least 48 MB (`WimpSlot -min 48M -max 48M`: cc1plus is 30 MB and the vfork saves the driver next to it).  Stack: the main stack of an EABI
-program is 1 MB unless the program defines `__stack_size` (runtime 16.2.0-6 or later): `cc1`, `cc1plus` and `f951` ask for 64 MB and `make` for 8 MB, so deep template recursion works. `data/riscos-da-big.c` gives the binutils programs 8 MB too when they are built with it (`build-binutils-native.sh` does); the binutils in the released package were built before that was added and have the default 1 MB.  The tests are in `tests/` (see `tests/README.md`).
+Running it: install the `Gcc16` package (`docs/INSTALL-RISCOS.md`), which uses RISC OS names (`c.hello`, `o.main`); its `!Run` sets `Run$Path`, `Sys$RCLimit 65536` and the filename suffix list `UnixEnv$<tool>$sfix` for every tool (`docs/USING-NATIVE.md`).
+A bare tree (the output of `make-native-tree.sh`, which is Unix-named) needs UnixLib's suffix swapping switched off per program instead (`Set UnixEnv$gcc$sfix xyzzy`, same for g++ cpp cc1 cc1plus collect2 as ld ar ...), `Set Sys$RCLimit 65536`.
+Give the task an application space of at least 48 MB (`WimpSlot -min 48M -max 48M`: cc1plus is 30 MB and the vfork saves the driver next to it).  Stack: the main stack of an EABI
+program is 1 MB unless the program defines `__stack_size` (runtime 16.2.0-6 or later): `cc1`, `cc1plus`, `f951` and `lto1` ask for 64 MB and `make` for 8 MB, so deep template recursion works. `data/riscos-da-big.c` gives the binutils programs 8 MB too when they are built with it (`build-binutils-native.sh` does; the released package has them).  The tests are in `tests/` (see `tests/README.md`).
 
 ## Throwback (`-mthrowback`)
 The option of the GCCSDK compilers, accepted and ignored by the port until 2026-10-04, now works: every diagnostic that has a file and a line (errors, warnings, notes, fatal errors; C, C++, Fortran, LTO) is ALSO sent to a RISC OS
@@ -90,7 +97,7 @@ of the source all caught; `hw/`: the programs of the hardware pack `throwback22`
   * `patches-unixlib/unixlib-fini-array.patch` (fix level 14, upstream report 22): UnixLib never ran the `.fini_array` of a program, and the exit function of libgcov is a static destructor that GCC puts into every instrumented object
     (`coverage.cc`, `build_gcov_exit_decl`), so no `.gcda` file was ever written. `__main` now registers one `atexit ()` function that runs the array, last entry first, after the program's own `atexit ()` functions (glibc's order).
 The `.gcda` file of a cross-built program is named with the absolute Linux path it was compiled at: `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` redirect it ([docs/CROSS-COMPILER.md](../../docs/CROSS-COMPILER.md#coverage-and-profile-guided-optimisation)).
-`gcov` is one of the programs of the native tree (`scripts/make-native-tree.sh`) and of the cross tarball.  `gprof` (`-pg`) is not done: UnixLib's profiler (`gmon/_profile.s`) is compiled out for EABI, takes over the IRQ vector, and `STARTFILE_SPEC` links
+`gcov` is one of the programs of the native tree (`scripts/make-native-tree.sh`) and of the cross tarball.  `gprof` (`-pg`) works since 16.2.0-13 (`patches-unixlib/unixlib-gprof-eabi.patch`; `docs/USING-NATIVE.md`, `docs/CROSS-COMPILER.md`): UnixLib's profiler (`gmon/_profile.s`) was compiled out for EABI, took over the IRQ vector, and `STARTFILE_SPEC` linked
 `crt0.o` also for `-pg`.
 
 ## Stack probing (`-fstack-clash-protection` is the default)

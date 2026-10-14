@@ -1,9 +1,13 @@
-/* modg1.c - the library functions that GCCSDK 4.7.4's module library had and this one added after 16.2.0-20 (string, environment, time, getline, fnmatch ...): compile with the headers of
-   the kit and link with nothing undefined. */
+/* modg1.c - the library functions that GCCSDK 4.7.4's module library had and this one added after 16.2.0-20 (string, environment, time, getline, fnmatch ... and, in 16.2.0-23, sethostname,
+   setdomainname, settimeofday, clock_settime, strcasecmp_l, strncasecmp_l, strerror_l, and fma, remquo, erf, tgamma, <fenv.h> ...): compile with the headers of the kit and link with nothing undefined. */
+#define __MODLIB_WANT_TIMESPEC 1
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <locale.h>
+#include <math.h>
+#include <fenv.h>
 #include <time.h>
 #include <errno.h>
 #include <signal.h>
@@ -41,8 +45,14 @@ static int go (char *line, size_t cap, FILE *f)
   if (gethostname (buf, sizeof buf) || getdomainname (buf, sizeof buf) || !realpath ("$", 0) || !getprogname ()) return 8;
   warnx ("%s", buf); warn ("x");
   if (aligned_alloc (64, 10) == 0) return 9;
+  { struct timespec sp = { 0, 0 };
+    if (sethostname ("a", 1) != -1 || setdomainname ("b", 1) != -1 || settimeofday (&tv, 0) != -1 || clock_settime (CLOCK_REALTIME, &sp) != -1) return 11;
+    if (strcasecmp_l ("a", "A", LC_GLOBAL_LOCALE) || strncasecmp_l ("ab", "AC", 1, LC_GLOBAL_LOCALE) || !strerror_l (EPERM, LC_GLOBAL_LOCALE)) return 12; }
   at_quick_exit (0);
   if (timezone || daylight || !tzname[0]) return 10;
+  { volatile double v = 2.0; int q;                                  /* the C99 functions of the Shared C Library (16.2.0-23) and <fenv.h> */
+    if (fma (v, v, v) != 6.0 || remquo (v, 3.0, &q) > 2.0 || erf (v) < 0 || erfc (v) < 0 || lgamma (v) != 0.0 || tgamma (v) != 1.0 || scalbln (v, 2) != 8.0 || nexttoward (v, 3.0L) <= v || nanf ("") == nanf ("")) return 13;
+    if (feraiseexcept (FE_INEXACT) || fetestexcept (FE_INEXACT) != FE_INEXACT || fegetround () != FE_TONEAREST) return 14; }
   return 0;
 }
 

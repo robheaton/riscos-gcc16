@@ -502,7 +502,7 @@ d2 = os.path.join(D, "orphan"); os.makedirs(d2)
 shutil.copy(os.path.join(D, "hello", "h.o"), d2 + "/h.o")
 open(d2 + "/orph.c", "w").write('__attribute__ ((section ("WeirdSection"))) int weird[4] = { 1, 2, 3, 4 };\nint use_weird (int i) { return weird[i & 3]; }\n')
 r = run([GCC, "-mmodule", "-O2", "-c", d2 + "/orph.c", "-o", d2 + "/o.o"]); assert r.returncode == 0, r.stderr
-r = run([GCC, "-mmodule", "-o", d2 + "/m.elf", d2 + "/h.o", d2 + "/o.o", os.path.join(D, "hello", "s0.o")]); assert r.returncode == 0 or True
+r = run([GCC, "-mmodule", "-Wl,--no-gc-sections", "-o", d2 + "/m.elf", d2 + "/h.o", d2 + "/o.o", os.path.join(D, "hello", "s0.o")]); assert r.returncode == 0 or True
 if os.path.exists(d2 + "/m.elf"):
     rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d2 + "/m.elf", d2 + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d2 + "/m.elf", d2 + "/c,ffa"])
     check(rp.returncode != 0 and rc.returncode != 0 and "WeirdSection" in rc.stderr and "WeirdSection" in rp.stderr, "a section outside .image is refused by both, and named (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-100:]))
@@ -514,7 +514,7 @@ d4 = os.path.join(D, "weak"); os.makedirs(d4)
 shutil.copy(os.path.join(D, "hello", "h.o"), d4 + "/h.o")
 open(d4 + "/weak.c", "w").write("extern void weak_fn (void) __attribute__ ((weak));\nextern char abs_sym[] __asm__ (\"_Lib$Reloc$Off$DP\");\nvoid *weak_ptr = (void *) weak_fn;\nvoid *abs_ptr = (void *) abs_sym;\nstatic int local = 5;\nint *local_ptr = &local;\nint weak_test (void) { return weak_ptr == 0 && abs_ptr == 0 && *local_ptr == 5; }\n")
 r = run([GCC, "-mmodule", "-O2", "-c", d4 + "/weak.c", "-o", d4 + "/w.o"]); assert r.returncode == 0, r.stderr
-r = run([GCC, "-mmodule", "-o", d4 + "/m.elf", d4 + "/h.o", d4 + "/w.o", os.path.join(D, "hello", "s0.o")])
+r = run([GCC, "-mmodule", "-Wl,--no-gc-sections", "-o", d4 + "/m.elf", d4 + "/h.o", d4 + "/w.o", os.path.join(D, "hello", "s0.o")])
 if os.path.exists(d4 + "/m.elf"):
     rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d4 + "/m.elf", d4 + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d4 + "/m.elf", d4 + "/c,ffa"])
     nm = run([os.path.join(TC, "arm-riscos-gnueabihf-nm"), d4 + "/m.elf"]).stdout
@@ -531,7 +531,7 @@ d3 = os.path.join(D, "pic"); os.makedirs(d3)
 shutil.copy(os.path.join(D, "hello", "h.o"), d3 + "/h.o")
 open(d3 + "/pic.c", "w").write("int g_a = 5;\nint g_tab[4] = { 1, 2, 3, 4 };\nint *g_ptr = g_tab;\nextern int pic_extra (int);\nint pic_get (int i) { return g_a + g_tab[i & 3] + *g_ptr + pic_extra (i); }\nint pic_extra (int i) { return i * 3 + g_a; }\n")
 r = run([GCC, "-O2", "-fPIC", "-march=armv6", "-mfloat-abi=soft", "-marm", "-ffreestanding", "-c", d3 + "/pic.c", "-o", d3 + "/p.o"]); assert r.returncode == 0, r.stderr      # (-mmodule compiles without -fPIC: the object is made without it, as the members of libstdc++.a were)
-r = run([GCC, "-mmodule", "-o", d3 + "/m.elf", d3 + "/h.o", d3 + "/p.o", os.path.join(D, "hello", "s0.o")])
+r = run([GCC, "-mmodule", "-Wl,--no-gc-sections", "-o", d3 + "/m.elf", d3 + "/h.o", d3 + "/p.o", os.path.join(D, "hello", "s0.o")])
 if os.path.exists(d3 + "/m.elf"):
     rp = run([sys.executable, os.path.join(KIT, "bin", "modreloc.py"), "-q", d3 + "/m.elf", d3 + "/py,ffa"]); rc = run([os.path.join(BIN, "modreloc"), "-q", d3 + "/m.elf", d3 + "/c,ffa"])
     check(rp.returncode != 0 and rc.returncode != 0 and ".got" in rc.stderr and ".got" in rp.stderr and "position independent" in rc.stderr and "position independent" in rp.stderr, "a module with a global offset table (-fPIC code) is refused by both, and the reason is given (py %d, c %d): %s" % (rp.returncode, rc.returncode, rc.stderr.strip()[-100:]))

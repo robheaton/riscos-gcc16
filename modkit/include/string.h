@@ -40,6 +40,10 @@ extern int stricmp (const char *a, const char *b);
 extern int strnicmp (const char *a, const char *b, size_t n);
 extern int strcasecmp (const char *a, const char *b);
 extern int strncasecmp (const char *a, const char *b, size_t n);
+#include <_modlib_locale.h>
+extern int strcasecmp_l (const char *a, const char *b, locale_t loc);          /* the "C" locale only: loc is ignored (give LC_GLOBAL_LOCALE) */
+extern int strncasecmp_l (const char *a, const char *b, size_t n, locale_t loc);
+extern char *strerror_l (int errnum, locale_t loc);                         /* the same text as strerror */
 extern void bzero (void *p, size_t n);
 extern void bcopy (const void *s, void *d, size_t n);
 extern char *stpcpy (char *d, const char *s);

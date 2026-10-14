@@ -7,7 +7,8 @@
    (exp (-1000), ldexp (1, -1100)), pow (0, -1) is a pole (ERANGE); a subnormal result sets nothing (except nextafter and, as in glibc, atan2 when it underflows to 0 and asinh / atanh of a subnormal argument; glibc
    sets ERANGE for some subnormal results of expf, exp2f and powf by a rule of its own, which this library does not copy).  pow (1, y) and pow (-1, +-inf) are 1 as C99 says.  The float functions work in double and
    round once.  The macros are the compiler's (__builtin_isnan ...).
-   The long double functions (sinl ...) call the double ones (long double is double).  Not there: erf, gamma, the Bessel functions, fma, remquo, scalbln, nexttoward, nanf (the complex functions are in <complex.h>). */
+   fma and remquo are exact too (the bits glibc gives); erf, erfc and lgamma are Sun's fdlibm; tgamma is the kit's own (a few ulp).  The long double functions (sinl ...) call the double ones (long double is double).
+   Not there: the Bessel functions, gamma (use lgamma), the float forms of erf, lgamma, tgamma and fma (the complex functions are in <complex.h>, the floating point environment in <fenv.h>). */
 #ifndef _MATH_H
 #define _MATH_H
 #ifdef __cplusplus
@@ -108,6 +109,16 @@ extern double fmax (double x, double y);
 extern double fdim (double x, double y);
 extern double nextafter (double x, double y);
 extern double nan (const char *tag);
+extern double fma (double x, double y, double z);                       /* x * y + z rounded once (exact: the same bits as glibc's) */
+extern double remquo (double x, double y, int *quo);                   /* remainder (x, y), and in *quo the sign of x / y and the low 31 bits of the quotient */
+extern double scalbln (double x, long n);
+extern double erf (double x);
+extern double erfc (double x);
+extern double lgamma (double x);                                       /* the sign of Gamma (x) is in signgam */
+extern double lgamma_r (double x, int *sign);
+extern double tgamma (double x);                                       /* a few ulp, more for large arguments (a product of up to 170 factors) */
+extern int signgam;
+extern double nexttoward (double x, long double y);
 extern int finite (double x);
 
 extern float acosf (float x);
@@ -153,6 +164,7 @@ extern float atanhf (float x);
 extern float remainderf (float x, float y);
 extern float fdimf (float x, float y);
 extern float nextafterf (float x, float y);
+extern float nanf (const char *tag);
 extern float nearbyintf (float x);
 extern float logbf (float x);
 extern int ilogbf (float x);
@@ -203,6 +215,14 @@ extern long double frexpl (long double x, int *e);
 extern long double ldexpl (long double x, int e);
 extern long double modfl (long double x, long double *ip);
 extern long double scalbnl (long double x, int n);
+extern long double fmal (long double x, long double y, long double z);
+extern long double remquol (long double x, long double y, int *quo);
+extern long double erfl (long double x);
+extern long double erfcl (long double x);
+extern long double lgammal (long double x);
+extern long double tgammal (long double x);
+extern long double scalblnl (long double x, long n);
+extern long double nexttowardl (long double x, long double y);
 extern int ilogbl (long double x);
 extern long lrintl (long double x);
 extern long long llrintl (long double x);

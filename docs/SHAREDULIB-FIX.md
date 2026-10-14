@@ -27,7 +27,7 @@ The reports are drafts 01 and 08 in [`docs/upstream/`](upstream/00-INDEX.txt), w
 | `fixlevel` | the fix level of the runtime |
 | `vforkbare`, `vforkfail` | the tests of `Check` |
 
-It needs the runtime `SharedLibs-C-armeabihf` 16.2.0-13 (PackMan installs it first). **The runtime matters:** the fixed module lets a `vfork` child that ends without `exec` run to the end, and with a runtime older than UnixLib fix level 10 (16.2.0-8) that child frees memory that its parent still uses, which can corrupt the RMA and freeze the machine. `Install` and `Check` refuse an older runtime. Programs that carry their own copy of UnixLib (linked with `-static`, or built by an older tool chain) do not use the runtime package: they have the old behaviour whatever module is installed.
+It needs the runtime `SharedLibs-C-armeabihf` 16.2.0-13 or later (PackMan installs it first: that is the package dependency, fix level 15; the installer's own test is the lower bound below). **The runtime matters:** the fixed module lets a `vfork` child that ends without `exec` run to the end, and with a runtime older than UnixLib fix level 10 (16.2.0-8) that child frees memory that its parent still uses, which can corrupt the RMA and freeze the machine. `Install` and `Check` refuse an older runtime (below fix level 10). Programs that carry their own copy of UnixLib (linked with `-static`, or built by an older tool chain) do not use the runtime package: they have the old behaviour whatever module is installed.
 
 ## Install it
 

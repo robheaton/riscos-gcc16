@@ -4,7 +4,7 @@ Running real programs on real hardware found bugs in UnixLib, in the SharedUnixL
 with a patch where there is one, a reproducer, and an honest statement of what was measured on the machine and what was only read from the code or run on an interpreter. The drafts, patches, reproducers and the script that re-checks them are in
 [`docs/upstream/`](upstream/00-INDEX.txt).
 
-> **Status:** drafts. They have **not** been sent to the GCCSDK maintainers yet and may be revised before they are. The patches are against the GCCSDK svn trunk r7800 (`patch -p1` from the top of the tree) and are *already in the packages of this release* (UnixLib) or in the fixed module that the optional `SharedULibFix` package of this release ships (SharedUnixLibrary: [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md)).
+> **Status:** drafts. They have **not** been sent to the GCCSDK maintainers yet and may be revised before they are. The patches are against the GCCSDK svn trunk r7800 (`patch -p1` from the top of the tree). The UnixLib patches are *already in the packages of this release*, and the SharedUnixLibrary patches in the fixed module that the optional `SharedULibFix` package of this release ships ([SHAREDULIB-FIX.md](SHAREDULIB-FIX.md)); the ARMEABISupport patch (report 04) is in neither.
 
 | # | Component | Problem | Patch |
 |---|---|---|---|
@@ -41,7 +41,7 @@ If you maintain UnixLib, SharedUnixLibrary or ARMEABISupport and would like thes
 
 ## For RISC OS Open Ltd
 
-The survey of the OS's own C modules ([OS-MODULES.md](OS-MODULES.md)) found one bug in the OS sources. It belongs to RISC OS Open, not to the GCCSDK list, so it is not in the bundle above. It was **reported to RISC OS Open by the author on 8 October 2026** (their bug tracker, https://www.riscosopen.org/tracker/, needs an account; the GitLab project of the module, `RiscOS/Sources/Programmer/Squash`, shows no issue tracker). The text that was sent follows.
+The survey of the OS's own C modules ([OS-MODULES.md](OS-MODULES.md)) found one bug that matters in the OS sources (Squash, below) and one small fault (DrawFile's missing `BadSwi` message token, [OS-MODULES.md](OS-MODULES.md#what-it-found); not reported). The Squash bug belongs to RISC OS Open, not to the GCCSDK list, so it is not in the bundle above. It was **reported to RISC OS Open by the author on 8 October 2026** (their bug tracker, https://www.riscosopen.org/tracker/, needs an account; the GitLab project of the module, `RiscOS/Sources/Programmer/Squash`, shows no issue tracker). The text that was sent follows.
 
 > **Squash: `Squash_Compress` with an input of length 0 runs away in the fast compressor**
 >

@@ -1,4 +1,4 @@
-/* strerror.c - the texts of the error numbers of errno.h (the wording of glibc's, where the number means the same), sys_errlist and sys_nerr, and the POSIX strerror_r. */
+/* strerror.c - the texts of the error numbers of errno.h (the wording of glibc's, where the number means the same), sys_errlist and sys_nerr and the POSIX strerror_r. */
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>

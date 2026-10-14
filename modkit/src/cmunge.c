@@ -1,16 +1,17 @@
 /* cmunge - CMunge's command line over the module header generator of modkit: the C version of bin/cmunge and bin/mkmodhdr.py (the same output, byte for byte).
 
-     cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] FILE.cmhg
+     cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] [-xh FILE.h] [-xhdr FILE.hdr] [-zbase] [-zoslib] [-zerrors] [-depend FILE] FILE.cmhg
 
 Reads a CMHG file and writes
   -s  the module header and the veneers as GNU assembler source        -d  the C header (Module_Title, CMD_<name>, the prototypes of your handlers)
   -o  the object: the assembler source assembled for ARMv6 by the compiler (CMUNGE_CC, else the cross compiler next to this program or on PATH; on RISC OS: gcc)
   -p, -px  run the C preprocessor over the file first (-D, -U and -I go to it)
--zbase  makes Image__RO_Base (a constant that holds Image$$RO$$Base) and declares it in the header, as GCCSDK 4.7.4's CMunge does
+-zbase  makes Image__RO_Base (a constant that holds Image$$RO$$Base) and declares it in the header, as GCCSDK 4.7.4's CMunge does;  -zoslib, -zerrors, -xh FILE and -xhdr FILE (the header of the SWI names, in C and in assembler) as CMunge has them;
+-depend FILE is accepted with CMunge's warning that GCC has no such flag (no file is written)
 Accepted and without effect (the model has nothing to switch): -tgcc, -32bit, -znoscl, -throwback, -cmhg, and -apcs 3/<flags> when the flags only choose a calling convention that the model has one of anyway
-(nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs 26 or reent, -blank) is refused with a message, not ignored: a module that needs it would be built wrong.
+(nofpregargs, fpregargs, nofp, fpe3, swst, noswst, nonreent).  What CMunge has beyond that (-tnorcroft, -tlcc, -26bit, -apcs 26|reent|pic, -blank, and any other -t, -x or -z) is refused with a message, not ignored: a module that needs it would be built wrong.
 
-The CMHG language that is supported (anything else is an error, nothing is dropped silently; CMunge's own error-base:, error-identifiers:, pdriver-handler:, vector-traps: and module-is-runnable: simple-app: are not supported):
+The CMHG language that is supported (anything else is an error, nothing is dropped silently; CMunge's own library-enter-code:, library-initialisation-code:, the help: flag of a command, swi-handler-code: f (flags-capable:) and module-is-runnable: simple-app: are not supported; since 16.2.0-20 error-chunk-base-number: with error-identifiers:, and since 16.2.0-22 vector-traps: and pdriver-handler: are):
   title-string:, help-string: (name and version), date-string:        the module's name, help line (title <tab> version (date)) and the Module_* macros of the C header
   initialisation-code: FN          _kernel_oserror *FN (const char *tail, int podule_base, void *pw)
   finalisation-code: FN            _kernel_oserror *FN (int fatal, int podule_base, void *pw)
@@ -1549,9 +1550,10 @@ static char *generate_h (const Module *m, const char *src)
 /* ---------------------------------------------------------------- the command line */
 static void usage (FILE *f)
 {
-  fputs ("usage: cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] FILE.cmhg\n"
+  fputs ("usage: cmunge [-tgcc] [-32bit] [-p|-px] [-D<sym>[=<val>]] [-U<sym>] [-I<dir>] [-throwback] [-s FILE.s] [-d FILE.h] [-o FILE.o] [-xh FILE.h] [-xhdr FILE.hdr] [-zbase] [-zoslib] [-zerrors] [-depend FILE] FILE.cmhg\n"
          "  -o FILE  the object   -s FILE  the assembler source   -d FILE  the C header   -p  run the C preprocessor first\n"
-         "  accepted: -zbase (Image__RO_Base); without effect: -tgcc -32bit -znoscl -throwback -cmhg -apcs 3/<flags>.  Refused: -tnorcroft -tlcc -26bit -apcs 26|reent -zerrors -zoslib -blank -x<type> -depend\n", f);
+         "  work: -zbase (Image__RO_Base) -zoslib -zerrors -xh -xhdr;  without effect: -tgcc -32bit -znoscl -throwback -cmhg -px (is -p) -apcs 3/<flags> that only choose a calling convention;  -depend FILE: a warning, no file.\n"
+         "  refused: -tnorcroft -tlcc -26bit -blank -apcs 26|reent|pic and any other -t, -x or -z\n", f);
 }
 
 static const char *argv0dir;

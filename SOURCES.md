@@ -2,14 +2,16 @@
 
 ## Upstream sources, unmodified
 
-These are the files the binaries were built from. The release attaches copies of the three tarballs below and a snapshot of the UnixLib sources, so the source is offered in the same place as the binaries.
+These are the files the binaries were built from. The release attaches copies of the GCC, binutils and make tarballs below and a snapshot of the UnixLib sources, so the source is offered in the same place as the binaries. GMP, MPFR and MPC (statically linked into the compilers) are not attached: take them from the addresses in the table.
 
 | Component | Version | Download | sha256 |
 |---|---|---|---|
 | GCC | 16.2.0 | https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz | `e6738e29597f733270731aa90600f37ffdc045079dfc27ec7e8192cc81085c3e` |
 | binutils | 2.45.1 | https://ftp.gnu.org/gnu/binutils/binutils-2.45.1.tar.xz | `5fe101e6fe9d18fdec95962d81ed670fdee5f37e3f48f0bef87bddf862513aa5` |
 | GNU make | 4.4.1 | https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz (and `.sig`) | `dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3` |
-| GMP, MPFR, MPC | 6.1.0, 3.1.4, 1.0.3 | the GNU and MPFR sites (the versions GCCSDK's own recipe uses; built statically into the compilers) | |
+| GMP | 6.1.0 | https://ftp.gnu.org/gnu/gmp/gmp-6.1.0.tar.bz2 (the version GCCSDK's own recipe uses; built statically into the compilers) | `498449a994efeba527885c10405993427995d3f86b8768d8cdf8d9dd7c6b73e8` |
+| MPFR | 3.1.4 | https://ftp.gnu.org/gnu/mpfr/mpfr-3.1.4.tar.bz2 (as above) | `d3103a80cdad2407ed581f3618c4bed04e0c92d1cf771a65ead662cc397f7775` |
+| MPC | 1.0.3 | https://ftp.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz (as above) | `617decc6ea09889fb08ede330917a00b16809b8db88c29c31bfbb49cbf88ecc3` |
 
 Compare the checksums with the ones GNU publishes next to the downloads.
 
@@ -18,7 +20,7 @@ Compare the checksums with the ones GNU publishes next to the downloads.
 | What | Where | Used for |
 |---|---|---|
 | UnixLib 5.0 sources | GCCSDK svn trunk, revision **7800**: `svn://svn.riscos.info/gccsdk/trunk`, `gcc4/recipe/files/gcc/libunixlib`. The release attaches an unmodified snapshot of exactly that directory, `gccsdk-unixlib-r7800.tar.xz` (sha256 `bedf336746e7ca9d03ec4486d161ad6d55c0249419e18362dee34fc28236f071`; it unpacks to `libunixlib/`) | the `libunixlib` and `libm` of the runtime package, with [`patches-unixlib/`](recipe/gcc-16.2.0-riscos/patches-unixlib) applied |
-| fdlibm 5.3 (Sun Microsystems) | the copy in GNU Classpath, `native/fdlibm`: the source of the maths functions in `modkit/lib/fd_*.c`, kept with Sun's notice; licence in [LICENSES.md](LICENSES.md) |
+| fdlibm 5.3 (Sun Microsystems) | the copy in GNU Classpath, `native/fdlibm`, kept with Sun's notice; licence in [LICENSES.md](LICENSES.md) | the maths functions in `modkit/lib/fd_*.c` |
 | The GCC 10.2.0 EABI recipe | the same svn, `autobuilder/develop/gcc` | the RISC OS target files that were forward-ported to GCC 16 (`recipe/gcc-16.2.0-riscos`), and the sysroot pieces (headers, `crt0.o`, loader) |
 | `SharedLibs-C-armeabihf` 10.2.0-1 | the GCCSDK autobuilder package | the dynamic loader, `libgcc_s.so.1` and `libdl` in the C runtime package, unchanged |
 | `gcc_10.2.0-1` package | the GCCSDK autobuilder | the icon sprites of `!GCC16` |
@@ -28,13 +30,18 @@ Compare the checksums with the ones GNU publishes next to the downloads.
 
 | Asset | Built from |
 |---|---|
-| `riscos-gcc16-cross-16.2.0-22-x86_64-linux.tar.xz` | GCC 16.2.0 + binutils 2.45.1 + this repository's `recipe/` and `modkit/` (the module kit, installed by `install-modkit.sh`; [BUILDING.md](docs/BUILDING.md), steps 2 to 5), UnixLib headers and libraries from the GCCSDK sources and the runtime packages |
-| `Gcc16_16.2.0-22_arm.zip` | GCC 16.2.0, binutils 2.45.1 and make 4.4.1 plus the patches in `recipe/` and the module kit of `modkit/` (the native build: step 7), cross-built with the cross compiler above |
-| `SharedLibs-C-armeabihf_16.2.0-13_arm.zip` | UnixLib 5.0 (svn r7800) + `patches-unixlib/` built with the cross compiler; the loader, `libgcc_s` and `libdl` from the GCCSDK package |
-| `SharedLibs-C++-armeabihf_16.2.0-5_arm.zip`, `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` | libstdc++ and libgfortran of GCC 16.2.0 built by the cross compiler |
+| `riscos-gcc16-cross-16.2.0-23-x86_64-linux.tar.xz` | GCC 16.2.0 + binutils 2.45.1 + this repository's `recipe/` and `modkit/` (the module kit, installed by `install-modkit.sh`; [BUILDING.md](docs/BUILDING.md), steps 2 to 5), UnixLib headers and libraries from the GCCSDK sources and the runtime packages |
+| `Gcc16_16.2.0-23_arm.zip` | GCC 16.2.0, binutils 2.45.1 and make 4.4.1 plus the patches in `recipe/` and the module kit of `modkit/` (the native build: step 7), cross-built with the cross compiler above |
+| `Gcc16SelfTest_16.2.0-23_arm.zip` | `recipe/gcc-16.2.0-riscos/tests/selftest` (published as [`tests/selftest`](tests/selftest)), packed by `make-selftest-package.py` |
+| `SharedLibs-C-armeabihf_16.2.0-14_arm.zip` | UnixLib 5.0 (svn r7800) + `patches-unixlib/` built with the cross compiler; the loader, `libgcc_s` and `libdl` from the GCCSDK package |
+| `SharedLibs-C++-armeabihf_16.2.0-6_arm.zip`, `SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip` | libstdc++ and libgfortran of GCC 16.2.0 built by the cross compiler |
 | `SharedULibFix_1.16-vforkfix3_arm.zip` | `module/sul.s` of the UnixLib snapshot with `patches-unixlib/unixlib-sul-vfork-child-*.patch`, assembled by `build-sul.sh` with GCCSDK 10.2.0's tool chain (step 6 of [BUILDING.md](docs/BUILDING.md)); the programs and Obey files are `recipe/gcc-16.2.0-riscos/sulfix`, built with the cross compiler |
 
 The package files are generated by `recipe/gcc-16.2.0-riscos/scripts/make-*-package.py`; their metadata (maintainer, licence, copyright text) comes from `pkgmeta.py`.
+
+## Sources that tests and recipes fetch (not shipped)
+
+These are downloaded by the scripts named, from the owners, and are not in the releases or in this repository: [OSLib](docs/OSLIB.md), [DeskLib32](docs/DESKLIB.md), [FlexLib and SFLib](docs/FLEXLIB.md), [RUfl](docs/RUFL.md), [NetSurf](docs/NETSURF.md) and its libraries, and the RISC OS Open sources named above. One more is a test of the module kit: [Sunfish](https://github.com/ajw498/NFS), Alex Waugh's NFS client filing system (MIT licence), is built unmodified from revision `afa0a8c` by `tests/sunfish/build-sunfish.sh`.
 
 ## Corresponding source
 

@@ -19,7 +19,9 @@ Use it
   arm-riscos-gnueabihf-gprof prog,e1f gmon.out                 (see docs/CROSS-COMPILER.md in the repository: the flat profile and the call graph)
   arm-riscos-gnueabihf-gcc -mthrowback ...                     errors of the compiler, the assembler and the linker to a text editor on a RISC OS machine (THROWBACK_HOST: docs/CROSS-COMPILER.md)
   cmunge -tgcc -32bit -p -d header.h -o header.o module.cmhg   modules (new in 16.2.0-14), the way GCCSDK 4.7.4 did them but without UnixLib or the Shared C Library (libmodkit has a small C library of its own): then  arm-riscos-gnueabihf-gcc -mmodule -o Mod,ffa main.o header.o
-                                                               (OSLib veneers: arm-riscos-gnueabihf-mkoslib; see docs/MODULES.md in the repository)
+                                                               (OSLib veneers: arm-riscos-gnueabihf-mkoslib; objects of GCCSDK's asasm: arm-riscos-gnueabihf-asasm-fix; the module code is linked function by function;
+                                                               see docs/MODULES.md in the repository, and docs/PORTING-FROM-4.7.4.md to move a module from GCCSDK 4.7.4)
+  arm-riscos-gnueabihf-gcc-ar rcs libx.a a.o b.o                make an archive of -flto objects (the plain arm-riscos-gnueabihf-ar needs the plugin: use gcc-ar, gcc-nm, gcc-ranlib for those)
   The ",e1f" suffix gives the file the RISC OS file type ELF when it is copied to a RISC OS Samba share (or type  *SetType hello &E1F  on RISC OS).
 
 Run the programs on RISC OS
