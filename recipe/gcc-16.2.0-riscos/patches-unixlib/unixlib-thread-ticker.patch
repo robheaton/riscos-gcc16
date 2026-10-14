@@ -1,0 +1,1411 @@
+unixlib-thread-ticker.patch: the thread ticker of UnixLib, after Andrew Youll's riscos-unixlib (5.0.3.3).
+
+Credit: this is Andrew Youll's work (https://github.com/adyoull/riscos-unixlib, "an unofficial fork of GCCSDK's UnixLib"; the files pthread/ticker.c,
+incl-local/internal/ticker.s, module/pthticker.s and the changes to pthread/_context.s, asm_dec.s, pthread.h, pthinit.c, context.c, sys/_syslib.s, sys/exec.c and vscript
+are his, taken from his commits 8c5c824 to 8dae5f2 of September and October 2026, and carry his "2026" comments).  UnixLib is LGPL; so are these files.
+What it fixes: UnixLib starts a system-wide OS_CallEvery ticker when a program has a second thread, and the handler ran from the program's own memory.  The ticker fires
+whichever task is paged in: a program linked statically with libunixlib.a (jpegview, reported by Chris) made every other task abort with "abort on data transfer" or
+"abort on instruction fetch" and then locked the machine (reproduced on a Raspberry Pi with tests/tickbug: a thread made BEFORE Wimp_Initialise starts the ticker with no
+Wimp filters).  Now the ticker routines run from the RMA block (a copy made at start-up) or from the optional PThreadTicker module, the filters follow the task handle,
+and a fork or exec leaves the parent's ticker alone.  The module (module/pthticker.s) is built by build-pthticker.sh.
+Adapted to our tree: Makefile.in (the generated one) gets the ticker.c rules; __pthread_prog_fini keeps our "image shared with a vfork child" return after his ticker check.
+
+diff -ruN -x '*.orig' a/libunixlib/incl-local/internal/asm_dec.s b/libunixlib/incl-local/internal/asm_dec.s
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/incl-local/internal/asm_dec.s b/libunixlib/incl-local/internal/asm_dec.s
+--- a/libunixlib/incl-local/internal/asm_dec.s
++++ b/libunixlib/incl-local/internal/asm_dec.s
+@@ -390,6 +390,30 @@
+ PTHREAD_CALLEVERY_RMA_WORKSEMAPHORE:		.skip 4
+ PTHREAD_CALLEVERY_RMA_CALLBACK_SEMAPHORE:	.skip 4
+ PTHREAD_CALLEVERY_RMA_FILTER_NAME:		.skip 20
++	@ 2026: counters for UnixLib$TickerStats (see docs/THREAD-TICKER.md)
++	@ Ticker calls, and those that found another task paged in
++PTHREAD_CALLEVERY_RMA_TICKS:			.skip 4
++PTHREAD_CALLEVERY_RMA_FOREIGN_TICKS:		.skip 4
++	@ The upcall handler and its R12 seen at the last foreign tick
++PTHREAD_CALLEVERY_RMA_FOREIGN_HANDLER:		.skip 4
++PTHREAD_CALLEVERY_RMA_FOREIGN_R12:		.skip 4
++	@ Wimp pre-filter and post-filter calls
++PTHREAD_CALLEVERY_RMA_PRE_CALLS:		.skip 4
++PTHREAD_CALLEVERY_RMA_POST_CALLS:		.skip 4
++	@ Task handle the filters are registered for, 0 if none
++PTHREAD_CALLEVERY_RMA_FILTER_HANDLE:		.skip 4
++	@ Bit 0 set: the PThreadTicker module's routines (else the copy below)
++PTHREAD_CALLEVERY_RMA_FLAGS:			.skip 4
++	@ 2026 (5.0.3.1): non-zero between the Wimp pre-filter and post-filter,
++	@ i.e. while the program is in Wimp_Poll
++PTHREAD_CALLEVERY_RMA_POLLING:			.skip 4
++	@ Non-zero if a tick came while polling: switch threads when Wimp_Poll
++	@ returns
++PTHREAD_CALLEVERY_RMA_PENDING:			.skip 4
++	@ Thread switches started by the post-filter (for the statistics)
++PTHREAD_CALLEVERY_RMA_POST_SWITCHES:		.skip 4
++	@ A copy of the ticker routines (see _context.s)
++PTHREAD_CALLEVERY_RMA_TICKER_CODE:		.skip 476
+ PTHREAD_CALLEVERY_STRUCT_SIZE:
+ 
+ 	.text
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/incl-local/internal/ticker.s b/libunixlib/incl-local/internal/ticker.s
+--- a/libunixlib/incl-local/internal/ticker.s
++++ b/libunixlib/incl-local/internal/ticker.s
+@@ -0,0 +1,209 @@
++@ Thread ticker routines, shared by the PThreadTicker module and UnixLib
++@ Copyright (c) 2026 UnixLib Developers
++@
++@ TICKER_ROUTINES p assembles five routines, all called with ip (r12) =
++@ the program's pthread RMA block (struct __pthread_callevery_block,
++@ PTHREAD_CALLEVERY_RMA_* in asm_dec.s):
++@
++@   p_handler    the OS_CallEvery handler
++@   p_start      start the ticker if it isn't running
++@   p_stop       stop it if it is
++@   p_prefilter  Wimp pre-filter: note that the program is in Wimp_Poll
++@   p_postfilter Wimp post-filter: Wimp_Poll is returning; switch threads
++@                now if a tick came meanwhile
++@
++@ 2026 (5.0.3.1): the filters used to stop the ticker in the pre-filter and
++@ start it again in the post-filter. Starting it began a new 2 cs period,
++@ so a program that called Wimp_Poll more often than every 2 cs never got
++@ a tick, and its other threads never ran (TickerTest on a Pi: 600000
++@ polls in 20 s, both threads counted 0). Now the ticker runs all the
++@ time. While the program is in Wimp_Poll (between the filters) a tick
++@ sets no callback, which could be taken by whichever task Wimp_Poll
++@ returns to; it sets 'pending', and the post-filter, when Wimp_Poll
++@ returns to this program, sets the callback instead.
++@
++@ The PThreadTicker module (module/pthticker.s) assembles them, so they
++@ are always paged in. Without that module, UnixLib copies them into the
++@ RMA block at start-up and runs the copy (pthread/_context.s).
++@ Either way they must not depend on where they are: only ip-relative
++@ data, ADR/BL within this block, SWIs; no literal pools, no branches out.
++@ The block offsets they use (76, 80, 88, 92, 96, 120-143 and, from
++@ interface version 2 / module 0.03, 152-163) are an interface between
++@ UnixLib and the module, which are released separately: don't move them.
++@
++@ The handler may run while another task is paged in, and the Filter
++@ module can call the filters for another task (docs/THREAD-TICKER.md,
++@ H1). So each checks that the upcall handler and its R12 are the
++@ program's (from SUL) before acting; a tick that finds another task paged
++@ in only counts (and notes 'pending' if the program is in Wimp_Poll).
++@
++@ Syntax: keep it valid in both divided and unified syntax (no
++@ conditional LDM/STM), so any module source can use it.
++
++.macro	TICKER_ROUTINES p
++
++	@ OS_CallEvery handler: every 2 cs, SVC or IRQ mode, IRQs disabled.
++	@ Preserves all registers.
++\p\()_handler:
++	STMFD	sp!, {a1-a4, lr}
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKS]
++	ADD	a1, a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKS]
++	BL	\p\()_ours
++	BVS	\p\()_handler_out
++	BNE	\p\()_handler_foreign
++
++	@ Ours. In Wimp_Poll: leave it to the post-filter.
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POLLING]
++	TEQ	a1, #0
++	BNE	\p\()_handler_pending
++
++	@ Set the callback unless in a context switch or a critical section.
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_CALLBACK_SEMAPHORE]
++	TEQ	a1, #0
++	LDREQ	a1, [ip, #PTHREAD_CALLEVERY_RMA_WORKSEMAPHORE]
++	TEQEQ	a1, #0
++	SWIEQ	XOS_SetCallBack
++\p\()_handler_out:
++	LDMFD	sp!, {a1-a4, pc}
++
++	@ Another task is paged in: count it, note whose upcall handler.
++\p\()_handler_foreign:
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_FOREIGN_TICKS]
++	ADD	a1, a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_FOREIGN_TICKS]
++	STR	a2, [ip, #PTHREAD_CALLEVERY_RMA_FOREIGN_HANDLER]
++	STR	a3, [ip, #PTHREAD_CALLEVERY_RMA_FOREIGN_R12]
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POLLING]
++	TEQ	a1, #0
++	BEQ	\p\()_handler_out
++\p\()_handler_pending:
++	MOV	a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_PENDING]
++	LDMFD	sp!, {a1-a4, pc}
++
++	@ Is the program paged in? Reads the upcall handler (OS_ChangeEnvironment
++	@ 16): SUL's, with the program's key as its R12, when it is.
++	@ Returns V set if the SWI failed, else Z set if ours (a2, a3 = the
++	@ handler and R12 found). Corrupts a1-a4. lr is saved on the stack:
++	@ a SWI in SVC mode overwrites it.
++\p\()_ours:
++	STMFD	sp!, {lr}
++	MOV	a1, #16
++	MOV	a2, #0
++	MOV	a3, #0
++	MOV	a4, #0
++	SWI	XOS_ChangeEnvironment
++	BVS	\p\()_ours_out
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_UPCALL_ADDR]
++	TEQ	a1, a2
++	LDREQ	a1, [ip, #PTHREAD_CALLEVERY_RMA_UPCALL_R12]
++	TEQEQ	a1, a3
++\p\()_ours_out:
++	LDMFD	sp!, {pc}		@ flags as set above
++
++	@ Start the ticker. Any mode; preserves all registers and flags,
++	@ returns no errors.
++\p\()_start:
++	STMFD	sp!, {a1-a4, lr}
++	MRS	a4, CPSR
++	MOV	a1, #0
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POLLING]
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
++	TEQ	a1, #0
++	BNE	\p\()_start_out
++	MOV	a1, #1			@ Every 2 cs
++	ADR	a2, \p\()_handler
++	MOV	a3, ip
++	SWI	XOS_CallEvery
++	MOVVC	a1, #1
++	STRVC	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
++\p\()_start_out:
++	MSR	CPSR_f, a4
++	LDMFD	sp!, {a1-a4, pc}
++
++	@ Stop the ticker. As \p\()_start.
++\p\()_stop:
++	STMFD	sp!, {a1-a4, lr}
++	MRS	a4, CPSR
++	MOV	a1, #0
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POLLING]
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_PENDING]
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
++	TEQ	a1, #0
++	BEQ	\p\()_stop_out
++	ADR	a1, \p\()_handler
++	MOV	a2, ip
++	SWI	XOS_RemoveTickerEvent
++	MOV	a1, #0
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
++\p\()_stop_out:
++	MSR	CPSR_f, a4
++	LDMFD	sp!, {a1-a4, pc}
++
++	@ Wimp filters (Filter_RegisterPreFilter/PostFilter with R2 = the
++	@ block), SVC mode. Preserve all registers and flags. Called for
++	@ another task (FilterManager, H1): only count.
++\p\()_prefilter:
++	STMFD	sp!, {a1-a4, lr}
++	MRS	a4, CPSR
++	STMFD	sp!, {a4}
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_PRE_CALLS]
++	ADD	a1, a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_PRE_CALLS]
++	@ IRQs off from the check to setting 'polling', so a tick can't set
++	@ a callback in between (restored at _filter_out).
++	ORR	a1, a4, #IFlag32
++	MSR	CPSR_c, a1
++	BL	\p\()_ours
++	BVS	\p\()_filter_out
++	BNE	\p\()_filter_out
++	MOV	a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POLLING]
++\p\()_filter_out:
++	LDMFD	sp!, {a4}
++	MSR	CPSR_cf, a4
++	LDMFD	sp!, {a1-a4, pc}
++
++\p\()_postfilter:
++	STMFD	sp!, {a1-a4, lr}
++	MRS	a4, CPSR
++	STMFD	sp!, {a4}
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POST_CALLS]
++	ADD	a1, a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POST_CALLS]
++	BL	\p\()_ours
++	BVS	\p\()_post_start
++	BNE	\p\()_post_start
++	MOV	a1, #0
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POLLING]
++	LDR	a2, [ip, #PTHREAD_CALLEVERY_RMA_PENDING]
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_PENDING]
++	TEQ	a2, #0
++	BEQ	\p\()_post_start
++	@ A tick came while in Wimp_Poll: switch threads as it returns,
++	@ unless in a context switch or a critical section.
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_CALLBACK_SEMAPHORE]
++	TEQ	a1, #0
++	LDREQ	a1, [ip, #PTHREAD_CALLEVERY_RMA_WORKSEMAPHORE]
++	TEQEQ	a1, #0
++	BNE	\p\()_post_start
++	SWI	XOS_SetCallBack
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POST_SWITCHES]
++	ADD	a1, a1, #1
++	STR	a1, [ip, #PTHREAD_CALLEVERY_RMA_POST_SWITCHES]
++	@ Make sure the ticker runs (it always should while the filters are
++	@ registered).
++\p\()_post_start:
++	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
++	TEQ	a1, #0
++	BNE	\p\()_filter_out
++	MOV	a1, #1
++	ADR	a2, \p\()_handler
++	MOV	a3, ip
++	SWI	XOS_CallEvery
++	MOVVC	a1, #1
++	STRVC	a1, [ip, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
++	B	\p\()_filter_out
++\p\()_end:
++.endm
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/incl-local/pthread.h b/libunixlib/incl-local/pthread.h
+--- a/libunixlib/incl-local/pthread.h
++++ b/libunixlib/incl-local/pthread.h
+@@ -180,8 +180,41 @@
+   volatile int pthread_callback_semaphore; /* Prevent a callback being set
+     whilst servicing another callback.  */
+   char filter_name[20];
++  /* 2026: counters, written by the ticker routines, reported at exit when
++     UnixLib$TickerStats is set (docs/THREAD-TICKER.md).  */
++  unsigned ticks;		/* Ticker calls.  */
++  unsigned foreign_ticks;	/* ... that found another task paged in.  */
++  void *foreign_handler;	/* Upcall handler and R12 seen at the last  */
++  void *foreign_r12;		/* foreign tick.  */
++  unsigned pre_calls;		/* Wimp pre-filter calls.  */
++  unsigned post_calls;		/* Wimp post-filter calls.  */
++  int filter_handle;		/* Task the filters are registered for.  */
++  unsigned flags;		/* Bit 0: the PThreadTicker module's routines.  */
++  /* 2026 (5.0.3.1): the ticker keeps running while the program is in
++     Wimp_Poll; a tick then only sets 'pending', and the post-filter
++     switches threads as Wimp_Poll returns (docs/THREAD-TICKER.md).  */
++  volatile unsigned polling;	/* Between the pre- and post-filter.  */
++  volatile unsigned pending;	/* A tick came while polling.  */
++  unsigned post_switches;	/* Switches started by the post-filter.  */
++  /* A copy of the ticker routines, used when the PThreadTicker module
++     isn't loaded.  OS_CallEvery runs the handler from
++     here: the ticker can fire while another task is paged in, when the
++     application's own copy isn't there.  */
++  unsigned ticker_code[119];
+ };
+ 
++/* pthread/ticker.c (2026).  */
++extern void __pthread_ticker_read_task (int *__handle, int *__version);
++extern void __pthread_ticker_init (void);
++extern void __pthread_ticker_recheck (void);
++extern void __pthread_ticker_fini (void);
++extern int __pthread_ticker_owner (void);
++extern void __pthread_ticker_write_stats (void);
++
++/* The ticker routines in _context.s (internal/ticker.s), copied into
++   ticker_code at start-up when SharedUnixLibrary can't run them.  */
++extern const char __pthread_call_every_code[], __pthread_call_every_code_end[];
++
+ extern pthread_t __pthread_thread_list; /* Linked list of all threads */
+ 
+ /* Called once early in program initialisation */
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/Makefile.am b/libunixlib/Makefile.am
+--- a/libunixlib/Makefile.am
++++ b/libunixlib/Makefile.am
+@@ -676,6 +676,7 @@
+ 	pthread/self.c \
+ 	pthread/sem.c \
+ 	pthread/testcancel.c \
++	pthread/ticker.c \
+ 	pthread/_context.s \
+ 	pthread/_exit.s \
+ 	pthread/_ints.s \
+@@ -1469,6 +1470,7 @@
+ 	incl-local/internal/sigstate.h \
+ 	incl-local/internal/swiparams.h \
+ 	incl-local/internal/symlinks.h \
++	incl-local/internal/ticker.s \
+ 	incl-local/internal/tty.h \
+ 	incl-local/internal/unix.h \
+ 	incl-local/locale.h \
+@@ -1499,6 +1501,19 @@
+ 	$(stdio_src) $(stdlib_src) $(string_src) $(sys_src) \
+ 	$(termios_src) $(time_src) $(unistd_src) $(unix_src) $(wchar_src)
+ 
++# 2026: the assembler sources are .s, and automake doesn't track what they
++# include.  Rebuild them all when the shared assembler definitions change:
++# a stale _syslib.lo once kept an old PTHREAD_CALLEVERY_STRUCT_SIZE and the
++# pthread RMA block was overrun.
++unixlib_asm_deps = $(top_srcdir)/incl-local/internal/asm_dec.s \
++	$(top_srcdir)/incl-local/internal/elf-macros.s \
++	$(top_srcdir)/incl-local/internal/scl-macros.s \
++	$(top_srcdir)/incl-local/internal/ticker.s \
++	$(top_srcdir)/incl-local/internal/defines.h \
++	$(top_srcdir)/include/unixlib/buildoptions.h
++unixlib_asm_objs = $(patsubst %.s,%.lo,$(notdir $(filter %.s,$(libunixlib_la_SOURCES))))
++$(unixlib_asm_objs) crt0.o gcrt0.o sul.o pthticker.o: $(unixlib_asm_deps)
++
+ libunixlib_la_LDFLAGS = -Wc,-lgcc_s -Wc,-nostdlib -version-info 5:0:0 -Wl,--version-script -Wl,$(top_srcdir)/vscript
+ 
+ libm_la_SOURCES = libm-support/libm.c
+@@ -1553,7 +1568,7 @@
+ # SUL module ----------------
+ 
+ # Build the SharedUnixLibrary module
+-bin_PROGRAMS = sul
++bin_PROGRAMS = sul pthticker
+ 
+ sul.o: module/sul.s
+ 	$(CCASCOMPILE) -o sul.o -c `test -f 'module/sul.s' || echo '$(srcdir)/'`module/sul.s
+@@ -1564,6 +1579,14 @@
+ sul$(EXEEXT): sul.o
+ 	$(STRIP) -O binary -o sul$(EXEEXT) sul.o
+ 
++# 2026: the PThreadTicker module (runs the thread ticker; see
++# docs/THREAD-TICKER.md).  Not part of SharedUnixLibrary.
++pthticker.o: module/pthticker.s
++	$(CCASCOMPILE) -o pthticker.o -c `test -f 'module/pthticker.s' || echo '$(srcdir)/'`module/pthticker.s
++
++pthticker$(EXEEXT): pthticker.o
++	$(STRIP) -O binary -o pthticker$(EXEEXT) pthticker.o
++
+ install-data-local: install-headers
+ 
+ install-headers:
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/Makefile.in b/libunixlib/Makefile.in
+--- a/libunixlib/Makefile.in
++++ b/libunixlib/Makefile.in
+@@ -376,7 +376,7 @@
+ 	pthread/mutexattr.c pthread/newnode.c pthread/np.c \
+ 	pthread/once.c pthread/pthinit.c pthread/pthsignal.c \
+ 	pthread/rwlock.c pthread/rwlockattr.c pthread/schedparam.c \
+-	pthread/self.c pthread/sem.c pthread/testcancel.c \
++	pthread/self.c pthread/sem.c pthread/testcancel.c pthread/ticker.c \
+ 	pthread/_context.s pthread/_exit.s pthread/_ints.s \
+ 	pthread/_yield.s pwd/fgetpwent.c pwd/fgetpwentr.c \
+ 	pwd/getlogin.c pwd/getpw.c pwd/getpwent.c pwd/getpwnam.c \
+@@ -728,7 +728,7 @@
+ @UNIXLIB_BUILDING_SCL_FALSE@	once.lo pthinit.lo pthsignal.lo \
+ @UNIXLIB_BUILDING_SCL_FALSE@	rwlock.lo rwlockattr.lo \
+ @UNIXLIB_BUILDING_SCL_FALSE@	schedparam.lo self.lo sem.lo \
+-@UNIXLIB_BUILDING_SCL_FALSE@	testcancel.lo _context.lo _exit.lo \
++@UNIXLIB_BUILDING_SCL_FALSE@	testcancel.lo ticker.lo _context.lo _exit.lo \
+ @UNIXLIB_BUILDING_SCL_FALSE@	_ints.lo _yield.lo
+ @UNIXLIB_BUILDING_SCL_FALSE@am__objects_23 = fgetpwent.lo \
+ @UNIXLIB_BUILDING_SCL_FALSE@	fgetpwentr.lo getlogin.lo getpw.lo \
+@@ -2280,6 +2280,7 @@
+ @UNIXLIB_BUILDING_SCL_FALSE@	pthread/self.c \
+ @UNIXLIB_BUILDING_SCL_FALSE@	pthread/sem.c \
+ @UNIXLIB_BUILDING_SCL_FALSE@	pthread/testcancel.c \
++@UNIXLIB_BUILDING_SCL_FALSE@	pthread/ticker.c \
+ @UNIXLIB_BUILDING_SCL_FALSE@	pthread/_context.s \
+ @UNIXLIB_BUILDING_SCL_FALSE@	pthread/_exit.s \
+ @UNIXLIB_BUILDING_SCL_FALSE@	pthread/_ints.s \
+@@ -6956,6 +6957,13 @@
+ @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+ @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o testcancel.lo `test -f 'pthread/testcancel.c' || echo '$(srcdir)/'`pthread/testcancel.c
+ 
++ticker.lo: pthread/ticker.c
++@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT ticker.lo -MD -MP -MF $(DEPDIR)/ticker.Tpo -c -o ticker.lo `test -f 'pthread/ticker.c' || echo '$(srcdir)/'`pthread/ticker.c
++@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/ticker.Tpo $(DEPDIR)/ticker.Plo
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pthread/ticker.c' object='ticker.lo' libtool=yes @AMDEPBACKSLASH@
++@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
++@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o ticker.lo `test -f 'pthread/ticker.c' || echo '$(srcdir)/'`pthread/ticker.c
++
+ fgetpwent.lo: pwd/fgetpwent.c
+ @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT fgetpwent.lo -MD -MP -MF $(DEPDIR)/fgetpwent.Tpo -c -o fgetpwent.lo `test -f 'pwd/fgetpwent.c' || echo '$(srcdir)/'`pwd/fgetpwent.c
+ @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fgetpwent.Tpo $(DEPDIR)/fgetpwent.Plo
+@@ -12445,6 +12453,18 @@
+ 
+ # Tell versions [3.59,3.63) of GNU make to not export all variables.
+ # Otherwise a system limit (for SysV at least) may be exceeded.
++# 2026 (thread ticker, after Andrew Youll's riscos-unixlib): the assembler sources are .s, and automake doesn't track what they
++# include.  Rebuild them all when the shared assembler definitions change (a stale _syslib.lo once kept an old PTHREAD_CALLEVERY_STRUCT_SIZE
++# and the pthread RMA block was overrun).
++unixlib_asm_deps = $(top_srcdir)/incl-local/internal/asm_dec.s \
++	$(top_srcdir)/incl-local/internal/elf-macros.s \
++	$(top_srcdir)/incl-local/internal/scl-macros.s \
++	$(top_srcdir)/incl-local/internal/ticker.s \
++	$(top_srcdir)/incl-local/internal/defines.h \
++	$(top_srcdir)/include/unixlib/buildoptions.h
++unixlib_asm_objs = $(patsubst %.s,%.lo,$(notdir $(filter %.s,$(libunixlib_la_SOURCES))))
++$(unixlib_asm_objs) crt0.o gcrt0.o sul.o: $(unixlib_asm_deps)
++
+ .NOEXPORT:
+ 
+ # Tell GNU make to disable its built-in pattern rules.
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/module/pthticker.s b/libunixlib/module/pthticker.s
+--- a/libunixlib/module/pthticker.s
++++ b/libunixlib/module/pthticker.s
+@@ -0,0 +1,156 @@
++@ PThreadTicker: runs UnixLib's thread ticker routines from a module
++@ Copyright (c) 2026 UnixLib Developers
++@
++@ 2026 (riscos-unixlib): UnixLib switches threads with an OS_CallEvery
++@ ticker, and a Wimp task stops it with Wimp filters while it is paged out.
++@ The ticker can still fire while another task is paged in, and the
++@ FilterManager can call the filters for the wrong task, so the routines
++@ must not live in the program. A module is always paged in.
++@
++@ Without this module UnixLib copies the same routines into its RMA block
++@ and runs them there; with it, UnixLib runs the module's copy. The
++@ routines themselves are internal/ticker.s. See docs/THREAD-TICKER.md.
++@
++@ No SWIs (none are allocated to it). UnixLib finds the module with
++@ OS_Module 18 ("PThreadTicker") and reads the interface table that
++@ follows the module header (offset &34):
++@
++@   +0  "PTTk" (&6B545450)
++@   +4  interface version (2 from 0.03; 1 in 0.01-0.02, used by UnixLib
++@       before 5.0.3.1, which ignores this module and uses its own copy)
++@   +8  number of entries that follow (7)
++@   +12 offsets from the module start of:
++@       handler, start, stop, pre-filter, post-filter  (ip = RMA block)
++@       attach, detach                                 (ip = workspace)
++@
++@ attach/detach count the programs using the module; it refuses to be
++@ killed while that count isn't 0. UnixLib attaches at start-up and
++@ detaches at exit, after stopping its ticker and removing its filters.
++
++#include "internal/asm_dec.s"
++#include "internal/ticker.s"
++
++	.syntax unified
++	.text
++
++module_start:
++	.word	0				@ Start code
++	.word	init_code - module_start	@ Initialisation
++	.word	final_code - module_start	@ Finalisation
++	.word	0				@ Service call handler
++	.word	title - module_start		@ Title string
++	.word	help - module_start		@ Help string
++	.word	0				@ Command table
++	.word	0				@ SWI chunk
++	.word	0				@ SWI handler
++	.word	0				@ SWI table
++	.word	0				@ SWI decoder
++	.word	0				@ Messages file
++	.word	module_flags - module_start	@ Flags
++
++	@ The interface table (see above); UnixLib expects it at &34
++interface:
++	.word	0x6B545450			@ "PTTk"
++	.word	2				@ Interface version (0.03)
++	.word	7				@ Entries
++	.word	pt_handler - module_start
++	.word	pt_start - module_start
++	.word	pt_stop - module_start
++	.word	pt_prefilter - module_start
++	.word	pt_postfilter - module_start
++	.word	pt_attach - module_start
++	.word	pt_detach - module_start
++	.if	interface - module_start - 0x34
++	.error	"The interface table must follow the module header (&34)"
++	.endif
++
++title:
++	.asciz	"PThreadTicker"
++help:
++	.asciz	"PThreadTicker\t0.03 (01 Oct 2026) riscos-unixlib"
++	.align
++module_flags:
++	.word	1				@ 32-bit compatible
++
++error_inuse:
++	.word	0
++	.asciz	"PThreadTicker is in use by UnixLib programs"
++	.align
++
++	@ The ticker routines: ip = the program's pthread RMA block
++	TICKER_ROUTINES pt
++
++	@ Count a program using the module. ip = workspace (OS_Module 18's
++	@ R4). Preserves all registers and flags. Called from USR mode, or
++	@ with IRQs off. 0.02: the count is updated with IRQs off (OS_IntOff),
++	@ so two programs in TaskWindows can't both update it at once and
++	@ lose a count.
++pt_attach:
++	STMFD	sp!, {a1, a2, lr}
++	MOV	a1, #1
++	B	pt_count
++
++	@ ... and one that has finished with it.
++pt_detach:
++	STMFD	sp!, {a1, a2, lr}
++	MVN	a1, #0
++pt_count:
++	MRS	a2, CPSR
++	STMFD	sp!, {a2}
++	TST	a2, #IFlag32
++	SWIEQ	XOS_IntOff
++	LDR	a2, [ip]
++	ADDS	a2, a2, a1
++	MOVMI	a2, #0
++	STR	a2, [ip]
++	LDMFD	sp!, {a2}
++	TST	a2, #IFlag32
++	SWIEQ	XOS_IntOn
++	MSR	CPSR_f, a2
++	LDMFD	sp!, {a1, a2, pc}
++
++	@ Workspace: one word, the number of programs attached.
++init_code:
++	STMFD	sp!, {lr}
++	LDR	r2, [r12]
++	TEQ	r2, #0			@ Re-initialising: keep it
++	BNE	init_done
++	MOV	r0, #6
++	MOV	r3, #4
++	SWI	XOS_Module
++	BVS	init_fail
++	STR	r2, [r12]
++	MOV	r0, #0
++	STR	r0, [r2]
++init_done:
++	MSR	CPSR_f, #0		@ V clear: no error
++	LDMFD	sp!, {pc}
++init_fail:
++	LDMFD	sp!, {lr}
++	MSR	CPSR_f, #VFlag
++	MOV	pc, lr
++
++	@ Refuse to die while a program uses the routines: its ticker or
++	@ filters would call freed code.
++final_code:
++	STMFD	sp!, {lr}
++	LDR	r2, [r12]
++	TEQ	r2, #0
++	BEQ	final_done
++	LDR	r0, [r2]
++	TEQ	r0, #0
++	BNE	final_inuse
++	MOV	r0, #7
++	SWI	XOS_Module
++	MOV	r0, #0
++	STR	r0, [r12]
++final_done:
++	MSR	CPSR_f, #0		@ V clear: no error
++	LDMFD	sp!, {pc}
++final_inuse:
++	LDMFD	sp!, {lr}
++	ADR	r0, error_inuse
++	MSR	CPSR_f, #VFlag
++	MOV	pc, lr
++
++	.end
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/pthread/context.c b/libunixlib/pthread/context.c
+--- a/libunixlib/pthread/context.c
++++ b/libunixlib/pthread/context.c
+@@ -93,6 +93,15 @@
+ 
+   __pthread_prev_running_thread = __pthread_running_thread;
+ 
++  /* 2026: every 64 switches (about 1.3 s), check that the Wimp filters
++     are registered for the task we are now (pthread/ticker.c).  */
++  {
++    static unsigned int switches;
++
++    if ((++switches & 63) == 0)
++      __pthread_ticker_recheck ();
++  }
++
+   pthread_t next = __pthread_running_thread->next;
+ 
+   /* Loop around the list looking for a thread that is running.  */
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/pthread/_context.s b/libunixlib/pthread/_context.s
+--- a/libunixlib/pthread/_context.s
++++ b/libunixlib/pthread/_context.s
+@@ -28,251 +28,53 @@
+ @ Filter_RegisterPostFilter) to enable/disable OS_CallEvery.
+ 
+ #include "internal/asm_dec.s"
++#include "internal/ticker.s"
+ 
+ 
+ 	.syntax unified
+ 	.text
+ 
+-@
+-@ Start a ticker which will set the callback flag every clock tick
+-@
+-	.global	__pthread_start_ticker
+-	NAME	__pthread_start_ticker
+-__pthread_start_ticker:
+- PICNE "STMFD	sp!, {v1-v2, v5, lr}"
+- PICEQ "STMFD	sp!, {v1-v2, v4, v5, lr}"
+-
+-	PIC_LOAD v4
+-
+-	LDR	v5, .L0			@=__ul_global
+- PICEQ "LDR	v5, [v4, v5]"
+-
+-	@ Don't start until the thread system has been setup
+-	LDR	a1, [v5, #GBL_PTH_SYSTEM_RUNNING]
+-	TEQ	a1, #0
+- PICEQ "LDMFDEQ	sp!, {v1-v2, v4, v5, pc}"
+- PICNE "LDMFDEQ	sp!, {v1-v2, v5, pc}"
+-
+-	@ Don't start if there's only one thread running
+-	LDR	a1, [v5, #GBL_PTH_NUM_RUNNING_THREADS]
+-	CMP	a1, #1
+- PICEQ "LDMFDLE	sp!, {v1-v2, v4, v5, pc}"
+- PICNE "LDMFDLE	sp!, {v1-v2, v5, pc}"
+-
+-	LDR	a3, [v5, #GBL_PTH_CALLEVERY_RMA]
+-
+-	@ Are we running as WIMP task ?
+-	@ If we are then we need a filter switching off our ticker when we're
+-	@ swapped out and switching back on after we're swapped in.
+-	LDR	a4, [v5, #GBL_TASKHANDLE]
+-	TEQ	a4, #0
+-	BNE	start_ticker_install_filters
+-
+-	@ Application may have called Wimp_Initialise since we last checked
+-	@ Code similar to __get_taskhandle.
+-	MOV	a1, #3				@ In desktop?
+-	SWI	XWimp_ReadSysInfo
+-	MOVVS	a1, #0
+-	TEQ	a1, #0
+-	MOVNE	a1, #5				@ Read taskhandle, iff in desktop
+-	SWINE	XWimp_ReadSysInfo
+-	MOVVS	a1, #0
+-
+-	MOVS	a4, a1
+-	BEQ	start_ticker_test_running
+- 
+-	STR	a4, [v5, #GBL_TASKHANDLE]	@ __ul_global.taskhandle
+- 
+-	@ a4 = current taskhandle
+-start_ticker_install_filters:
+-	@ Install the filter routines (a4 = WIMP taskhandle) :
+-	LDR	v2, .L0+4		@=filter_installed
+- PICEQ "LDR	v2, [v4, v2]"
+-	LDR	a1, [v2]
+-	STR	v2, [v2]
+-	TEQ	a1, #0
+-	BNE	start_ticker_test_running
+-
+-	@ get filter name RMA pointer
+-	ADD	a1, a3, #PTHREAD_CALLEVERY_RMA_FILTER_NAME
+-	ADR	a2, stop_call_every
+-	@ a3 is still the address of the RMA block allocated and populated above.
+-	@ a4 is still equal to taskhandle
+-	SWI	XFilter_RegisterPreFilter
+-	ADRVC	a2, start_call_every
+-	@ a3 is still the RMA block
+-	@ a4 is still equal to taskhandle
+-	MOVVC	v1, #0
+-	SWIVC	XFilter_RegisterPostFilter
+-	ADDVS	a1, a1, #4
+-	BVS	__pthread_fatal_error
+-
+-start_ticker_test_running:
+-	@ start_call_every may be called as a filter routine, in which case
+-	@ it expects a pointer to the RMA data block in r12. Make sure that's
+-	@ the case when called directly.
+-	MOV	r12, a3
+-	BL	start_call_every
+- PICEQ "LDMFD	sp!, {v1-v2, v4, v5, pc}"
+- PICNE "LDMFD	sp!, {v1-v2, v5, pc}"
+-.L0:
+-	WORD	__ul_global
+-	WORD	filter_installed
+-	DECLARE_FUNCTION __pthread_start_ticker
+-
+-	@ Start the RISC OS CallEvery ticker
+-	@ This may be called as a Wimp post filter, so preserve all registers,
+-	@ all processor flags and don't return any errors.
+-	@ R12 is our private word and contains the address of an RMA data block.
+-	NAME	start_call_every
+-start_call_every:
+-	STMFD	sp!, {a1-v1, lr}
+-	MRS	v1, CPSR
+-	LDR	a1, [r12, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
+-	TEQ	a1, #0
+-	BNE	start_call_every_end
+-
+-	MOV	a1, #1
+-	ADR	a2, pthread_call_every
+-	MOV	a3, r12
+-	SWI	XOS_CallEvery
+-
+-	MOVVC	a1, #1
+-	STRVC	a1, [r12, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
+-start_call_every_end:
+-	MSR	CPSR_f, v1
+-	LDMFD	sp!, {a1-v1, pc}
+-	DECLARE_FUNCTION start_call_every
+-
+-	@ Stop the RISC OS CallEvery ticker
+-	@ This may be called as a Wimp pre filter, so preserve all registers,
+-	@ all processor flags and don't return any errors.
+-	@ R12 is our private word and contains the address of an RMA data block.
+-	NAME	stop_call_every
+-stop_call_every:
+-	STMFD	sp!, {a1-a3, lr}
+-	MRS	a3, CPSR
+-	LDR	a2, [r12, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
+-	SUBS	a2, a2, #1
+-	STREQ	a2, [r12, #PTHREAD_CALLEVERY_RMA_TICKER_STARTED]
+-	ADREQ	a1, pthread_call_every
+-	MOVEQ	a2, r12
+-	SWIEQ	XOS_RemoveTickerEvent
+-	MSR	CPSR_f, a3
+-	LDMFD	sp!, {a1-a3, pc}
+-	DECLARE_FUNCTION stop_call_every
+-
+-@
+-@ Stop the ticker running
+-@
+-	.global	__pthread_stop_ticker
+-	NAME	__pthread_stop_ticker
+-__pthread_stop_ticker:
+- PICNE "STMFD	sp!, {v1-v3, lr}"
+- PICEQ "STMFD	sp!, {v1-v3, v4, lr}"
+-
+-	PIC_LOAD v4
+-
+-	@ Don't bother if thread system is not running
+-	LDR	a2, .L1+0		@=__ul_global
+- PICEQ "LDR	a2, [v4, a2]"
+-	LDR	a1, [a2, #GBL_PTH_SYSTEM_RUNNING]
+-	TEQ	a1, #0
+- PICEQ "LDMFDEQ	sp!, {v1-v3, v4, pc}"
+- PICNE "LDMFDEQ	sp!, {v1-v3, pc}"
+-
+-	LDR	a3, [a2, #GBL_PTH_CALLEVERY_RMA]
+-
+-	@ Need to remove the filters ?
+-	LDR	a4, [a2, #GBL_TASKHANDLE]
+-	TEQ	a4, #0
+-	BEQ	stop_ticker_core
+-
+-	@ Remove the filter routines (a4 = WIMP taskhandle) :
+-	@ Ignore any errors.
+-	LDR	v2, .L1+4		@=filter_installed
+- PICEQ "LDR	v2, [v4, v2]"
+-	LDR	a1, [v2]
+-	TEQ	a1, #0
+-	BEQ	stop_ticker_core
+-
+-	ADD	a1, a3, #PTHREAD_CALLEVERY_RMA_FILTER_NAME
+-	ADR	a2, stop_call_every
+-	@ a3 is the address of the RMA block.
+-	@ a4 is still equal to taskhandle
+-	SWI	XFilter_DeRegisterPreFilter
+-	ADD	a1, a3, #PTHREAD_CALLEVERY_RMA_FILTER_NAME	@ a1 can be corrupted, so re-init
+-	ADR	a2, start_call_every
+-	@ a3 is the address of the RMA block.
+-	@ a4 is still equal to taskhandle
+-	MOV	v1, #0
+-	SWI	XFilter_DeRegisterPostFilter
+-
+-	STR	v1, [v2]		@ Mark we no longer have filter installed
+-
+-stop_ticker_core:
+-	@ stop_call_every may be called as a filter routine, in which case
+-	@ it expects a pointer to the RMA data block in r12. Make sure that's
+-	@ the case when called directly.
+-	MOV	r12, a3
+-	BL	stop_call_every
+-
+- PICEQ "LDMFD	sp!, {v1-v3, v4, pc}"
+- PICNE "LDMFD	sp!, {v1-v3, pc}"
+-.L1:
+-	WORD	__ul_global
+-	WORD	filter_installed
+-	DECLARE_FUNCTION __pthread_stop_ticker
+-
+-@ The ticker calls this every clock tick, note that it is every *two*
+-@ centiseconds.
+-@ Called in SVC mode with IRQs disabled, all registers must be preserved.
+-@ r12 contains a pointer to a block of RMA memory which stores the address
+-@ of the SUL upcall handler and the SUL key (and the UnixLib GOT pointer
+-@ for the shared library). We can't be certain the application is paged in
+-@ (despite the filters), so we dare not attempt to access its address space,
+-@ which is why these are in RMA.
+-	NAME	pthread_call_every
+-pthread_call_every:
+-	STMFD	sp!, {a1-a4, lr}
+-
+-	@ First check that our upcall handler is paged in. If it is not
+-	@ then it is likely that the taskwindow module is in the process
+-	@ of paging us out/in so setting a callback would be a bad idea.
+-	@ As the upcall handler is within SUL then we know nothing else
+-	@ can have a handler at the same address except other UnixLib
+-	@ programs. We can distinguish between these with the SUL key.
+-	MOV	a1, #16
+-	MOV	a2, #0
+-	MOV	a3, #0
+-	MOV	a4, #0
+-	SWI	XOS_ChangeEnvironment
+-	LDMFDVS	sp!, {a1-a4, pc}
+-
+-	@ We need to check the SUL upcall handler and key before we attempt
+-	@ to access any data within application space.
+-
+-	@ If it is not a SUL upcall handler, don't set callback
+-	LDR	a1, [ip, #PTHREAD_CALLEVERY_RMA_UPCALL_ADDR]
+-	TEQ	a1, a2
+-	@ If it is not our SUL key, don't set callback
+-	LDREQ	a1, [ip, #PTHREAD_CALLEVERY_RMA_UPCALL_R12]
+-	TEQEQ	a1, a3
+-	LDMFDNE sp!, {a1-a4, pc}
+-
+-	@ Okay, we can access application space now to make further checks.
+-
+-	@ If we are in the middle of a context-switch callback,
+-	@ don't set the callback.
+-	LDREQ	a1, [ip, #PTHREAD_CALLEVERY_RMA_CALLBACK_SEMAPHORE]
+-	TEQEQ	a1, #0
+-	@ If we are in a critical section, don't set the callback
+-	LDREQ	a1, [ip, #PTHREAD_CALLEVERY_RMA_WORKSEMAPHORE]
+-	TEQEQ	a1, #0
+-	SWIEQ	XOS_SetCallBack
+-0:
+-	LDMFD	sp!, {a1-a4, pc}
+-	DECLARE_FUNCTION pthread_call_every
++@ 2026: the ticker routines (starting, stopping, the OS_CallEvery handler
++@ and the Wimp filters) are in internal/ticker.s. The PThreadTicker module
++@ (module/pthticker.s) has its own copy; without it, __pthread_ticker_init
++@ copies the ones below into the RMA block and runs them from there.
++@ Either way they are paged in whichever task is: the ticker can fire while
++@ another task is, and the Filter module can call the filters for the
++@ wrong task. pthread/ticker.c decides which copy to use and manages the
++@ filters.
++
++	.global	__pthread_call_every_code
++	.global	__pthread_call_every_code_end
++	.global	__pthread_ticker_offsets
++__pthread_call_every_code:
++	TICKER_ROUTINES ul_ticker
++__pthread_call_every_code_end:
++	.if	__pthread_call_every_code_end - __pthread_call_every_code > 476
++	.error	"The ticker routines don't fit in PTHREAD_CALLEVERY_RMA_TICKER_CODE"
++	.endif
++	.if	ul_ticker_handler - __pthread_call_every_code
++	.error	"The ticker handler must come first"
++	.endif
++
++	@ Where the routines are in the copy: start, stop, pre-filter,
++	@ post-filter.
++__pthread_ticker_offsets:
++	.word	ul_ticker_start - ul_ticker_handler
++	.word	ul_ticker_stop - ul_ticker_handler
++	.word	ul_ticker_prefilter - ul_ticker_handler
++	.word	ul_ticker_postfilter - ul_ticker_handler
++
++@ void __pthread_ticker_call (void *block, const void *routine)
++@ Call one of the copied routines with ip = the RMA block.
++	.global	__pthread_ticker_call
++	NAME	__pthread_ticker_call
++__pthread_ticker_call:
++	STMFD	sp!, {a1, lr}
++	MOV	ip, a1
++	MOV	lr, pc
++	MOV	pc, a2
++	LDMFD	sp!, {a1, pc}
++	DECLARE_FUNCTION __pthread_ticker_call
+ 
+ @ This is called from _signal.s::__h_cback and pthread_yield.
+ @ Entered in SVC or IRQ mode with IRQs disabled.
+@@ -506,11 +308,4 @@
+ 	DECLARE_FUNCTION __pthread_init_save_area
+ 
+ 
+-	.data
+-
+-	@ Have we installed Filter ?
+-filter_installed:
+-	.word	0
+-	DECLARE_OBJECT filter_installed
+-
+ 	.end
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/pthread/pthinit.c b/libunixlib/pthread/pthinit.c
+--- a/libunixlib/pthread/pthinit.c
++++ b/libunixlib/pthread/pthinit.c
+@@ -14,8 +14,26 @@
+ 
+ static struct __pthread_thread mainthread;
+ 
++/* 2026: the RMA block's layout is also in incl-local/internal/asm_dec.s
++   (PTHREAD_CALLEVERY_RMA_*); the ticker code copy must be where the
++   assembler expects it.  */
++#define OFFSET(f) __builtin_offsetof (struct __pthread_callevery_block, f)
++_Static_assert (OFFSET (ticks) == 120, "ticks: keep in step with asm_dec.s");
++_Static_assert (OFFSET (flags) == 148, "flags: keep in step with asm_dec.s");
++_Static_assert (OFFSET (polling) == 152, "polling: keep in step with asm_dec.s");
++_Static_assert (OFFSET (post_switches) == 160,
++		"post_switches: keep in step with asm_dec.s");
++_Static_assert (OFFSET (ticker_code) == 164,
++		"ticker_code: keep in step with asm_dec.s");
++_Static_assert (sizeof (struct __pthread_callevery_block) == 640,
++		"__pthread_callevery_block: keep in step with asm_dec.s");
++#undef OFFSET
++
+ static const char filter_name[] = "UnixLib pthread";
+ 
++/* The block size sys/_syslib.s claimed from the RMA (see there).  */
++extern const unsigned int __pthread_callevery_block_size;
++
+ static void
+ __get_main_stack (struct __pthread_thread *thread)
+ {
+@@ -68,8 +86,21 @@
+   mainthread.magic = PTHREAD_MAGIC;
+   __get_main_stack (&mainthread);
+ 
++  /* 2026: _syslib.s claims the RMA block with the assembler's idea of its
++     size.  An incremental build once kept an old _syslib.o (assembler files
++     had no dependency on asm_dec.s), the block was too small and copying
++     the ticker code below overran it.  */
++  if (__pthread_callevery_block_size
++      != sizeof (struct __pthread_callevery_block))
++    __unixlib_fatal ("UnixLib was built from mismatched objects "
++		     "(pthread RMA block size); rebuild it from clean");
++
+   strcpy (gbl->pthread_callevery_rma->filter_name, filter_name);
+ 
++  /* The ticker routines run from SharedUnixLibrary or the RMA block
++     (pthread/ticker.c).  */
++  __pthread_ticker_init ();
++
+   __pthread_thread_list = __pthread_running_thread;
+   gbl->pthread_num_running_threads = 1;
+ }
+@@ -92,15 +123,34 @@
+   debug_printf ("-- __pthread_prog_fini: Program finalisation\n");
+ #endif
+ 
++  /* 2026: in a fork()/vfork() child (its _exit, e.g. after a failed exec),
++     leave the parent's things alone.  The child used to free the parent's
++     RMA block and detach it from PThreadTicker; the parent then restarted
++     its ticker on the freed block (__fork_post), which now holds running
++     code and counters.  The parent stopped its ticker before the child
++     ran and restarts it afterwards; if the child started it, stop it.  */
++  if (!__pthread_ticker_owner ())
++    {
++      if (gbl->pthread_system_running)
++	__pthread_stop_ticker ();
++      gbl->pthread_system_running = 0;
++      return;
++    }
++
++  /* The image is shared with a vfork child (its RMA block is the parent's): leave it.  */
+   if (__dynamic_area_refcount > 1)
+     return;
+ 
++  /* 2026: before the ticker is stopped (UnixLib$TickerStats).  */
++  __pthread_ticker_write_stats ();
++
+   /* pthread timers must be stopped */
+   if (gbl->pthread_system_running)
+     {
+       __pthread_stop_ticker ();
+       gbl->pthread_system_running = 0;
+     }
++  __pthread_ticker_fini ();
+ 
+   /* Free the RMA block that was allocated in __pthread_prog_init */
+   int regs[10];
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/pthread/ticker.c b/libunixlib/pthread/ticker.c
+--- a/libunixlib/pthread/ticker.c
++++ b/libunixlib/pthread/ticker.c
+@@ -0,0 +1,349 @@
++/* Thread ticker: starting and stopping it, the Wimp filters, statistics.
++   Copyright (c) 2026 UnixLib Developers.
++
++   2026: this was assembler in _context.s.  Background, the reasons for the
++   design and how to read the statistics: docs/THREAD-TICKER.md.
++
++   With more than one thread, an OS_CallEvery ticker sets a callback every
++   2 cs to switch threads.  In a Wimp task, Wimp filters note when the
++   program is in Wimp_Poll: a tick then doesn't set the callback, and the
++   post-filter switches threads as Wimp_Poll returns (2026, 5.0.3.1: they
++   used to stop and restart the ticker, which starved the threads of a
++   program polling more often than every 2 cs).
++   The ticker routines themselves (internal/ticker.s) run from the
++   PThreadTicker module when it is loaded (module/pthticker.s) or from a
++   copy in the RMA block: never from the program, which isn't paged in
++   when the ticker fires in another task.
++
++   If the system variable UnixLib$TickerStats names a file, a line of
++   counters is appended to it when the program exits.  */
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <swis.h>
++
++#include <pthread.h>
++#include <internal/os.h>
++#include <internal/unix.h>
++
++/* The PThreadTicker module's interface table, after its header.  */
++#define TICKER_MODULE "PThreadTicker"
++#define TICKER_MAGIC 0x6B545450		/* "PTTk" */
++struct ticker_interface
++{
++  unsigned magic, version, entries;
++  unsigned handler, start, stop, prefilter, postfilter, attach, detach;
++};
++
++/* _context.s: the routines to copy, where they are in the copy (start,
++   stop, pre-filter, post-filter), and a way to call one.  */
++extern const unsigned __pthread_ticker_offsets[4];
++extern void __pthread_ticker_call (void *__block, const void *__routine);
++
++/* The routines in use: the module's or the RMA copy's.  */
++static const void *start_routine, *stop_routine, *pre_filter, *post_filter;
++static void *module_ws;		/* The module's workspace, if used.  */
++static const void *detach_routine;
++static int filters_for;		/* Task the filters are registered for.  */
++static volatile int busy;	/* In __pthread_start/stop_ticker: a count,
++				   so a nested call (start inside stop, say)
++				   doesn't clear it for the outer one.  */
++
++/* For the statistics.  */
++static int startup_handle, startup_version;
++static int first_start_handle = -1;
++static unsigned starts, filter_moves, filter_errors;
++
++/* Task handle and Wimp version (Wimp_ReadSysInfo 5), 0 when not in the
++   desktop or not a Wimp task.  */
++void
++__pthread_ticker_read_task (int *handle, int *version)
++{
++  int desktop = 0;
++
++  *handle = *version = 0;
++  if (_swix (Wimp_ReadSysInfo, _IN(0) | _OUT(0), 3, &desktop) || !desktop)
++    return;
++  if (_swix (Wimp_ReadSysInfo, _IN(0) | _OUTR(0,1), 5, handle, version)
++      || *handle == 0)
++    *handle = *version = 0;	/* R1 is undefined when not a task.  */
++}
++
++static inline struct __pthread_callevery_block *
++block (void)
++{
++  return __ul_global.pthread_callevery_rma;
++}
++
++/* The PThreadTicker module's interface, or NULL if it isn't loaded or
++   is not one we know.  */
++static const struct ticker_interface *
++find_module (const char **base, void **ws)
++{
++  const struct ticker_interface *t;
++
++  if (_swix (OS_Module, _INR(0,1) | _OUTR(3,4), 18, TICKER_MODULE, base, ws)
++      || *base == NULL || *ws == NULL)
++    return NULL;
++  t = (const struct ticker_interface *) (*base + 0x34);
++  /* 2026 (5.0.3.1): interface version 2 (module 0.03) has the routines
++     that keep the ticker running in Wimp_Poll, and uses the block's
++     'polling' fields; version 1 (0.02) stops it there, which starves the
++     threads of a program that polls often.  So use only version 2, else
++     our own copy.  (UnixLib before 5.0.3.1 uses only version 1, so it
++     ignores the new module and uses its copy.)  */
++  if (t->magic != TICKER_MAGIC || t->version != 2 || t->entries < 7)
++    return NULL;
++  return t;
++}
++
++/* 2026: the process that claimed the RMA block and attached to the
++   module (SUL's pid, unique while the process exists).  A fork()/vfork()
++   child has a copy of, or shares, these variables, but the block and the
++   attachment belong to the parent.  */
++static pid_t owner_pid;
++
++/* Non-zero in the process that set the ticker up, zero in a fork()/vfork()
++   child of it.  Also non-zero if __pthread_ticker_init never ran (a fatal
++   error early in __pthread_prog_init): then the block is this process's
++   and should still be freed, as before.  */
++int
++__pthread_ticker_owner (void)
++{
++  return owner_pid == 0 || getpid () == owner_pid;
++}
++
++/* Called once by __pthread_prog_init: use the PThreadTicker module's
++   routines if it is loaded, else copy them into the RMA block.  */
++void
++__pthread_ticker_init (void)
++{
++  struct __pthread_callevery_block *b = block ();
++  const struct ticker_interface *t;
++  const char *base;
++  void *ws;
++
++  owner_pid = getpid ();
++
++  __pthread_ticker_read_task (&startup_handle, &startup_version);
++
++  if ((t = find_module (&base, &ws)) != NULL)
++    {
++      b->flags |= 1;
++      start_routine = base + t->start;
++      stop_routine = base + t->stop;
++      pre_filter = base + t->prefilter;
++      post_filter = base + t->postfilter;
++      detach_routine = base + t->detach;
++      module_ws = ws;
++      /* The module won't be killed while we're attached.  */
++      __pthread_ticker_call (ws, base + t->attach);
++    }
++  else
++    {
++      char *code = (char *) b->ticker_code;
++      size_t len = __pthread_call_every_code_end - __pthread_call_every_code;
++
++      memcpy (code, __pthread_call_every_code, len);
++      _swix (OS_SynchroniseCodeAreas, _INR(0,2), 1, code, code + len - 1);
++      start_routine = code + __pthread_ticker_offsets[0];
++      stop_routine = code + __pthread_ticker_offsets[1];
++      pre_filter = code + __pthread_ticker_offsets[2];
++      post_filter = code + __pthread_ticker_offsets[3];
++    }
++}
++
++static void
++ticker_on (struct __pthread_callevery_block *b)
++{
++  __pthread_ticker_call (b, start_routine);
++}
++
++static void
++ticker_off (struct __pthread_callevery_block *b)
++{
++  __pthread_ticker_call (b, stop_routine);
++}
++
++/* Register the filters for task HANDLE (0: none), removing them from the
++   task they were registered for.  Before 2026 the handle was read once at
++   start-up (before Wimp_Initialise) and only re-read while it was 0, and
++   the filters were registered only when a thread was created.  */
++static void
++set_filters (struct __pthread_callevery_block *b, int handle)
++{
++  if (handle == filters_for)
++    return;
++
++  if (filters_for != 0)
++    {
++      _swix (Filter_DeRegisterPreFilter, _INR(0,3), b->filter_name,
++	     pre_filter, b, filters_for);
++      _swix (Filter_DeRegisterPostFilter, _INR(0,4), b->filter_name,
++	     post_filter, b, filters_for, 0);
++      filters_for = 0;
++    }
++
++  if (handle != 0)
++    {
++      if (_swix (Filter_RegisterPreFilter, _INR(0,3), b->filter_name,
++		 pre_filter, b, handle))
++	filter_errors++;
++      else if (_swix (Filter_RegisterPostFilter, _INR(0,4), b->filter_name,
++		      post_filter, b, handle, 0))
++	{
++	  filter_errors++;
++	  _swix (Filter_DeRegisterPreFilter, _INR(0,3), b->filter_name,
++		 pre_filter, b, handle);
++	}
++      else
++	{
++	  filters_for = handle;
++	  b->filter_handle = handle;
++	  filter_moves++;
++	}
++    }
++}
++
++/* The task handle now; also updates the cached one.  */
++static int
++current_task (void)
++{
++  int handle, version;
++
++  __pthread_ticker_read_task (&handle, &version);
++  if (handle != 0)
++    __ul_global.taskhandle = handle;
++  return handle;
++}
++
++/* Start the ticker if there's more than one thread.  */
++void
++__pthread_start_ticker (void)
++{
++  struct ul_global *gbl = &__ul_global;
++  struct __pthread_callevery_block *b = block ();
++
++  if (!gbl->pthread_system_running || gbl->pthread_num_running_threads <= 1)
++    return;
++
++  busy++;
++  set_filters (b, current_task ());
++  ticker_on (b);
++  if (first_start_handle == -1)
++    first_start_handle = filters_for;
++  starts++;
++  busy--;
++}
++
++/* Stop the ticker and remove the filters.  */
++void
++__pthread_stop_ticker (void)
++{
++  struct __pthread_callevery_block *b = block ();
++
++  if (!__ul_global.pthread_system_running)
++    return;
++
++  busy++;
++  set_filters (b, 0);
++  ticker_off (b);
++  busy--;
++}
++
++/* Called now and then by the context switcher (USR mode, in the
++   callback): if the program has become a Wimp task, or its task handle
++   has changed, since the filters were registered, move them.  Threads
++   started before Wimp_Initialise (an SDL timer or audio thread, say) used
++   to leave the ticker running with no filters at all.  */
++void
++__pthread_ticker_recheck (void)
++{
++  struct ul_global *gbl = &__ul_global;
++
++  if (busy || !gbl->pthread_system_running
++      || gbl->pthread_num_running_threads <= 1)
++    return;
++  set_filters (block (), current_task ());
++}
++
++/* Called by __pthread_prog_fini once the ticker is stopped and the filters
++   removed, before the RMA block is freed: let the module go.  */
++void
++__pthread_ticker_fini (void)
++{
++  /* Not in a fork()/vfork() child: the attachment is the parent's.  */
++  if (module_ws != NULL && __pthread_ticker_owner ())
++    {
++      __pthread_ticker_call (module_ws, detach_routine);
++      module_ws = NULL;
++    }
++}
++
++/* Append one line to the file named by UnixLib$TickerStats.  Called by
++   __pthread_prog_fini, before the RMA block is freed.  Uses the file
++   SWIs, not stdio: this runs very late in exit.  */
++void
++__pthread_ticker_write_stats (void)
++{
++  const struct __pthread_callevery_block *b
++    = __ul_global.pthread_callevery_rma;
++  const char *file = getenv ("UnixLib$TickerStats");
++  static char line[400];
++  char prog[48];
++  const char *cmd = NULL;
++  int handle = 0, version = 0, fh = 0, ext = 0, created = 0, n, i;
++
++  if (b == NULL || file == NULL || file[0] == '\0'
++      || !__pthread_ticker_owner ())
++    return;
++
++  /* The program name: the leaf of the first word of the command line
++     (the whole path was cut short: "...!Warzone2100.warzone210").  */
++  prog[0] = '\0';
++  if (!_swix (OS_GetEnv, _OUT(0), &cmd) && cmd != NULL)
++    {
++      const char *leaf = cmd;
++
++      for (i = 0; cmd[i] > ' '; i++)
++	if (cmd[i] == '.' || cmd[i] == ':')
++	  leaf = cmd + i + 1;
++      for (i = 0; i < (int) sizeof (prog) - 1 && leaf[i] > ' '; i++)
++	prog[i] = leaf[i];
++      prog[i] = '\0';
++    }
++
++  __pthread_ticker_read_task (&handle, &version);
++  n = snprintf (line, sizeof (line),
++		"%s ticks=%u foreign=%u last_foreign=%p/%p pre=%u post=%u"
++		" filters_for=%#x startup=%#x/%d cached=%#x now=%#x/%d"
++		" first_start=%#x starts=%u filter_moves=%u filter_errors=%u"
++		" post_switches=%u via=%s\n",
++		prog, b->ticks, b->foreign_ticks, b->foreign_handler,
++		b->foreign_r12, b->pre_calls, b->post_calls,
++		b->filter_handle, startup_handle, startup_version,
++		__ul_global.taskhandle, handle, version,
++		first_start_handle == -1 ? 0 : first_start_handle, starts,
++		filter_moves, filter_errors, b->post_switches,
++		(b->flags & 1) ? "module" : "RMA");
++  if (n <= 0)
++    return;
++  if (n >= (int) sizeof (line))
++    n = sizeof (line) - 1;
++
++  /* Open for update (no path, error if absent), else create.  */
++  if (_swix (OS_Find, _INR(0,1) | _OUT(0), 0xC7, file, &fh) || fh == 0)
++    {
++      if (_swix (OS_Find, _INR(0,1) | _OUT(0), 0x83, file, &fh) || fh == 0)
++	return;
++      created = 1;
++    }
++  if (!_swix (OS_Args, _INR(0,1) | _OUT(2), 2, fh, &ext))
++    _swix (OS_Args, _INR(0,2), 1, fh, ext);
++  _swix (OS_GBPB, _INR(0,3), 2, fh, line, n);
++  _swix (OS_Find, _INR(0,1), 0, fh);
++  if (created)
++    _swix (OS_File, _INR(0,2), 18, file, 0xFFF);	/* Text */
++}
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/sys/exec.c b/libunixlib/sys/exec.c
+--- a/libunixlib/sys/exec.c
++++ b/libunixlib/sys/exec.c
+@@ -10,6 +10,7 @@
+ #include <malloc.h>
+ #include <fcntl.h>
+ #include <unistd.h>
++#include <pthread.h>
+ #include <sys/param.h>
+ #include <swis.h>
+ #include <sys/wait.h>
+@@ -411,6 +412,11 @@
+       __pthread_stop_ticker ();
+       gbl->pthread_system_running = 0;
+     }
++  /* 2026: and detach from the PThreadTicker module (does nothing in a
++     fork/vfork child, whose parent still uses it).  The exec'd program
++     isn't this one, so the attachment would never be released and the
++     module couldn't be killed until a reboot.  */
++  __pthread_ticker_fini ();
+ 
+ #if __UNIXLIB_FEATURE_ITIMERS
+   /* Stop any interval timers that might be running.  Technically
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/sys/_syslib.s b/libunixlib/sys/_syslib.s
+--- a/libunixlib/sys/_syslib.s
++++ b/libunixlib/sys/_syslib.s
+@@ -1608,3 +1608,12 @@
+ 	.word	0			@ old_himem		offset = 48
+ 	.word	0			@ appspace_himem_max	offset = 52
+ 	DECLARE_OBJECT __ul_memory
++
++	@ 2026: the size of the pthread RMA block this file claims (OS_Module 6
++	@ above). __pthread_prog_init checks it against the C structure, so a
++	@ library built from old and new objects stops with a clear error
++	@ instead of overrunning the block.
++	.global	__pthread_callevery_block_size
++__pthread_callevery_block_size:
++	.word	PTHREAD_CALLEVERY_STRUCT_SIZE
++	DECLARE_OBJECT __pthread_callevery_block_size
+diff -ruN -x '*.orig' -x sysconf.c a/libunixlib/vscript b/libunixlib/vscript
+--- a/libunixlib/vscript
++++ b/libunixlib/vscript
+@@ -129,6 +129,10 @@
+      _vsnprintf;
+ 
+      __pthread_prog_init;
++     __pthread_call_every_code;
++     __pthread_call_every_code_end;
++     __pthread_callevery_block_size;
++     __pthread_ticker_*;
+      __pthread_init;
+      __pthread_fatal_error;
+      __pthread_new_node;

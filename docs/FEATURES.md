@@ -11,7 +11,7 @@ See [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for what is *not* included.
 | binutils: `as ld ar nm objdump objcopy readelf strip ranlib size strings addr2line c++filt elfedit gprof` | 2.45.1 | yes | yes (with the `arm-riscos-gnueabihf-` prefix) |
 | `gcov` (coverage reports), `gcov-tool`, `gcov-dump` | 16.2.0 | `gcov` | yes (`arm-riscos-gnueabihf-gcov`: reads the `.gcda` files that RISC OS programs write) |
 | GNU make | 4.4.1 | yes | (use the host's) |
-| UnixLib (C library) | 5.0 from GCCSDK r7800, rebuilt with GCC 16, fix level 16 | the runtime package | the runtime package, and its headers inside the tool chain |
+| UnixLib (C library) | 5.0 from GCCSDK r7800, rebuilt with GCC 16, fix level 17 | the runtime package | the runtime package, and its headers inside the tool chain |
 | libstdc++ | 6.0.36 (GCC 16.2.0) | linked statically | dynamic or static |
 | libgfortran | 5.0.0 (GCC 16.2.0) | linked statically | dynamic or static |
 | libgcc, libgcc_s | GCC 16.2.0 (static), 10.2.0 (`libgcc_s.so.1` in the runtime package) | yes | yes |
@@ -82,7 +82,7 @@ How to use it: [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [CROS
 
 ## The runtime (UnixLib) fixes
 
-UnixLib fixes (fix levels 5 to 16), found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
+UnixLib fixes (fix levels 5 to 17; level 17 is the thread ticker of Andrew Youll's riscos-unixlib), found by running real programs on real hardware: threads, `read()` into fresh stack buffers, `memcpy` on fresh stack pages, big main stacks, heap and `mmap` limits,
 `vfork` + `exec` memory, the DDEUtils interaction, `scanf` with `long long`, the `.fini_array` of programs (destructors, the exit hook of libgcov), `getrlimit (RLIMIT_STACK)`, POSIX semaphores and the profiler of `-pg` programs (`gprof`). The list, with symptoms and the matching upstream bug report, is in [RUNTIME.md](RUNTIME.md).
 
 The module side of one of these bugs, **SharedUnixLibrary 1.16** (a `vfork` child that ends without `exec` kills its parent and can freeze the machine), is fixed by the optional package `SharedULibFix`, which replaces the system module and puts the stock one back on request: [SHAREDULIB-FIX.md](SHAREDULIB-FIX.md).

@@ -112,6 +112,11 @@ apply_patch unixlib-errno-posix-codes.patch
 apply_patch unixlib-errlist-posix-codes.patch
 # sysconf (0x4700) answers 16.
 apply_patch unixlib-sysconf-fixlevel-16.patch
+# The thread ticker (after Andrew Youll's riscos-unixlib): a program with a thread made before Wimp_Initialise, linked statically, made every other task abort and then locked the machine: the
+# ticker's handler ran from the program's own memory while another task was paged in.  Now it runs from a copy in the RMA (or the PThreadTicker module) and its Wimp filters follow the task.
+apply_patch unixlib-thread-ticker.patch
+# sysconf (0x4700) answers 17.
+apply_patch unixlib-sysconf-fixlevel-17.patch
 # TEST BUILDS ONLY (debugging aids that are not part of the library): EXTRA_PATCHES="unixlib-ul-trace.patch" EXTRA_DEFS="-DULTRACE" builds a libunixlib that appends a line to a log file at the steps of
 # fork/vfork (see the comment in sys/_vfork.s); the same patch built without EXTRA_DEFS must give the very library of the release (checked by tools/check-ul-trace.sh).  Unset: nothing changes.
 for ep in ${EXTRA_PATCHES:-}; do apply_patch "$ep"; done
@@ -135,3 +140,5 @@ else
   echo "ERROR: pthread_once is not exception-aware"; exit 1
 fi
 ls -la .libs/libunixlib.so.5.0.0 crt0.o
+# the optional PThreadTicker module (module/pthticker.s of the thread ticker patch), for the test packs: $W/PThreadTicker
+W=$W N=$N bash "$HERE/scripts/build-pthticker.sh" || echo "  (the PThreadTicker module was not built)"

@@ -9,8 +9,8 @@ You need Linux x86-64 with **glibc 2.38 or newer** (Ubuntu 24.04, Debian 13, Fed
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing          # in the folder where you downloaded the files
-tar -xf riscos-gcc16-cross-16.2.0-23-x86_64-linux.tar.xz
-export PATH=$PWD/riscos-gcc16-cross-16.2.0-23-x86_64-linux/bin:$PATH
+tar -xf riscos-gcc16-cross-16.2.0-24-x86_64-linux.tar.xz
+export PATH=$PWD/riscos-gcc16-cross-16.2.0-24-x86_64-linux/bin:$PATH
 arm-riscos-gnueabihf-gcc --version
 ```
 
@@ -47,7 +47,7 @@ Install the runtime packages from the same release with PackMan (see [INSTALL-RI
 
 Do not use `-static-libgcc`: the link then fails, because UnixLib refers to libgcc symbols (it works only with `-Wl,--allow-shlib-undefined`).
 Check what a program needs with `arm-riscos-gnueabihf-readelf -d prog,e1f | grep NEEDED`.
-Use the runtime of the same release (`SharedLibs-C-armeabihf` 16.2.0-14): older ones lack the fixes listed in [RUNTIME.md](RUNTIME.md).
+Use the runtime of the same release (`SharedLibs-C-armeabihf` 16.2.0-15): older ones lack the fixes listed in [RUNTIME.md](RUNTIME.md).
 
 ## Coverage and profile-guided optimisation
 
@@ -92,7 +92,7 @@ arm-riscos-gnueabihf-gcc -O1 -pg -o prog,e1f prog.c        # -pg on every compil
 arm-riscos-gnueabihf-gprof prog,e1f gmon.out               # the flat profile and the call graph (-b: without the explanations)
 ```
 
-The program is linked against the `libunixlib.so` that is inside the tool chain (the one of the runtime package, 16.2.0-14, which exports `__gnu_mcount_nc`) and `gcrt0.o` (the start file for `-pg`). The calls are counted exactly, the time is sampled 50 times a second by a thread that UnixLib starts, so give the program some seconds of work; a sample belongs to a function, not to a line; only the program's own code is profiled. The limits are listed in [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [KNOWN-ISSUES.md](KNOWN-ISSUES.md). `gmon.out` has the program's addresses (it is not specific to the machine): copy it from the RISC OS Samba share under the name `gmon.out`.
+The program is linked against the `libunixlib.so` that is inside the tool chain (the one of the runtime package, 16.2.0-15, which exports `__gnu_mcount_nc`) and `gcrt0.o` (the start file for `-pg`). The calls are counted exactly, the time is sampled 50 times a second by a thread that UnixLib starts, so give the program some seconds of work; a sample belongs to a function, not to a line; only the program's own code is profiled. The limits are listed in [USING-NATIVE.md](USING-NATIVE.md#profiling-with-gprof) and [KNOWN-ISSUES.md](KNOWN-ISSUES.md). `gmon.out` has the program's addresses (it is not specific to the machine): copy it from the RISC OS Samba share under the name `gmon.out`.
 `tests/gprof/` has a test program for it ([README](../tests/gprof/README.md)).
 
 ## Throwback from the cross compiler

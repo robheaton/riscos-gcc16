@@ -91,6 +91,7 @@ class Sim(Cpu):
         super().__init__(lib)
         self.lib = lib
         self.externals = {}
+        self.hooks = {}                                              # address of a function inside the library -> a Python stand-in (a direct call, not through the PLT)
         self.calls = []
     # byte memory
     def rd8(self, a):
@@ -105,6 +106,10 @@ class Sim(Cpu):
         for i in range(4): self.mem[a + i] = (v >> (8 * i)) & 0xFF
     def step(self):
         pc = self.r[15]
+        if pc in self.hooks:
+            self.hooks[pc](self)
+            self.r[15] = self.r[14]; self.steps += 1
+            return
         if pc in self.lib.plt:
             name, _ = self.lib.plt[pc]
             if name not in self.externals: raise Fault("call of %s, which the simulation does not model (pc=%08x)" % (name, pc))
@@ -268,7 +273,7 @@ def free_scenarios(lib):
 
 RMA_BLOCK = 0x20F18420                                               # what __ul_global.pthread_callevery_rma holds in these scenarios
 
-def run_pfini(lib, refcount, running):
+def run_pfini(lib, refcount, running, owner=None):
     """__pthread_prog_fini (): returns (ok, dict(calls=[...], running_after, regs, sp))"""
     cpu = setup(lib, refcount=refcount, thread_system=running)
     cpu.put32(GBL + 112, RMA_BLOCK)
@@ -276,7 +281,12 @@ def run_pfini(lib, refcount, running):
     def os_swi(c):
         regs = c.r[1]; log.append(("OS_Module" if c.r[0] == 0x1E else "swi %x" % c.r[0], c.rd32(regs), c.rd32(regs + 8))); c.r[0] = 0
     def stop_ticker(c): log.append(("stop_ticker",))
+    def ticker_owner(c): c.r[0] = (1 if refcount <= 1 else 0) if owner is None else owner                  # 16.2.0-24: only the program that made the RMA block owns the ticker (a vfork child does not)
+    def ticker_fini(c): log.append(("ticker_fini",)); c.r[0] = 0
+    def ticker_stats(c): c.r[0] = 0                                              # UnixLib$TickerStats: not modelled (it reads the environment); it changes nothing here
     cpu.externals["__os_swi"] = os_swi; cpu.externals["__pthread_stop_ticker"] = stop_ticker
+    for name, fn in (("__pthread_ticker_owner", ticker_owner), ("__pthread_ticker_fini", ticker_fini), ("__pthread_ticker_write_stats", ticker_stats)):
+        if name in lib.syms: cpu.hooks[lib.syms[name]] = fn                    # (the library calls them directly)
     try:
         cpu.call(lib.syms["__pthread_prog_fini"], [0x11111111, 0x22222222, 0x33333333, 0x44444444])
     except Fault as e:
@@ -287,14 +297,17 @@ def pfini_scenarios():
     """(description, refcount, pthread system running, expected calls, expected __ul_global.pthread_system_running afterwards)"""
     free = ("OS_Module", 7, RMA_BLOCK)
     stop = ("stop_ticker",)
+    fini = ("ticker_fini",)
     return [
-        ("the last user of the image (refcount 1), pthread system not running: the RMA block is freed (OS_Module 7)", 1, 0, [free], 0),
-        ("the last user, pthread system running: the ticker is stopped, the flag cleared, the block freed",          1, 1, [stop, free], 0),
-        ("refcount 0 (a process whose count was already taken off): freed as before",                                  0, 0, [free], 0),
-        ("a vfork child that shares the image (refcount 2), pthread system running: nothing is touched",             2, 1, [], 1),
-        ("a vfork child (refcount 2), pthread system not running: nothing is touched",                               2, 0, [], 0),
-        ("a vfork child of a vfork child (refcount 3): nothing is touched",                                          3, 1, [], 1),
-        ("refcount 0xFFFFFFFF (wrapped): nothing is touched",                                                        0xFFFFFFFF, 1, [], 1),
+        ("the last user of the image (refcount 1), pthread system not running: the ticker is detached, the RMA block is freed (OS_Module 7)", 1, 0, [fini, free], 0),
+        ("the last user, pthread system running: the ticker is stopped, the flag cleared, detached, the block freed",   1, 1, [stop, fini, free], 0),
+        ("refcount 0 (a process whose count was already taken off): detached and freed as before",                      0, 0, [fini, free], 0),
+        ("a vfork child that shares the image (refcount 2), pthread system running: it is not the owner of the ticker: stopped, the flag cleared, the block not touched", 2, 1, [stop], 0),
+        ("a vfork child (refcount 2), pthread system not running: nothing is touched",                                  2, 0, [], 0),
+        ("a vfork child of a vfork child (refcount 3), pthread system running: stopped, the block not touched",       3, 1, [stop], 0),
+        ("refcount 0xFFFFFFFF (wrapped), pthread system running: stopped, the block not touched",                      0xFFFFFFFF, 1, [stop], 0),
+        ("the owner of the ticker although the image is shared (refcount 2), pthread system not running: the block is kept (nothing is touched)", 2, 0, [], 0, 1),
+        ("the owner although the image is shared (refcount 3), pthread system running: the block is kept, the ticker left running",        3, 1, [], 1, 1),
     ]
 
 def run_too_big(lib, length, clamp):
@@ -342,8 +355,8 @@ def evaluate(lib, verbose=False):
         rec(good, "free: %s" % desc + ("" if good else "   GOT calls %s, signalhandler_sp %08x, registers %s; EXPECTED calls %s, cleared %s" % (r["calls"], r["sp_after"], "kept" if r["regs"] else "DAMAGED", exp_calls, exp_cleared)))
     # ---- __pthread_prog_fini (16.2.0-8 and later)
     if "__pthread_prog_fini" in lib.size:
-        for desc, rc, running, exp_calls, exp_running in pfini_scenarios():
-            ok, r = run_pfini(lib, rc, running)
+        for desc, rc, running, exp_calls, exp_running, *own in pfini_scenarios():
+            ok, r = run_pfini(lib, rc, running, *own)
             if not ok: rec(False, "%s: %s" % (desc, r)); continue
             good = r["calls"] == exp_calls and r["running_after"] == exp_running and r["regs"]
             rec(good, "pthread_prog_fini: %s" % desc + ("" if good else "   GOT calls %s, running %d, registers %s; EXPECTED calls %s, running %d" % (r["calls"], r["running_after"], "kept" if r["regs"] else "DAMAGED", exp_calls, exp_running)))

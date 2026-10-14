@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build SharedLibs-C-armeabihf_16.2.0-<REL>_arm.zip: the 10.2.0-1 package with libunixlib.so.5.0.0 and libm.so.1.0.0 REPLACED by the ones built
 with the GCC 16.2.0 forward-port compiler and binutils 2.45.1 from the patched UnixLib 5.0 sources (recipe scripts/build-unixlib.sh: exception-safe
-pthread_once, pthread_cond_timedwait, sysconf, sleep with threads; fix level 5; from REL 2 also fread/fwrite short-transfer fix; REL 3: stack-buffer touch; REL 4: fix level 6; REL 14: fix level 16 (the errno codes 92-98); REL 5: no 64-byte vstm in memcpy/memmove, built with -fstack-clash-protection, fix level 7; REL 6: __stack_size for the EABI main stack, heap dynamic area falls back to a smaller maximum, fix level 8; REL 7: mmap/mremap refuse a request that can never be served, the one page signal stack is freed at process exit, fix level 9; REL 8: the _exit of a vfork child that ends without exec leaves the RMA block of the shared program image alone, fix level 10).  libgcc_s, libdl and the loader stay those of 10.2.0-1.
+pthread_once, pthread_cond_timedwait, sysconf, sleep with threads; fix level 5; from REL 2 also fread/fwrite short-transfer fix; REL 3: stack-buffer touch; REL 4: fix level 6; REL 15: fix level 17 (the thread ticker, after Andrew Youll's riscos-unixlib); REL 14: fix level 16 (the errno codes 92-98); REL 5: no 64-byte vstm in memcpy/memmove, built with -fstack-clash-protection, fix level 7; REL 6: __stack_size for the EABI main stack, heap dynamic area falls back to a smaller maximum, fix level 8; REL 7: mmap/mremap refuse a request that can never be served, the one page signal stack is freed at process exit, fix level 9; REL 8: the _exit of a vfork child that ends without exec leaves the RMA block of the shared program image alone, fix level 10).  libgcc_s, libdl and the loader stay those of 10.2.0-1.
 usage: make-c16-package.py [REL] [BUILD_DIR]   (defaults: 1, ~/gccsdk-next/unixlib/build)"""
 import os, struct, sys, time, zipfile
 HOME = os.path.expanduser("~")
@@ -85,6 +85,10 @@ if REL.isdigit() and int(REL) >= 14:
     NOTE += (" 16.2.0-14 and later answer sysconf (0x4700) with 16 and add the seven POSIX error numbers that UnixLib lacked: <errno.h> defines EPROTO (92), ENODATA (93), ENOLINK (94), EMULTIHOP (95), "
              "ECANCELED (96), ENOTRECOVERABLE (97) and EOWNERDEAD (98) after EOVERFLOW (91), and strerror () and sys_errlist have their texts (sys_nerr is 99).  The numbers are those of the module kit's C library, "
              "so the same source gets the same codes in a program and in a module.")
+if REL.isdigit() and int(REL) >= 15:
+    NOTE += (" 16.2.0-15 answers sysconf (0x4700) with 17 and has the thread ticker of Andrew Youll's riscos-unixlib (https://github.com/adyoull/riscos-unixlib, UnixLib 5.0.3.3; his files and copyright notices, "
+             "UnixLib's revised BSD licence): the OS_CallEvery routines that switch threads run from a copy in the RMA block, or from his optional PThreadTicker module, not from the program's memory, and the Wimp filters "
+             "follow the task.  A program with a thread made before Wimp_Initialise, linked statically, made every other task abort and then locked the machine.")
 # the packages from 16.2.0-4 on must contain the code of every fix: look for it in the built library (a silently skipped patch once shipped a package without the fix-level answer)
 if REL.isdigit() and int(REL) >= 4:
     import subprocess

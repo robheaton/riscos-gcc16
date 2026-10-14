@@ -14,7 +14,7 @@ need() { # function, pattern, what
   if dis "$1" | grep -q -E "$2"; then echo "  ok   $1: $3"; else echo "  FAIL $1: $3 NOT FOUND"; fail=1; fi
 }
 if dis sysconf | grep -q -E 'sub[[:space:]]+r0, r0, #18176' && dis sysconf | grep -q -E 'cmp[[:space:]]+r0, #1$'; then
-  echo "  ok   sysconf: answers the private selectors 0x4700 (fix level) and 0x4701 (compiler version) with one test (both answer 16 in 16.2.0-14, so the compiler merges the two cases)"
+  echo "  ok   sysconf: answers the private selectors 0x4700 (fix level) and 0x4701 (compiler version) with one test (both answered 16 in 16.2.0-14 to -23, so the compiler merged the two cases; the fix level is 17 from 16.2.0-24 and they are two cases again)"
 else
 need sysconf   'cmp[[:space:]]+r[0-9]+, #18176'            "answers the private selector 0x4700 (fix level)"
 need sysconf   '#18177'                                    "answers the private selector 0x4701 (compiler version)"
@@ -25,7 +25,7 @@ need recv      'bic[[:space:]]+[a-z0-9]+, r[0-9]+, #4080'  "touches the pages of
 need pthread_once 'bl|b' "pthread_once present"
 # 16.2.0-6 (fix level 8): sysconf answers 8; the main stack of an EABI program is allocated in a loop that retries with half the size (stack_try); the heap dynamic area is created
 # in a loop that retries with half the maximum size (da_try: the X form of OS_DynamicArea, a retry on error)
-need sysconf   'mov[[:space:]]+r0, #16([[:space:]]|$)'     "answers fix level 16"
+need sysconf   'mov[[:space:]]+r0, #17([[:space:]]|$)'     "answers fix level 17"
 need stack_try 'svc[[:space:]]+0x00079d02'                  "asks ARMEABISupport for the stack (StackOp)"
 need stack_try 'lsr[[:space:]]+r[0-9]+, r[0-9]+, #1$'       "retries with half the stack size when there is no room"
 need da_try    'svc[[:space:]]+0x00020066'                  "creates the heap dynamic area with the X form of OS_DynamicArea"
@@ -67,7 +67,7 @@ else echo "  ok   __signalhandler_stack_free is local (direct calls, no PLT entr
 # 16.2.0-8 (fix level 10): the _exit of a vfork child that ends without exec must leave the RMA block of the program image (shared with its parent) alone: __pthread_prog_fini returns while
 # __dynamic_area_refcount is more than 1, and _exit calls it BEFORE __dynamic_area_exit (which takes the process off the count)
 need __pthread_prog_fini 'cmp[[:space:]]+r[0-9]+, #1$'             "looks at __dynamic_area_refcount: more than one user of the program image"
-need __pthread_prog_fini 'bxhi[[:space:]]+lr'                      "returns at once for a vfork child that shares the image, before the RMA block is freed"
+need __pthread_prog_fini '(bxhi[[:space:]]+lr|bls[[:space:]])'      "returns at once for a vfork child that shares the image, before the RMA block is freed (16.2.0-24: after the ticker owner check)"
 seq=$(dis _exit | grep -E "bl[[:space:]]+[0-9a-f]+ <(__pthread_prog_fini|__dynamic_area_exit)>" | sed -E 's/.*<(.*)>.*/\1/' | tr '\n' ' ')
 if [ "$seq" = "__pthread_prog_fini __dynamic_area_exit " ]; then echo "  ok   _exit: __pthread_prog_fini is called before __dynamic_area_exit takes the process off the count"
 else echo "  FAIL _exit: calls seen: '$seq' (expected __pthread_prog_fini then __dynamic_area_exit)"; fail=1; fi
@@ -129,4 +129,10 @@ else echo "  FAIL __pthread_prev_running_thread is missing"; fail=1; fi
 for s in "Protocol error" "No data available" "Link has been severed" "Multihop attempted" "Operation canceled" "State not recoverable" "Owner died"; do
   if grep -aq "$s" "$LIB"; then echo "  ok   strerror text '$s'"; else echo "  FAIL the library has no strerror text '$s' (the errno patch is missing)"; fail=1; fi
 done
+# 16.2.0-24 (fix level 17): the thread ticker of Andrew Youll's riscos-unixlib: its routines run from a copy in the RMA block (or the PThreadTicker module), not from the program's memory, the Wimp
+# filters follow the task, and the block size that _syslib.s claims is checked against the C structure at start-up.
+for f in __pthread_ticker_init __pthread_ticker_recheck __pthread_ticker_fini __pthread_ticker_owner __pthread_ticker_write_stats __pthread_call_every_code __pthread_call_every_code_end __pthread_callevery_block_size; do
+  if "$NM" "$LIB" | grep -q " $f$"; then echo "  ok   $f exists (the thread ticker)"; else echo "  FAIL $f is missing (the thread ticker patch is missing)"; fail=1; fi
+done
+if grep -aq "UnixLib\$TickerStats" "$LIB" && grep -aq "mismatched objects" "$LIB"; then echo "  ok   UnixLib\$TickerStats and the block size check are in the library"; else echo "  FAIL the ticker statistics or the block size check are missing"; fail=1; fi
 [ $fail = 0 ] && echo "libunixlib check: OK" || { echo "libunixlib check: FAILED"; exit 1; }

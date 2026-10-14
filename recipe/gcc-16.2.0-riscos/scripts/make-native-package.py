@@ -253,7 +253,9 @@ MODLIB_23 = ("There is no Shared C Library or UnixLib in a module: libmodkit.a i
              "  <swis.h> has the numbers of the 1,143 SWIs of the OS.  Not there: the wide input and output functions (fwprintf, fgetwc ...), wcsftime, C++ exceptions, RTTI, streams and threads.  A module made here is\n"
              "  ARMv6 code and soft float whatever -march, -mcpu and -mfpu say (they are accepted and ignored): it needs an ARMv6 or newer CPU, and has been run on a Cortex-A72 only.  For older CPUs, hardware floating point,\n"
              "  C++ exceptions or the smallest possible module GCCSDK 4.7.4 remains the choice: docs/PORTING-FROM-4.7.4.md of the project.")
-NOTES_23 = ("  New in 16.2.0-23: sockets are file descriptors (close, read, write, ioctl, fcntl, dup and select work on the number that socket or accept gives, as in UnixLib; __modlib_socket_handle (fd) gives the Internet\n"
+NOTES_23 = ("  New in 16.2.0-24: the runtime (SharedLibs-C-armeabihf 16.2.0-15, UnixLib fix level 17) has the thread ticker of Andrew Youll's riscos-unixlib: a program with a second thread made before Wimp_Initialise, linked\n"
+             "  statically with libunixlib.a, made every other task abort and the machine lock; the ticker routines now run from the RMA (or from the optional PThreadTicker module), not from the program's memory.\n"
+             "  New in 16.2.0-23: sockets are file descriptors (close, read, write, ioctl, fcntl, dup and select work on the number that socket or accept gives, as in UnixLib; __modlib_socket_handle (fd) gives the Internet\n"
              "  module's handle; Sunfish, an NFS client filing system, builds from its unmodified source and runs); the headers net/if.h, sys/errno.h and sys/param.h; the SIOC ioctl numbers are those of the Internet module;\n"
              "  the C99 maths and fenv.h; the last names of 4.7.4's module library (sethostname, setdomainname, settimeofday, clock_settime, strcasecmp_l, strncasecmp_l, strerror_l); the link drops the functions that a\n"
              "  module does not use (-Wl,-u,main keeps main in a program without a module header, -Wl,--no-gc-sections turns it off).\n"

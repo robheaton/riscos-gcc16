@@ -1,0 +1,21 @@
+--- a/libunixlib/unix/sysconf.c
++++ b/libunixlib/unix/sysconf.c
+@@ -154,12 +154,16 @@
+ 	 POSIX semaphores block instead of polling and have sem_timedwait; 15:
+ 	 gprof (-pg) works for EABI programs: __gnu_mcount_nc, __gmon_start__
+ 	 and a sampler thread behind profil (); 16: errno.h has EPROTO, ENODATA,
+-	 ENOLINK, EMULTIHOP, ECANCELED, ENOTRECOVERABLE and EOWNERDEAD).
++	 ENOLINK, EMULTIHOP, ECANCELED, ENOTRECOVERABLE and EOWNERDEAD; 17: the
++	 thread ticker runs from the RMA block or the PThreadTicker module, not
++	 from the program's own memory, and its Wimp filters follow the task: a
++	 program with a thread made before Wimp_Initialise no longer makes other
++	 tasks abort; after Andrew Youll's riscos-unixlib).
+ 	 Lets a
+ 	 test program tell the installed library apart from the stock one, for
+ 	 which sysconf fails with EINVAL.  */
+       case 0x4700:
+-	return 16;
++	return 17;
+ 
+       /* Private, likewise: the major version of the GCC that compiled this
+ 	 libunixlib (10 for the 10.2.0-N packages, 16 for the 16.2.0-N ones).  */
