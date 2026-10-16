@@ -1,0 +1,49 @@
+*** RMLoad Mod64
+Mod64: initialised (a 64-bit module)
+*** Mod64_Hello
+Mod64_Hello: hello from a 64-bit module
+*** Help Mod64
+==> Help on keyword 'Mod64' (Module)
+Module is: Mod64           0.02 (15 Oct 2026) test module for AArch64
+
+Commands provided:
+  Mod64_Hello
+*** /t07mod
+RISC OS 64 test t07mod
+PASS lookup ("Mod64_Add", &add64)
+PASS lookup ("Mod64_Add32", &add32)
+INFO Mod64_Add is SWI = &59A00
+INFO Mod64_Add32 is SWI = &59A01
+INFO Mod64_Add 40 2: V = &0
+INFO Mod64_Add 40 2 gave x0 = &28
+INFO Mod64_Add32 40 2: V = &0
+INFO Mod64_Add32 40 2 gave x0 = &2A
+INFO the SWI register block has slots of 32 bits
+PASS ok64 || ok32
+INFO layout probe (64-bit reading): x0 after = &11114444
+INFO x1 after = &22226666
+PASS have
+INFO an unknown SWI of the module (offset 5): V = &1
+INFO error number = &1E6
+INFO error text: SWI &59a05 (Mod64_5) not known
+PASS v == 1
+INFO the flags word test is skipped: it needs 64-bit slots
+INFO Mod64_Fail: V = &1
+INFO Mod64_Fail: x0 (the error block) = &90012D4
+INFO Mod64_Fail: OS_ValidateAddress flags (N=8 Z=4 C=2 V=1) = &6
+INFO Mod64_Fail: the text, printed by the kernel with OS_Write0: Mod64: this error is on purpose
+INFO Mod64_FailRMA: V = &1
+INFO Mod64_FailRMA: x0 (the error block) = &70044BC
+INFO Mod64_FailRMA: OS_ValidateAddress flags (N=8 Z=4 C=2 V=1) = &6
+INFO Mod64_FailRMA: the text, printed by the kernel with OS_Write0: Mod64: this error is on purpose
+PASS vr == 1 && vc == 1
+INFO the program's own address range: main = &8A00
+INFO reading the block in the RMA from this program ...
+PASS e[0] == 0x20A01 && memcmp (e + 1, ERRTEXT, 32) == 0
+INFO reading the block in the module's code from this program ...
+PASS e[0] == 0x20A01 && memcmp (e + 1, ERRTEXT, 32) == 0
+SUMMARY t07mod: 8 checks, 0 failed
+*** RMKill Mod64
+Mod64: finalised
+*** Done
+

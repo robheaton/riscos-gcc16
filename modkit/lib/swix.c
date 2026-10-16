@@ -17,6 +17,9 @@ extern _kernel_oserror *__modlib_remember (const _kernel_oserror *e);
 static _kernel_oserror *swi_common (unsigned swi, unsigned mask, va_list ap, int *result)
 {
   unsigned r[10], f = 0, *outp[10], *flagp = 0;
+#ifdef __aarch64__
+  unsigned blk[16];
+#endif
   int i, nout = 0, outreg[10];
   for (i = 0; i < 10; i++) r[i] = (mask & (1u << i)) ? va_arg (ap, unsigned) : 0;
   for (i = 0; i < 10; i++) if (mask & (1u << (31 - i))) { outp[nout] = va_arg (ap, unsigned *); outreg[nout++] = i; }
@@ -24,7 +27,13 @@ static _kernel_oserror *swi_common (unsigned swi, unsigned mask, va_list ap, int
   if (mask & (1u << 11))
     {
       unsigned b = (mask >> 12) & 15;
+#ifdef __aarch64__
+      /* AArch64: a va_list is a structure, not a pointer to the arguments: the words of the block are read one by one into an array that lives for the call (sixteen: the SWI reads as many as it needs; any
+         that the caller did not give are whatever the argument registers and the stack hold, which is harmless to read) */
+      if (b < 10) { for (i = 0; i < 16; i++) blk[i] = va_arg (ap, unsigned); r[b] = (unsigned) (unsigned long) blk; }
+#else
       if (b < 10) r[b] = (unsigned) *(void **) &ap;                  /* the block is where the arguments go on: the va_list points at it */
+#endif
     }
   _kernel_oserror *e = __modlib_xswif (swi, r, &f);
   if (e) return remember (e);

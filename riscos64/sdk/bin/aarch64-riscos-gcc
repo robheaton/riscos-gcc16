@@ -1,0 +1,56 @@
+#!/bin/bash
+# aarch64-riscos-gcc [gcc options] FILES: GCC for programs of RISC OS 64 (AIF64 absolutes, file type &FF8).  It runs the AArch64 GCC (aarch64-none-elf) with what a program for RISC OS 64 needs:
+#   compiling (-c -S -E): -ffixed-x18 (x18 is reserved), -mstrict-align, the headers of picolibc;
+#   linking: the AIF64 header and start-up code, the system calls that picolibc wants (made with SWIs), picolibc's libc and libm, the linker script (linked at &8000), and then the AIF64 file:
+#            "-o hello" makes hello,ff8 (a name that already has a comma suffix is used as it is).
+#   -mmodule-fp: as -mmodule, with hardware floating point and vector registers allowed in the module (Pyromaniac keeps the caller's state across a module's SWI).
+#   -mmodule: a 64-bit MODULE instead of a program (file type &FFA): the options of kit/modflags.sh, the kit's headers (kit/include, <modkit64.h>) and no C library; linked with kit/module64.ld and the
+#            kit's runtime (kit/lib), made into a flat image by tools/modreloc64.py:  "-o Hello64" makes Hello64,ffa.  The module's header (hello64_hdr.S in kit/examples) is one of the files.
+# Environment: A64 = the bin directory of aarch64-none-elf-gcc (default /var/tmp/a64/prefix/bin), PICOLIBC = where picolibc is installed (default /var/tmp/a64/picolibc).
+set -e
+SDK=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+[ -f "$SDK/config.sh" ] && . "$SDK/config.sh"                  # written by install-kit64.sh: A64 and PICOLIBC
+A64=${A64:-/var/tmp/a64/prefix/bin}
+PICO=${PICOLIBC:-/var/tmp/a64/picolibc}
+CC=$A64/aarch64-none-elf-gcc
+CFL="-ffixed-x18 -mstrict-align -D__riscos64__ -isystem $PICO/include"
+link=1; out=; args=(); module=
+KIT=$(cd "$SDK/../kit" && pwd)
+modfp=
+for a in "$@"; do [ "$a" = -mmodule ] && module=1; [ "$a" = -mmodule-fp ] && { module=1; modfp=1; }; done
+if [ -n "$module" ]; then
+  . "$KIT/modflags.sh"
+  CFL="$MODFLAGS -I$KIT/include -I$KIT -isystem $KIT/../../modkit/include"
+  [ -n "$modfp" ] && CFL="$MODFLAGS_FP -I$KIT/include -I$KIT -isystem $KIT/../../modkit/include"
+  for a in "$@"; do case "$a" in *.cc|*.cpp|*.cxx) CFL="$CFL -fno-exceptions -fno-rtti -fno-threadsafe-statics"; cxx=1;; esac; done
+fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -mmodule|-mmodule-fp) ;;
+    -c|-S|-E|-M|-MM) link=0; args+=("$1");;
+    -o) out=$2; shift;;
+    -o*) out=${1#-o};;
+    *) args+=("$1");;
+  esac
+  shift
+done
+if [ $link = 0 ]; then
+  [ -n "$out" ] && exec $CC $CFL "${args[@]}" -o "$out"
+  exec $CC $CFL "${args[@]}"
+fi
+[ -n "$out" ] || out=a
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/riscos64-cc.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+if [ -n "$module" ]; then
+  case "$out" in *,*) final=$out;; *) final=$out,ffa;; esac
+  $CC $CFL "${args[@]}" -nostdlib -static -T "$KIT/module64.ld" -Wl,--no-warn-rwx-segments -Wl,--emit-relocs \
+      "$KIT/../out/kit-lib/modrt64.o" "$KIT/../out/kit-lib/modswi64.o" "$KIT/../out/kit-lib/libmodkit64.a" "$KIT/../out/kit-lib/libmodcxx64.a" -lgcc -o "$tmp/mod.elf"
+  python3 -I "$SDK/../tools/modreloc64.py" "$tmp/mod.elf" "$final"
+  exit 0
+fi
+case "$out" in *,*) final=$out;; *) final=$out,ff8;; esac
+$CC $CFL "${args[@]}" -nostdlib -static -T "$SDK/aif64.ld" -Wl,--no-warn-rwx-segments \
+    "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" \
+    -L"$PICO/lib" -Wl,--start-group -lc -lm -lgcc -Wl,--end-group -o "$tmp/prog.elf"
+$A64/aarch64-none-elf-objcopy -O binary "$tmp/prog.elf" "$tmp/prog.bin"
+python3 -I "$SDK/bin/mkaif64.py" "$tmp/prog.bin" "$final" "$tmp/prog.elf"

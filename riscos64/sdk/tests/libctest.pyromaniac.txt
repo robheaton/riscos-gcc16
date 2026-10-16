@@ -1,0 +1,41 @@
+*** /libctest
+RISC OS 64 test libctest (picolibc)
+PASS f != NULL
+PASS fclose (f) == 0
+PASS f != NULL
+PASS fgets (line, sizeof line, f) && strcmp (line, "line one\n") == 0
+PASS fgets (line, sizeof line, f) && strcmp (line, "line two 42\n") == 0
+PASS fread (buf, 1, 10, f) == 10 && memcmp (buf, "0123456789", 10) == 0
+PASS fread (buf, 1, 1, f) == 0 && feof (f)
+PASS fseek (f, 5, SEEK_SET) == 0 && ftell (f) == 5 && fgetc (f) == 'o'
+PASS fseek (f, 0, SEEK_END) == 0 && ftell (f) == 31
+PASS fopen ("no.such.file.here", "r") == NULL
+PASS snprintf (buf, sizeof buf, "%08.3f|%-5d|%+ld|%#x|%s", 3.14159, 42, 7L, 255, "ok") == 25 && strcmp (buf, "0003.142|42   |+7|0xff|ok") == 0
+PASS strtol ("  -1234abc", NULL, 10) == -1234 && strtoul ("ff", NULL, 16) == 255 && strtoll ("9223372036854775807", NULL, 10) == 9223372036854775807LL
+PASS strtod ("1.5e3", NULL) == 1500.0 && atof ("0.25") == 0.25 && atoi ("77") == 77
+PASS sscanf ("12 abc 3.5", "%d %s %lf", &i, buf, &(double){0}) == 3 && i == 12
+PASS strlen ("hello") == 5 && strchr ("hello", 'l') && strstr ("hello", "llo") && strncmp ("abc", "abd", 2) == 0
+PASS v[0] == 1 && v[3] == 4 && v[7] == 9
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS p[i] != NULL && ((unsigned char *) p[i])[99] == i
+PASS realloc (NULL, 10) != NULL
+PASS fabs (sqrt (2.0) - 1.4142135623730951) < 1e-15 && fabs (sin (1.0) - 0.8414709848078965) < 1e-15 && fabs (pow (2.0, 0.5) - sqrt (2.0)) < 1e-15
+PASS floor (-1.5) == -2.0 && ceil (1.2) == 2.0 && fmod (7.5, 2.0) == 1.5 && fabs (exp (1.0) - 2.718281828459045) < 1e-15 && fabs (log (10.0) - 2.302585092994046) < 1e-15
+PASS i == 7
+SUMMARY libctest: 36 checks, 0 failed
+*** Done
+

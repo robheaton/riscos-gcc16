@@ -1,0 +1,22 @@
+*** /t05file
+RISC OS 64 test t05file
+PASS v == 0
+INFO file handle = &FF
+PASS h != 0
+PASS v == 0
+PASS r[3] == 0
+PASS v == 0
+PASS v == 0
+INFO object type = &1
+INFO length = &40
+PASS r[0] == 1
+PASS r[4] == 64
+PASS v == 0
+PASS v == 0
+PASS r[3] == 0
+PASS same
+PASS v == 0
+PASS v == 0 && r[0] == 0
+SUMMARY t05file: 14 checks, 0 failed
+*** Done
+

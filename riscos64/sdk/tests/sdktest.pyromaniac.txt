@@ -1,0 +1,28 @@
+*** /sdktest
+RISC OS 64 test sdktest
+PASS stat ("sdkt1", &st) == 0 && S_ISREG (st.st_mode) && st.st_size == 10 && st.st_mtime > 1700000000
+PASS access ("sdkt1", F_OK) == 0 && access ("sdkt1", W_OK) == 0
+PASS stat ("sdkt-nothing", &st) == -1 && errno == ENOENT
+PASS rename ("sdkt1", "sdkt2") == 0
+PASS stat ("sdkt1", &st) == -1 && stat ("sdkt2", &st) == 0 && st.st_size == 10
+PASS rename ("sdkt-nothing", "sdkt3") == -1
+PASS unlink ("sdkt2") == 0
+PASS stat ("sdkt2", &st) == -1 && errno == ENOENT
+PASS unlink ("sdkt2") == -1 && errno == ENOENT
+PASS remove ("sdkt3") == 0 && fopen ("sdkt3", "r") == NULL
+PASS mkdir ("sdktd", 0755) == 0 && stat ("sdktd", &st) == 0 && S_ISDIR (st.st_mode)
+PASS unlink ("sdktd") == 0
+PASS t1 > 1700000000
+PASS gettimeofday (&tv, NULL) == 0 && tv.tv_sec >= t1 - 1 && tv.tv_sec <= t1 + 2 && tv.tv_usec >= 0 && tv.tv_usec < 1000000
+PASS g && strftime (b, sizeof b, "%Y-%m-%d %H:%M:%S", g) == 19
+INFO now (UTC): 2026-10-16 18:54:02
+INFO clock: 820000 to 1270000 (microseconds)
+PASS c2 >= c1
+PASS t2 >= t1
+PASS e && !strcmp (e, "hello from the SDK")
+PASS getenv ("Sdk$Nothing") == NULL
+system () works
+PASS system ("Echo system () works") == 0
+SUMMARY 20 checks, 0 failed
+*** Done
+

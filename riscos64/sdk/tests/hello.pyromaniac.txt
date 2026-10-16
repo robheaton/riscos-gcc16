@@ -1,0 +1,11 @@
+*** /hello one "two three" four
+Hello, World from RISC OS 64!
+sizeof (long) = 8, sizeof (void *) = 8
+argv[0] = "$.work.hello"
+argv[1] = "one"
+argv[2] = "two three"
+argv[3] = "four"
+-42 1234567890123 123456789012345 4000000000 ff z str  3.14 1.234568e+04
+malloc works at a 16-byte aligned address: yes
+*** Done
+

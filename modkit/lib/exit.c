@@ -16,6 +16,28 @@ int atexit (void (*fn) (void))
   return 0;
 }
 
+#ifdef __aarch64__
+extern void __modlib_raise (const void *e);                                   /* OS_GenerateError (the SWI, not returning to a handler-less caller): modswi / the platform hooks */
+static void stop (int status, const char *what) __attribute__ ((noreturn));
+static void stop (int status, const char *what)
+{
+  static struct { int errnum; char msg[64]; } err;
+  char *p = err.msg;
+  err.errnum = 0x1B0;
+  while (*what) *p++ = *what++;
+  *p++ = ' '; *p++ = '(';
+  {
+    char tmp[12], *t = tmp + sizeof tmp;
+    unsigned u = status < 0 ? -(unsigned) status : (unsigned) status;
+    do *--t = (char) ('0' + u % 10); while (u /= 10);
+    if (status < 0) *--t = '-';
+    while (t < tmp + sizeof tmp) *p++ = *t++;
+  }
+  for (const char *s = ") was called in a module"; (*p = *s) != 0; s++) p++;
+  __modlib_raise (&err);
+  for (;;) ;
+}
+#else
 static void stop (int status, const char *what) __attribute__ ((noreturn));
 static void stop (int status, const char *what)
 {
@@ -46,6 +68,7 @@ static void stop (int status, const char *what)
   __asm__ volatile ("swi\t0x2B" : : "r" (r0) : "memory");                                 /* OS_GenerateError */
   for (;;) ;
 }
+#endif
 void _Exit (int status) { stop (status, "exit"); }
 void exit (int status)
 {

@@ -1,0 +1,12 @@
+; cxx64.cmhg - Cxx64: a C++ module (module-is-c-plus-plus: the static constructors run at initialisation, the destructors at finalisation)
+title-string: Cxx64
+help-string: Cxx64 0.01
+date-string: 16 Oct 2026
+module-is-c-plus-plus:
+initialisation-code: cxx_init
+finalisation-code: cxx_final
+swi-chunk-base-number: 0x59B00
+swi-handler-code: cxx_swi
+swi-decoding-table: Cxx64 Info
+command-keyword-table: cxx_command
+  Cxx64_Shapes(min-args: 0, max-args: 0, help-text: "Cxx64_Shapes makes shapes with new and prints their areas through virtual calls.\r\n", invalid-syntax: "Syntax: *Cxx64_Shapes")

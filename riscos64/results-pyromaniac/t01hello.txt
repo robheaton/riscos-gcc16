@@ -1,0 +1,6 @@
+*** /t01hello
+RISC OS 64 test t01hello: hello from AArch64
+t01hello: a second line, after OS_NewLine
+t01hello: done
+*** Done
+

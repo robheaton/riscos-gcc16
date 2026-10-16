@@ -1,0 +1,39 @@
+*** /libtest64 -only=ctype,string,numbers,wchar,ldouble,sort,div,sscanf,printf,time,limits,inttypes,signal,g1,fnmatch,complex,iconv,c99,gamma,fparith,fpconv,gccrt,fpprintf,strtod,fpscanf,fpmathx,fpmathsp,fpmath,rand,swix,clock,stdio3,tmpfile,getline,g3
+SECTION ctype n=4369 hash=80c17ad2
+SECTION string n=20782 hash=40b90df4
+SECTION numbers n=9127 hash=41645335
+SECTION wchar n=46615 hash=2eb713e2
+SECTION ldouble n=1800 hash=fd57938a
+SECTION sort n=4800 hash=b6ba49fa
+SECTION div n=4500 hash=80f14f34
+SECTION sscanf n=10957 hash=fdd2f663
+SECTION printf n=18000 hash=853aa902
+SECTION time n=20989 hash=b8cded05
+SECTION limits n=21 hash=811c9dc5
+SECTION inttypes n=7501 hash=f8c87822
+SECTION signal n=16 hash=97b5eba5
+SECTION g1 n=20920 hash=1cf8ae0b
+SECTION fnmatch n=24000 hash=ce5925c3
+SECTION getline n=3786 hash=a4747ddc
+SECTION complex n=45 hash=811c9dc5
+SECTION iconv n=13724 hash=3f110d19
+SECTION g3 n=15389 hash=33edecfb
+SECTION c99 n=142966 hash=1ca893df
+SECTION gamma n=2004 hash=d6813ac5
+SECTION fparith n=62500 hash=3b6199be
+SECTION fpconv n=40000 hash=1ffb3d2f
+SECTION gccrt n=32500 hash=2f46c682
+SECTION fpprintf n=9018 hash=c94646b5
+SECTION strtod n=9800 hash=f5b5fb61
+SECTION fpscanf n=10500 hash=e409eae1
+SECTION fpmathx n=135380 hash=8a290e40
+SECTION fpmathsp n=37948 hash=6398c220
+SECTION fpmath n=18404 hash=1f38b64a
+SECTION rand n=9 hash=811c9dc5
+SECTION tmpfile n=25 hash=811c9dc5
+SECTION swix n=29 hash=f7b1645d
+SECTION clock n=400 hash=811c9dc5
+SECTION stdio3 n=18 hash=811c9dc5
+TOTAL fail=0
+*** Done
+

@@ -1,0 +1,26 @@
+RISC OS 64 test t04fp
+sum 7E17E43C8800759C  product 4140CCCCCCCCCCCE
+1/3 3FD5555555555555  0.1*0.1 3F847AE147AE147C
+PASS bits (a) == 0x3FD5555555555555UL
+PASS bits (b) == 0x3F847AE147AE147CUL
+PASS bits (vd[3] * vd[3]) == 0x7FF0000000000000UL
+PASS bits (vd[4] * vd[4]) == 0
+PASS bits (__builtin_sqrt (vd[6])) == bits (1024.0)
+PASS bits (__builtin_sqrt (vd[7])) == 0x40052A7FA9D2F8EAUL
+PASS bits (-vd[5]) == bits (2.5)
+PASS bits (__builtin_fabs (vd[5])) == bits (2.5)
+PASS n != n
+PASS bits (vd[0] / (vd[0] - vd[0])) == 0x7FF0000000000000UL
+float 1.5*3 40900000  0.1f+0.1f 3E4CCCCD
+PASS fbits (x) == fbits (4.5f)
+PASS fbits (y) == fbits (0.2f)
+PASS fbits (vf[3] + 1.0f) == fbits (16777216.0f)
+PASS bits ((double) vi[0]) == bits (123456789012345.0)
+PASS (i64) vd[5] == -2 && (i64) vd[6] == 1048576
+PASS (i64) (-vd[7]) == -7
+PASS (double) vi[1] == -7.0
+PASS fbits ((float) vd[2]) == fbits (0.1f)
+PASS bits ((double) vf[1]) == 0x3FB99999A0000000UL
+(double) 123456789012345 = 42DC12218377DE40
+PASS vd[0] < vd[1] && vd[1] > vd[0] && vd[0] != vd[1] && vd[0] == 1.0 && vd[5] <= -2.5
+SUMMARY t04fp: 20 checks, 0 failed

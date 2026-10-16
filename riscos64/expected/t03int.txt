@@ -1,0 +1,30 @@
+RISC OS 64 test t03int
+PASS sizeof (void *) == 8 && sizeof (u64) == 8 && sizeof (u32) == 4 && sizeof (int) == 4
+PASS sizeof (struct mix) == 24
+PASS ((u64) &buf & 0) == 0
+PASS 0x123456789ABCDEF0UL >> 60 == 1
+PASS (0x8000000000000000UL >> 63) == 1
+PASS ((i64) -1 >> 10) == -1
+PASS (1UL << 63) != 0 && (1UL << (64 - 1)) == 0x8000000000000000UL
+PASS rol (0x8000000000000001UL, 1) == 3
+PASS 0xFFFFFFFFFFFFFFFFUL + 1 == 0
+hash after 250 operations: 2D3F73DCFFAFA57F
+hash after 500 operations: C2579A4E50A9EF85
+hash after 750 operations: F6D43B39873D919D
+hash after 1000 operations: 0F78CD188ABD836B
+128 bit product: 0121FA00AD77D7422236D88FE5618CF0
+PASS (u64) p == 0xFEDCBA9876543210UL * 0x0123456789ABCDEFUL
+PASS memcmp (buf, buf2, 64) == 0
+PASS buf[5] == 3 && buf[44] == (u8) (39 * 7 + 3) && buf[4] == (u8) (4 * 7 + 3)
+PASS buf2[0] == 0xA5 && buf2[63] == 0xA5
+crc32 of the buffer: 16410E4F
+PASS crc32 ((const u8 *) "123456789", 9) == 0xCBF43926u
+PASS strlen ("RISC OS 64") == 10
+PASS ok
+smallest -7848403, largest 8237594
+PASS parse_dec ("9223372036854775807", &v) && v == 0x7FFFFFFFFFFFFFFFL
+PASS parse_dec ("-12345", &v) && v == -12345
+PASS !parse_dec ("12x", &v)
+-9223372036854775808
+PASS f[0] (1, 4) == 16 && f[2] (3, 63) == 0x8000000000000001UL
+SUMMARY t03int: 20 checks, 0 failed

@@ -137,6 +137,8 @@ The test programs are in [tests/](tests/) and are described in [docs/TESTING.md]
 | [docs/OS-MODULES.md](docs/OS-MODULES.md) | the C modules of the RISC OS Open sources built with the kit (new in 16.2.0-16): 38 of 66 build and link (29 before 16.2.0-18), what stops the others, and three of them run on a Raspberry Pi in place of the ROM's, with the same results |
 | [docs/MODULES.md](docs/MODULES.md) | modkit: building relocatable modules (experimental): what works, the C library of the kit, what does not yet, and the plan |
 | [docs/PORTING-FROM-4.7.4.md](docs/PORTING-FROM-4.7.4.md) | moving a module from GCCSDK 4.7.4: why, who should stay with it, what works as it is, what to change, what behaves differently |
+| [docs/RISCOS64.md](docs/RISCOS64.md) | RISC OS 64 (AArch64) on Pyromaniac: the tests, the module kit, the SDK, the library test |
+| [docs/MODULES64.md](docs/MODULES64.md) | writing modules for RISC OS 64 in C and C++: `aarch64-riscos-gcc -mmodule`, `cmunge64`, the C library, floating point, what is not supported |
 | [docs/SHAREDULIB-FIX.md](docs/SHAREDULIB-FIX.md) | the optional fixed SharedUnixLibrary module: what it fixes, how to install it and go back |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | the bugs found in UnixLib, SharedUnixLibrary, ARMEABISupport and RISC OS, with patches |
 | [docs/HISTORY.md](docs/HISTORY.md) | how the port was made |

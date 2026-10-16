@@ -1,0 +1,8 @@
+; libtestmod.cmhg - LibTest64, a module that holds the C library of the kit and its test (libtest.c): *LibTest64 runs the sections named in the system variable LT_ONLY (all if it is not set)
+title-string: LibTest64
+help-string: LibTest64 0.01
+date-string: 16 Oct 2026
+initialisation-code: lt_init
+finalisation-code: lt_final
+command-keyword-table: lt_command
+  LibTest64(min-args: 0, max-args: 0, help-text: "LibTest64 runs the library test of the kit inside the module.\r\n", invalid-syntax: "Syntax: *LibTest64")

@@ -1,0 +1,35 @@
+*** /fsdiff args3
+OS_Find &4F (input) of a file                                  ok  r0=255 r1=52288 r2=0 r3=0 r4=0 r5=0
+RISC OS 5.30: OS_Args 3 gives the error &C1 "Not open for update"; Pyromaniac stops with an internal IOError
+Traceback (most recent call last):
+  File "/pyromaniac/pyromaniac-resources/riscos/kernel.py", line 1290, in internal_swi_dispatch
+    riscos.handlers.swi.dispatch(self.ro, swin, self.ro.regs)
+  File "/pyromaniac/pyromaniac-resources/riscos/dispatch.py", line 200, in dispatch
+    result = call(func)
+  File "/pyromaniac/pyromaniac-resources/riscos/dispatch.py", line 195, in <lambda>
+    call = lambda func: func(ro, reason, regs, *args, **kwargs)
+  File "/pyromaniac/pyromaniac-resources/riscos/swis/fs/osargs.py", line 30, in swi_OS_Args
+    ro.kernel.call_vector(vectors.ArgsV)
+  File "/pyromaniac/pyromaniac-resources/riscos/kernel.py", line 1770, in call_vector
+    rin=rin, rout=rout)
+  File "/pyromaniac/pyromaniac-resources/riscos/vectors.py", line 143, in dispatch
+    handlers.vector.dispatch(self.ro, vector, self.ro.regs, empty_ok=True)
+  File "/pyromaniac/pyromaniac-resources/riscos/dispatch.py", line 200, in dispatch
+    result = call(func)
+  File "/pyromaniac/pyromaniac-resources/riscos/dispatch.py", line 195, in <lambda>
+    call = lambda func: func(ro, reason, regs, *args, **kwargs)
+  File "/pyromaniac/pyromaniac-resources/riscos/swis/fs/osargs.py", line 39, in vector_ArgsV
+    handlers.osargs.dispatch(ro, reason, regs)
+  File "/pyromaniac/pyromaniac-resources/riscos/dispatch.py", line 200, in dispatch
+    result = call(func)
+  File "/pyromaniac/pyromaniac-resources/riscos/dispatch.py", line 195, in <lambda>
+    call = lambda func: func(ro, reason, regs, *args, **kwargs)
+  File "/pyromaniac/pyromaniac-resources/riscos/swis/fs/osargs.py", line 114, in osargs_3
+    ro.kernel.filesystem.filehandles.extent_write(rofh, ptr)
+  File "/pyromaniac/pyromaniac-resources/riscos/filesystem/streams.py", line 388, in extent_write
+    ifh.extent = ptr
+  File "/pyromaniac/pyromaniac-resources/riscos/filesystem/nativestreams.py", line 92, in extent
+    self.fh.truncate(value)
+IOError: File not open for writing
+Error: IOError: File not open for writing (Error number &80000700)
+

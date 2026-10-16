@@ -1,5 +1,6 @@
-/* inttypes.h - the format macros of printf and scanf for the types of <stdint.h> (on this target int32_t is int, int64_t and intmax_t are long long, intptr_t is int), and imaxabs, imaxdiv, strtoimax,
-   strtoumax as inline functions of llabs, lldiv, strtoll, strtoull.  The scanf macros need the modifiers hh and h, which the library's sscanf has. */
+/* inttypes.h - the format macros of printf and scanf for the types of <stdint.h> (on the 32 bit target int32_t is int, int64_t and intmax_t are long long, intptr_t is int; on the 64 bit target (LP64)
+   int64_t, intmax_t and intptr_t are long), and imaxabs, imaxdiv, strtoimax, strtoumax as inline functions of llabs, lldiv, strtoll, strtoull.  The scanf macros need the modifiers hh and h, which the
+   library's sscanf has. */
 #ifndef _INTTYPES_H
 #define _INTTYPES_H
 #ifdef __cplusplus
@@ -7,6 +8,17 @@ extern "C" {
 #endif
 #include <stdint.h>
 #include <stdlib.h>
+
+#if __SIZEOF_LONG__ == 8
+# define __MODLIB_PRI64 "l"			/* int64_t, int_least64_t, int_fast64_t and intmax_t are long */
+#else
+# define __MODLIB_PRI64 "ll"			/* ... long long */
+#endif
+#if __SIZEOF_POINTER__ == 8
+# define __MODLIB_PRIPTR "l"			/* intptr_t is long */
+#else
+# define __MODLIB_PRIPTR ""			/* ... int */
+#endif
 
 #define PRId8	"d"
 #define PRIi8	"i"
@@ -41,17 +53,17 @@ extern "C" {
 #define SCNo32	"o"
 #define SCNu32	"u"
 #define SCNx32	"x"
-#define PRId64	"lld"
-#define PRIi64	"lli"
-#define PRIo64	"llo"
-#define PRIu64	"llu"
-#define PRIx64	"llx"
-#define PRIX64	"llX"
-#define SCNd64	"lld"
-#define SCNi64	"lli"
-#define SCNo64	"llo"
-#define SCNu64	"llu"
-#define SCNx64	"llx"
+#define PRId64	__MODLIB_PRI64 "d"
+#define PRIi64	__MODLIB_PRI64 "i"
+#define PRIo64	__MODLIB_PRI64 "o"
+#define PRIu64	__MODLIB_PRI64 "u"
+#define PRIx64	__MODLIB_PRI64 "x"
+#define PRIX64	__MODLIB_PRI64 "X"
+#define SCNd64	__MODLIB_PRI64 "d"
+#define SCNi64	__MODLIB_PRI64 "i"
+#define SCNo64	__MODLIB_PRI64 "o"
+#define SCNu64	__MODLIB_PRI64 "u"
+#define SCNx64	__MODLIB_PRI64 "x"
 #define PRIdLEAST8	"d"
 #define PRIiLEAST8	"i"
 #define PRIoLEAST8	"o"
@@ -85,17 +97,17 @@ extern "C" {
 #define SCNoLEAST32	"o"
 #define SCNuLEAST32	"u"
 #define SCNxLEAST32	"x"
-#define PRIdLEAST64	"lld"
-#define PRIiLEAST64	"lli"
-#define PRIoLEAST64	"llo"
-#define PRIuLEAST64	"llu"
-#define PRIxLEAST64	"llx"
-#define PRIXLEAST64	"llX"
-#define SCNdLEAST64	"lld"
-#define SCNiLEAST64	"lli"
-#define SCNoLEAST64	"llo"
-#define SCNuLEAST64	"llu"
-#define SCNxLEAST64	"llx"
+#define PRIdLEAST64	__MODLIB_PRI64 "d"
+#define PRIiLEAST64	__MODLIB_PRI64 "i"
+#define PRIoLEAST64	__MODLIB_PRI64 "o"
+#define PRIuLEAST64	__MODLIB_PRI64 "u"
+#define PRIxLEAST64	__MODLIB_PRI64 "x"
+#define PRIXLEAST64	__MODLIB_PRI64 "X"
+#define SCNdLEAST64	__MODLIB_PRI64 "d"
+#define SCNiLEAST64	__MODLIB_PRI64 "i"
+#define SCNoLEAST64	__MODLIB_PRI64 "o"
+#define SCNuLEAST64	__MODLIB_PRI64 "u"
+#define SCNxLEAST64	__MODLIB_PRI64 "x"
 #define PRIdFAST8	"d"
 #define PRIiFAST8	"i"
 #define PRIoFAST8	"o"
@@ -129,39 +141,39 @@ extern "C" {
 #define SCNoFAST32	"o"
 #define SCNuFAST32	"u"
 #define SCNxFAST32	"x"
-#define PRIdFAST64	"lld"
-#define PRIiFAST64	"lli"
-#define PRIoFAST64	"llo"
-#define PRIuFAST64	"llu"
-#define PRIxFAST64	"llx"
-#define PRIXFAST64	"llX"
-#define SCNdFAST64	"lld"
-#define SCNiFAST64	"lli"
-#define SCNoFAST64	"llo"
-#define SCNuFAST64	"llu"
-#define SCNxFAST64	"llx"
-#define PRIdMAX	"lld"
-#define PRIdPTR	"d"
-#define PRIiMAX	"lli"
-#define PRIiPTR	"i"
-#define PRIoMAX	"llo"
-#define PRIoPTR	"o"
-#define PRIuMAX	"llu"
-#define PRIuPTR	"u"
-#define PRIxMAX	"llx"
-#define PRIxPTR	"x"
-#define PRIXMAX	"llX"
-#define PRIXPTR	"X"
-#define SCNdMAX	"lld"
-#define SCNdPTR	"d"
-#define SCNiMAX	"lli"
-#define SCNiPTR	"i"
-#define SCNoMAX	"llo"
-#define SCNoPTR	"o"
-#define SCNuMAX	"llu"
-#define SCNuPTR	"u"
-#define SCNxMAX	"llx"
-#define SCNxPTR	"x"
+#define PRIdFAST64	__MODLIB_PRI64 "d"
+#define PRIiFAST64	__MODLIB_PRI64 "i"
+#define PRIoFAST64	__MODLIB_PRI64 "o"
+#define PRIuFAST64	__MODLIB_PRI64 "u"
+#define PRIxFAST64	__MODLIB_PRI64 "x"
+#define PRIXFAST64	__MODLIB_PRI64 "X"
+#define SCNdFAST64	__MODLIB_PRI64 "d"
+#define SCNiFAST64	__MODLIB_PRI64 "i"
+#define SCNoFAST64	__MODLIB_PRI64 "o"
+#define SCNuFAST64	__MODLIB_PRI64 "u"
+#define SCNxFAST64	__MODLIB_PRI64 "x"
+#define PRIdMAX	__MODLIB_PRI64 "d"
+#define PRIdPTR	__MODLIB_PRIPTR "d"
+#define PRIiMAX	__MODLIB_PRI64 "i"
+#define PRIiPTR	__MODLIB_PRIPTR "i"
+#define PRIoMAX	__MODLIB_PRI64 "o"
+#define PRIoPTR	__MODLIB_PRIPTR "o"
+#define PRIuMAX	__MODLIB_PRI64 "u"
+#define PRIuPTR	__MODLIB_PRIPTR "u"
+#define PRIxMAX	__MODLIB_PRI64 "x"
+#define PRIxPTR	__MODLIB_PRIPTR "x"
+#define PRIXMAX	__MODLIB_PRI64 "X"
+#define PRIXPTR	__MODLIB_PRIPTR "X"
+#define SCNdMAX	__MODLIB_PRI64 "d"
+#define SCNdPTR	__MODLIB_PRIPTR "d"
+#define SCNiMAX	__MODLIB_PRI64 "i"
+#define SCNiPTR	__MODLIB_PRIPTR "i"
+#define SCNoMAX	__MODLIB_PRI64 "o"
+#define SCNoPTR	__MODLIB_PRIPTR "o"
+#define SCNuMAX	__MODLIB_PRI64 "u"
+#define SCNuPTR	__MODLIB_PRIPTR "u"
+#define SCNxMAX	__MODLIB_PRI64 "x"
+#define SCNxPTR	__MODLIB_PRIPTR "x"
 
 typedef struct { intmax_t quot, rem; } imaxdiv_t;
 extern intmax_t imaxabs (intmax_t j);

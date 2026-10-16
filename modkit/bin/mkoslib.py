@@ -32,8 +32,8 @@ def undefined_in(objects):
     """the undefined symbols of the object files (nm -u of this tool chain, else the one on PATH)"""
     import shutil, subprocess
     here = os.path.dirname(os.path.realpath(__file__))
-    nm = next((c for c in (os.path.join(here, "..", "..", "..", "bin", "arm-riscos-gnueabihf-nm"), shutil.which("arm-riscos-gnueabihf-nm"), os.path.expanduser("~/gccsdk-next/env-f/bin/arm-riscos-gnueabihf-nm")) if c and os.path.exists(c)), None)
-    if not nm: sys.exit("mkoslib: no arm-riscos-gnueabihf-nm: put the tool chain on PATH")
+    nm = next((c for c in (os.environ.get("MKOSLIB_NM"), os.path.join(here, "..", "..", "..", "bin", "arm-riscos-gnueabihf-nm"), shutil.which("arm-riscos-gnueabihf-nm"), os.path.expanduser("~/gccsdk-next/env-f/bin/arm-riscos-gnueabihf-nm")) if c and os.path.exists(c)), None)
+    if not nm: sys.exit("mkoslib: no arm-riscos-gnueabihf-nm: put the tool chain on PATH (or set MKOSLIB_NM, e.g. aarch64-none-elf-nm for the objects of a 64-bit module)")
     names = []; defined = set()
     for o in objects:
         mine = []

@@ -1,0 +1,192 @@
+*** RMLoad Mod64D
+Mod64D: init base &9004004 delta &9004000 x12 &700449C sp &4107E80
+Mod64D: zero-initialised area at &9006160 size &1780 image end &9006160
+Mod64D: OS_ValidateAddress of the zero-initialised area: V0 x0 &1
+Mod64D: initialised (a 64-bit module with data) nonzero &0 counter &3E8 relocs &10 errbuf &70044BC
+*** RMLoad Mod64S
+Mod64S: initialised (the plain service entry test)
+*** Help Mod64D
+==> Help on keyword 'Mod64D' (Module)
+Module is: Mod64D          0.04 (15 Oct 2026) data and relocation test for AArch64
+
+Commands provided:
+  Mod64D_Args     Mod64D_FailCode Mod64D_FailCopy Mod64D_FailRMA
+*** /t08data
+RISC OS 64 test t08data
+PASS the SWIs of Mod64D are there
+INFO the SWI register block has slots of 32 bits
+PASS one of the two slot sizes works
+PASS Mod64D_Setup: the module reads and writes the register block in the same layout
+PASS Mod64D_Info
+INFO module base = &9004004
+INFO link_addr (where the relocator says the image is) = &9004004
+INFO relocation delta at initialisation = &9004000
+INFO image size = &215C
+INFO zero-initialised area = &9006160
+INFO zero-initialised size = &1780
+INFO non-zero bytes in it at initialisation = &0
+INFO x12 at initialisation = &700449C
+INFO x12 in this SWI = &700449C
+INFO stack pointer at initialisation = &4107E80
+PASS the module is at a page boundary plus 4
+PASS link_addr is where the module is: the relocator ran
+PASS the relocation delta is the distance from the link address 4
+PASS the zero-initialised area was all zero at initialisation (the module read all of it)
+PASS (layout) the code expects the zero-initialised area right after the image: both sides are link-time values, the zero-fill and write checks are the evidence about the kernel
+PASS the zero-initialised area has the size that the header says
+PASS Mod64D_Count: .data holds its value and is writable
+PASS Mod64D_Count: .data holds its value and is writable
+PASS Mod64D_Count: .data holds its value and is writable
+INFO the counter is at = &90060E0
+PASS the counter is in the image, not in the zero-initialised area
+PASS Mod64D_Reloc
+INFO relocation checks that held (bit mask, all = 3FFF) = &3FFF
+INFO table_ro[0].fn = &90044A0
+INFO should be f_one = &90044A0
+INFO counter_ptr = &90060E0
+INFO should be &data_counter = &90060E0
+INFO node.next = &9006040
+INFO should be &n2 = &9006040
+INFO number of relocations = &10
+PASS all the pointers of the module were relocated and the calls through them work
+PASS Mod64D_Stack
+INFO stack pointer in a SWI = &4107F80
+INFO x12 in a SWI = &700449C
+INFO stack pointer at initialisation = &4107E80
+INFO x19-x28 across the svc of the module's own SWI calls (&5A = all preserved, &BAD = one was changed) = &5A
+PASS the stack pointer in a SWI is 16-byte aligned
+PASS x19-x28 survive an svc taken from module code (EL1)
+INFO Mod64D_Zero writes the zero-initialised area (6000 bytes) ...
+INFO Mod64D_Zero: the write phase was skipped (1 = yes: the area was not zero) = &0
+PASS Mod64D_Zero: the area is zero
+PASS Mod64D_Zero: what was written to the area was read back (no byte wrong)
+INFO the buffer is at = &9006170
+PASS the buffer is inside the zero-initialised area
+PASS Mod64D_FailCopy: V is set
+INFO Mod64D_FailCopy: the error block = &70044BC
+PASS the error block is not inside the module
+INFO Mod64D_FailCopy: reading the block from this program ...
+PASS Mod64D: copied error
+PASS Mod64D_FailRMA: V is set
+INFO Mod64D_FailRMA: the error block = &70045EC
+PASS the error block is not inside the module
+INFO Mod64D_FailRMA: reading the block from this program ...
+PASS Mod64D: RMA error
+INFO OS_ServiceCall with service &59A41 (Mod64D's table) ...
+INFO OS_ServiceCall: V = &0
+INFO OS_ServiceCall: r1 after (0 = claimed) = &59A41
+PASS OS_ServiceCall: the service was not claimed (r1 is not 0)
+PASS Mod64D_Svc
+INFO Mod64D (the table): times its entry was called = &1
+INFO Mod64D (the table): 1 = the fast (indexed) entry, 2 = the plain entry = &1
+INFO Mod64D (the table): x0 = &A0
+INFO Mod64D (the table): x1 = &1
+INFO Mod64D (the table): x2 = &A2
+INFO Mod64D (the table): x3 = &A3
+INFO Mod64D (the table): x4 = &A4
+INFO Mod64D (the table): x5 = &A5
+INFO Mod64D (the table): x12 = &700449C
+INFO Mod64D (the table): x30 (the caller) = &4107FB8
+PASS the kernel called the service entry of the module that has the table
+INFO OS_ServiceCall with service &59AC1 (Mod64S, no table) ...
+INFO OS_ServiceCall: V = &0
+INFO OS_ServiceCall: r1 after (0 = claimed) = &59AC1
+PASS Mod64S_Svc
+INFO Mod64S (no table): services that its entry was called for (all of them) = &7
+INFO Mod64S (no table): where &59AC1 was: 1 = x1 (as in 32-bit RISC OS), 2 = x0, 0 = not seen = &1
+INFO Mod64S (no table): calls with &59AC1 = &1
+INFO Mod64S (no table): x0 = &B0
+INFO Mod64S (no table): x1 = &59AC1
+INFO Mod64S (no table): x2 = &B2
+INFO Mod64S (no table): x3 = &B3
+INFO Mod64S (no table): x4 = &B4
+INFO Mod64S (no table): x5 = &B5
+INFO Mod64S (no table): x12 = &70045CC
+PASS the kernel called the plain service entry of the module that has no table
+INFO Mod64S (no table): x30 of the matching call = &4107FBC
+INFO Mod64S (no table): x1 of the service call no. 1 = &9
+INFO Mod64S (no table): x1 of the service call no. 2 = &D6
+INFO Mod64S (no table): x1 of the service call no. 3 = &D6
+INFO Mod64S (no table): x1 of the service call no. 4 = &D6
+INFO Mod64S (no table): x1 of the service call no. 5 = &2A
+INFO Mod64S (no table): x1 of the service call no. 6 = &59A41
+INFO Mod64S (no table): x1 of the service call no. 7 = &59AC1
+INFO Mod64S (no table): x1 of the service call no. 8 = &0
+INFO OS_ValidateAddress of 00C07F88: V = 0, x0 = &1 (a local variable)
+INFO OS_ValidateAddress of 09004004: V = 0, x0 = &1 (the module's header)
+INFO OS_ValidateAddress of 00000100: V = 0, x0 = &1 (address &100)
+INFO OS_ValidateAddress of 09006160: V = 0, x0 = &1 (the zero-initialised area)
+INFO Mod64D_FailCode: OS_CLI: V = &1
+PASS OS_CLI of the command returns with V set
+INFO Mod64D_FailCode: the error block = &9005CD0
+INFO Mod64D_FailCode: the pointer is inside the module: not read by this program
+INFO Mod64D_FailCopy: OS_CLI: V = &1
+PASS OS_CLI of the command returns with V set
+INFO Mod64D_FailCopy: the error block = &70044BC
+PASS the error block is not inside the module
+INFO Mod64D_FailCopy: reading the block from this program ...
+PASS Mod64D: copied error
+INFO Mod64D_FailRMA: OS_CLI: V = &1
+PASS OS_CLI of the command returns with V set
+INFO Mod64D_FailRMA: the error block = &70045EC
+PASS the error block is not inside the module
+INFO Mod64D_FailRMA: reading the block from this program ...
+PASS Mod64D: RMA error
+INFO the arguments of a command (the kernel's parsing of the command line):
+INFO OS_CLI of: *Mod64D_Args    V = 0
+INFO   parameters counted by the kernel (x1) = &0
+INFO   command number (x2) = &3
+INFO   argument string at (x0): inside the module (1 = yes) = &0
+INFO   the first 28 bytes of the argument string, up to the first control character: <00>
+PASS the kernel counted the parameters as expected
+INFO OS_CLI of: *Mod64D_Args one two    V = 0
+INFO   parameters counted by the kernel (x1) = &2
+INFO   command number (x2) = &3
+INFO   argument string at (x0): inside the module (1 = yes) = &0
+INFO   the first 28 bytes of the argument string, up to the first control character: one two<00>
+PASS the kernel counted the parameters as expected
+PASS the argument string starts at the first parameter
+INFO OS_CLI of: *Mod64D_Args   spaced   words      V = 0
+INFO   parameters counted by the kernel (x1) = &2
+INFO   command number (x2) = &3
+INFO   argument string at (x0): inside the module (1 = yes) = &0
+INFO   the first 28 bytes of the argument string, up to the first control character: spaced   words  <00>
+PASS the kernel counted the parameters as expected
+PASS the argument string starts at the first parameter
+INFO OS_CLI of: *Mod64D_Args "quoted words" x    V = 0
+INFO   parameters counted by the kernel (x1) = &2
+INFO   command number (x2) = &3
+INFO   argument string at (x0): inside the module (1 = yes) = &0
+INFO   the first 28 bytes of the argument string, up to the first control character: "quoted words" x<00>
+PASS the kernel counted the parameters as expected
+PASS the argument string starts at the first parameter
+INFO OS_CLI of: *Mod64D_Args a b c d    V = 1
+INFO Mod64D_Args a b c d: the error block = &410B104
+INFO   error &C: Syntax: *Mod64D_Args [<a> [<b> [<c>]]]
+PASS a command with more parameters than the table allows is refused
+INFO RMA blocks claimed by the module with OS_Module 6 (freed again at once):
+PASS OS_Module 6 gives a block
+INFO   size 1: block at &070045DC  address mod 16 = C  word before it = &00000010  the one before that = &00000000
+PASS OS_Module 6 gives a block
+INFO   size 8: block at &070045DC  address mod 16 = C  word before it = &00000010  the one before that = &00000000
+PASS OS_Module 6 gives a block
+INFO   size 24: block at &07004634  address mod 16 = 4  word before it = &00000020  the one before that = &00000000
+PASS OS_Module 6 gives a block
+INFO   size 100: block at &07004654  address mod 16 = 4  word before it = &00000068  the one before that = &00000000
+PASS OS_Module 6 gives a block
+INFO   size 4100: block at &070046BC  address mod 16 = C  word before it = &00001008  the one before that = &00000000
+PASS Mod64D_Heap (extend)
+INFO OS_Module 13 (extend by 64): did the block move = &1
+INFO OS_Module 13: the first 64 bytes kept their contents (1 = yes) = &1
+INFO OS_Module 13: the word before the new block = &88
+INFO OS_Module 13: the old block = &7004654
+INFO OS_Module 13: the new block = &70046BC
+PASS OS_Module 13 (extend) returned a block
+PASS OS_Module 13 kept the contents of the block
+SUMMARY t08data: 56 checks, 0 failed
+*** RMKill Mod64S
+Mod64S: finalised
+*** RMKill Mod64D
+Mod64D: finalised
+*** Done
+

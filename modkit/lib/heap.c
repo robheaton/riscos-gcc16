@@ -4,10 +4,34 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdint.h>
 
 #define XOS_MODULE   0x2001E
 
-/* a block of the RMA whose payload is aligned to ALIGN (a power of two; 8 at least); the header (the RMA pointer and the size) is just in front of it */
+#ifdef __aarch64__
+/* AArch64: the SWIs go through __modlib_xswi (the 32-bit register block; the addresses of the RMA are below 4 GB), the payload is 16 byte aligned and the header is 16 bytes */
+extern void *__modlib_xswi (unsigned swi_x, unsigned *regs);
+#define HDR 16
+static void *alloc_aligned (size_t n, size_t align)
+{
+  unsigned r[10] = { 6, 0, 0, 0 };
+  size_t extra = align > 16 ? align : 0, a = align > 16 ? align : 16;
+  uintptr_t raw, payload;
+  if (n > 0x7FFFFFF0u - extra) { errno = ENOMEM; return 0; }
+  r[3] = (unsigned) (n + 2 * HDR + extra);
+  if (__modlib_xswi (XOS_MODULE | 0x20000, r)) { errno = ENOMEM; return 0; }
+  raw = r[2];
+  payload = (raw + HDR + a - 1) & ~(uintptr_t) (a - 1);
+  ((unsigned *) payload)[-1] = (unsigned) raw;
+  ((unsigned *) payload)[-2] = (unsigned) n;
+  return (void *) payload;
+}
+static void rma_free (void *p)
+{
+  unsigned r[10] = { 7, 0, ((unsigned *) p)[-1] };
+  __modlib_xswi (XOS_MODULE | 0x20000, r);
+}
+#else
 static void *alloc_aligned (size_t n, size_t align)
 {
   unsigned raw; int err;
@@ -29,6 +53,13 @@ static void *alloc_aligned (size_t n, size_t align)
   ((unsigned *) payload)[-2] = (unsigned) n;
   return (void *) payload;
 }
+static void rma_free (void *p)
+{
+  register int r0 __asm__ ("r0") = 7;
+  register unsigned r2 __asm__ ("r2") = ((unsigned *) p)[-1];
+  __asm__ volatile ("swi\t%[swi]" : "+r" (r0), "+r" (r2) : [swi] "i" (XOS_MODULE) : "lr", "memory", "cc");
+}
+#endif
 void *malloc (size_t n) { return alloc_aligned (n, 8); }
 void *aligned_alloc (size_t alignment, size_t n)
 {
@@ -38,9 +69,7 @@ void *aligned_alloc (size_t alignment, size_t n)
 void free (void *p)
 {
   if (!p) return;
-  register int r0 __asm__ ("r0") = 7;
-  register unsigned r2 __asm__ ("r2") = ((unsigned *) p)[-1];
-  __asm__ volatile ("swi\t%[swi]" : "+r" (r0), "+r" (r2) : [swi] "i" (XOS_MODULE) : "lr", "memory", "cc");
+  rma_free (p);
 }
 void *calloc (size_t n, size_t size)
 {

@@ -1,0 +1,34 @@
+*** /t02swi
+RISC OS 64 test t02swi
+INFO sizeof (void *) = &8
+INFO sizeof (long) = &8
+INFO sizeof (int) = &4
+INFO sizeof (long long) = &8
+PASS sizeof (void *) == 8
+PASS sizeof (u64) == 8
+OS_WriteN: [ABCD]
+PASS v == 0
+OS_Write0 works
+PASS v == 0
+PASS v == 0
+INFO OS_GetEnv x1 (RAM limit) = &C08000
+INFO address of a local variable = &C07F9C
+INFO address of main = &87E0
+INFO address of the command line seen at start = &410944C
+PASS (u64) &local < r[1]
+PASS (u64) main >= 0x8000
+PASS t_cmdline != 0
+INFO command line: $.work.t02swi 
+PASS v == 0
+INFO OS_ReadMonotonicTime first = &5D
+INFO OS_ReadMonotonicTime second = &5E
+PASS t1 >= t0
+INFO unknown SWI: V flag set (1 = yes) = &1
+INFO unknown SWI: error number &000001E6 SWI &1dfff0 not known
+PASS v == 1
+INFO OS_SWINumberFromString OS_WriteC: V = &0
+INFO number of OS_WriteC = &0
+PASS (r[0] & 0x1FFFF) == 0
+SUMMARY t02swi: 12 checks, 0 failed
+*** Done
+

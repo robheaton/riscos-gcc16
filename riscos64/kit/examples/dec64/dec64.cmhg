@@ -1,0 +1,9 @@
+; dec64.cmhg - Dec64: swi-decoding-code with two functions (NAME/NUMBER) and error-identifiers.  The SWIs are Dec64_Alpha (r0 = 42) and Dec64_Beta (returns the error err_Bad).
+title-string: Dec64
+help-string: Dec64 0.01
+date-string: 16 Oct 2026
+swi-chunk-base-number: 0x59AC0
+swi-handler-code: dec_swi
+swi-decoding-code: dec_name/dec_number
+error-chunk-base-number: 0x20D00
+error-identifiers: err_Bad("Dec64: this error comes from error-identifiers"), err_Other(0x20D10, "Dec64: another one")

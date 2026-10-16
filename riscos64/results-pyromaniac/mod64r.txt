@@ -1,0 +1,47 @@
+*** RMLoad Mod64D
+Mod64D: init base &9004004 delta &9004000 x12 &700449C sp &4107E80
+Mod64D: zero-initialised area at &9006160 size &1780 image end &9006160
+Mod64D: OS_ValidateAddress of the zero-initialised area: V0 x0 &1
+Mod64D: initialised (a 64-bit module with data) nonzero &0 counter &3E8 relocs &10 errbuf &70044BC
+*** /t08data prep
+RISC OS 64 test t08data (prep)
+PASS the SWIs of Mod64D are there
+INFO the SWI register block has slots of 32 bits
+PASS one of the two slot sizes works
+PASS Mod64D_Setup: the module reads and writes the register block in the same layout
+INFO module base = &9004004
+INFO link_addr = &9004004
+INFO relocation delta = &9004000
+INFO non-zero bytes in the zero-initialised area at initialisation = &0
+INFO Mod64D_Count no. 1 = &3E9
+INFO Mod64D_Count no. 2 = &3EA
+INFO Mod64D_Count no. 3 = &3EB
+INFO Mod64D_Dirty: the marker was written (1 = yes) = &1
+PASS the zero-initialised area was clean and now has a marker
+SUMMARY t08data: 4 checks, 0 failed
+*** RMReInit Mod64D
+Mod64D: finalised
+Mod64D: init base &9004004 delta &9004000 x12 &700449C sp &4107E40
+Mod64D: zero-initialised area at &9006160 size &1780 image end &9006160
+Mod64D: OS_ValidateAddress of the zero-initialised area: V0 x0 &1
+Mod64D: initialised (a 64-bit module with data) nonzero &1 counter &3EB relocs &10 errbuf &70044BC
+*** /t08data reinit
+RISC OS 64 test t08data (reinit)
+PASS the SWIs of Mod64D are there
+INFO the SWI register block has slots of 32 bits
+PASS one of the two slot sizes works
+PASS Mod64D_Setup: the module reads and writes the register block in the same layout
+INFO module base = &9004004
+INFO link_addr = &9004004
+INFO relocation delta = &9004000
+INFO non-zero bytes in the zero-initialised area at initialisation = &1
+INFO relocation checks that held (all = 3FFF) = &3FFF
+PASS after *RMReInit the pointers of the module are still right (the relocator did not add the delta twice)
+INFO Mod64D_Count after *RMReInit (1004 = .data was kept, 1001 = .data is back to its initial value) = &3EC
+INFO .data persisted across *RMReInit (1 = yes, 0 = reset to the file) = &1
+INFO the zero-initialised area was zeroed again by *RMReInit (1 = yes, 0 = the marker of the prep step was still there) = &0
+SUMMARY t08data: 4 checks, 0 failed
+*** RMKill Mod64D
+Mod64D: finalised
+*** Done
+

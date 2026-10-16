@@ -1,0 +1,9 @@
+; libmod64.cmhg - Libmod64: a module that uses the kit's C library (libmodkit64.a) through the standard headers
+title-string: Libmod64
+help-string: Libmod64 0.01
+date-string: 16 Oct 2026
+swi-chunk-base-number: 0x59B80
+swi-handler-code: lm_swi
+swi-decoding-table: Libmod64 Check
+command-keyword-table: lm_command
+  Libmod64_Show(min-args: 0, max-args: 0, help-text: "Libmod64_Show prints some results of the C library.\r\n", invalid-syntax: "Syntax: *Libmod64_Show")

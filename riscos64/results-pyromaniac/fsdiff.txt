@@ -1,0 +1,33 @@
+*** /fsdiff
+1. OS_Find of a file that is not there (RISC OS: bit 3 = an error for input and update; &8F, output, makes the file)
+   OS_Find &4F (input, error if not found)   RISC OS: ERROR &D6 ERROR &D6 "File '$.work.fsd9' not found"
+   OS_Find &CF (update, error if not found)  RISC OS: ERROR &D6 ok  r0=255 r1=52616 r2=0 r3=0 r4=0 r5=0
+   the file after that (0 = not there, 1 = a file)           RISC OS: 0, here: 1
+2. the extent of a stream open for output (RISC OS: OS_Args 3 sets it and the stream is that long; OS_Args 1 beyond the end of a stream open for update makes it longer)
+   OS_Find &8F (output) of a new file                          ok  r0=255 r1=53016 r2=0 r3=0 r4=0 r5=0
+   OS_Args 2 (read the extent)   RISC OS: 32                   ok  r0=2 r1=255 r2=32 r3=0 r4=0 r5=0
+   OS_Args 3 (set the extent to 495)                           ok  r0=3 r1=255 r2=495 r3=0 r4=0 r5=0
+   OS_Args 2 (read the extent)   RISC OS: 495                  ok  r0=2 r1=255 r2=0 r3=0 r4=0 r5=0
+   OS_Args 1 (set the pointer to 495)                          ok  r0=1 r1=255 r2=495 r3=0 r4=0 r5=0
+   OS_Args 0 (read the pointer)  RISC OS: 495                  ok  r0=0 r1=255 r2=495 r3=0 r4=0 r5=0
+   OS_Find &CF (update) of the same file                       ok  r0=255 r1=53016 r2=0 r3=0 r4=0 r5=0
+   OS_Args 2 (read the extent)   RISC OS: 495                  ok  r0=2 r1=255 r2=495 r3=0 r4=0 r5=0
+   OS_Args 1 (pointer 600: beyond the end of an update stream) ok  r0=1 r1=255 r2=600 r3=0 r4=0 r5=0
+   OS_Args 2 (read the extent)   RISC OS: 600 (longer, zeros)  ok  r0=2 r1=255 r2=495 r3=0 r4=0 r5=0
+3. a locked file, a read-only file (RISC OS: only a locked file cannot be renamed or deleted; attribute 0x0B is locked, 0x01 is read only, 0x00 is none)
+   rename of a locked file (0x0B)   RISC OS: ERROR &C3 locked  ok  r0=25 r1=52184 r2=53664 r3=0 r4=0 r5=0
+   (and back, if it was renamed)                               ok  r0=25 r1=53664 r2=52184 r3=0 r4=0 r5=0
+   delete of a locked file (0x0B)   RISC OS: ERROR &C3 locked  ok  r0=1 r1=52184 r2=4294967133 r3=680350608 r4=10 r5=3
+   delete of a read-only file (0x01) RISC OS: ok               ERROR &BD "Permission denied for delete '$.work.fsd3'"
+   delete of a file without attributes (0x00) RISC OS: (not tried) ERROR &BD "Permission denied for delete '$.work.fsd3'"
+4. a locked file (0x0B) and a read-only file (0x01), opened for output or update, 10 bytes, one byte written (RISC OS: a handle, the status is &140 (output) or &40 (update): not writable,
+   the write gives ERROR &C1 "Not open for update", and the file is not changed: length 10)
+   OS_Find &8F (output) of a locked file                       handle, status &C0, write ok, length afterwards 1
+   OS_Find &CF (update) of a locked file                       handle, status &C0, write ok, length afterwards 10
+   OS_Find &8F (output) of a read-only file                    ERROR &BD "Permission denied for opening '$.work.fsd6' for writing"
+   OS_Find &CF (update) of a read-only file                    ERROR &BD "Permission denied for opening '$.work.fsd6' for updating"
+5. a stream open for reading: the pointer beyond the end (RISC OS: ERROR &B7 Outside file)
+   OS_Find &4F (input)                                         ok  r0=255 r1=54536 r2=0 r3=0 r4=0 r5=0
+   OS_Args 1 (pointer 110 on a file of 10 bytes)  RISC OS: ERROR &B7 ok  r0=1 r1=255 r2=110 r3=0 r4=0 r5=0
+*** Done
+

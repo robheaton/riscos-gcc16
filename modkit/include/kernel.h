@@ -6,7 +6,11 @@ extern "C" {
 #endif
 #include <stddef.h>						/* (size_t: the SharedCLibrary's kernel.h defines it too) */
 typedef struct { int errnum; char errmess[252]; } _kernel_oserror;
+#if defined (__aarch64__) && defined (MODKIT_SLOT) && MODKIT_SLOT == 8
+typedef struct { long r[10]; } _kernel_swi_regs;			/* a kernel with 64-bit slots in the register block of a SWI */
+#else
 typedef struct { int r[10]; } _kernel_swi_regs;
+#endif
 typedef struct stack_chunk { unsigned long sc_mark; struct stack_chunk *sc_next, *sc_prev; unsigned long sc_size; int (*sc_deallocate) (void); } _kernel_stack_chunk;      /* (the type only: a module has no stack chunks of the SharedCLibrary) */
 #define _kernel_NONX 0x80000000
 /* Call the SWI NO with the registers IN, return the registers in OUT.  The X bit is set unless bit 31 (_kernel_NONX) is set. */

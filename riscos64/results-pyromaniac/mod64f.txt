@@ -1,0 +1,32 @@
+*** RMLoad Mod64F
+Mod64F: initialised (the floating point state test)
+*** /t09fp
+RISC OS 64 test t09fp
+PASS the SWIs of Mod64F are there
+INFO FPCR at the start = &0
+INFO FPSR at the start = &0
+INFO OS_ReadMonotonicTime: vector registers changed (bit n = vn) = &0
+PASS an ordinary SWI keeps all 32 vector registers
+INFO Mod64F_Probe: one floating point instruction in the module ...
+INFO FPCR after Mod64F_Probe = &0
+INFO Mod64F_Probe: V = &0
+INFO Mod64F_Probe: the FPCR the module saw (r0) = &0
+INFO Mod64F_Probe: vector registers changed (bit n = vn) = &1
+PASS Mod64F_Probe returned: a floating point instruction in a module does not trap
+INFO floating point in a module: the caller's v0 survived (1 = yes: the kernel saves and restores it) = &0
+INFO Mod64F_Clobber: the module writes 24 vector registers and the FPCR ...
+INFO Mod64F_Clobber: V = &0
+INFO Mod64F_Clobber: the FPCR the module saw (r0) = &0
+INFO Mod64F_Clobber: vector registers changed (bit n = vn; the module writes v0-v7 and v16-v31: all 24 = FFFF00FF) = &FFFF00FF
+INFO Mod64F_Clobber: how many of the 24 = &18
+INFO FPCR after Mod64F_Clobber (the module set round towards zero: bits 23-22 = 3) = &C00000
+PASS Mod64F_Clobber returned
+PASS v8-v15 are unchanged (the module saves and restores them, as the AAPCS says)
+INFO the kernel keeps the caller's vector registers across a module's SWI (1 = yes, 0 = no) = &0
+INFO the kernel keeps the caller's FPCR across a module's SWI (1 = yes, 0 = no) = &0
+PASS the floating point test ran to the end
+SUMMARY t09fp: 6 checks, 0 failed
+*** RMKill Mod64F
+Mod64F: finalised
+*** Done
+

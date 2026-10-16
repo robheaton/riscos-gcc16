@@ -1,0 +1,7 @@
+; swi64.cmhg - Swi64: a module that calls SWIs with _swi and _swix of <swis.h> (the kit's library)
+title-string: Swi64
+help-string: Swi64 0.01
+date-string: 16 Oct 2026
+swi-chunk-base-number: 0x59BC0
+swi-handler-code: sw_swi
+swi-decoding-table: Swi64 Check

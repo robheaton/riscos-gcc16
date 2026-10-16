@@ -1,0 +1,7 @@
+; fpmod64.cmhg - Fpmod64: a module that uses hardware floating point (aarch64-riscos-gcc -mmodule-fp)
+title-string: Fpmod64
+help-string: Fpmod64 0.01
+date-string: 16 Oct 2026
+swi-chunk-base-number: 0x59B40
+swi-handler-code: fp_swi
+swi-decoding-table: Fpmod64 Calc

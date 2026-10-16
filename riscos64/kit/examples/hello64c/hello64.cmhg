@@ -1,0 +1,13 @@
+; hello64.cmhg - the CMHG file of Hello64 (the same module as examples/hello64, whose header is written by hand): cmunge64.py writes the header from this
+title-string: Hello64
+help-string: Hello64 0.01
+date-string: 16 Oct 2026
+initialisation-code: hello_init
+finalisation-code: hello_final
+service-call-handler: hello_service 0x59A81
+swi-chunk-base-number: 0x59A80
+swi-handler-code: hello_swi
+swi-decoding-table: Hello64 Add Info Fail
+command-keyword-table: hello_command
+  Hello64_Say(min-args: 0, max-args: 1, help-text: "Hello64_Say greets.\r\n", invalid-syntax: "Syntax: *Hello64_Say [<name>]"),
+  Hello64_Error(min-args: 0, max-args: 0, help-text: "Hello64_Error gives an error made with mk_error.\r\n", invalid-syntax: "Syntax: *Hello64_Error")
