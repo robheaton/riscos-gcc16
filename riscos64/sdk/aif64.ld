@@ -6,7 +6,14 @@ SECTIONS
 {
   . = 0x8000;
   .text : { KEEP(*(.aifhdr)) *(.text .text.*) }
-  .rodata : { *(.rodata .rodata.*) }
+  .rodata : {
+    *(.rodata .rodata.*)
+    *(.gcc_except_table .gcc_except_table.*)          /* the tables of the catch clauses (C++ exceptions) */
+    . = ALIGN(8);
+    KEEP(*crtbegin.o(.eh_frame))                    /* the unwind tables, in the order that crtbegin.o and crtend.o need: crtend.o has the zero word that ends the list */
+    KEEP(*(EXCLUDE_FILE(*crtend.o *crtbegin.o) .eh_frame .eh_frame.*))
+    KEEP(*crtend.o(.eh_frame))
+  }
   . = ALIGN(16);
   __ro_end = .;
   .data : {
@@ -16,10 +23,12 @@ SECTIONS
     KEEP(*(.preinit_array))
     PROVIDE_HIDDEN(__preinit_array_end = .);
     PROVIDE_HIDDEN(__init_array_start = .);
-    KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) .init_array))
+    KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+    KEEP(*(.init_array))   /* two statements: the entries with a priority (the ios_base::Init of libstdc++ is 90) come before the ones without, whatever the order of the files */
     PROVIDE_HIDDEN(__init_array_end = .);
     PROVIDE_HIDDEN(__fini_array_start = .);
-    KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*) .fini_array))
+    KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+    KEEP(*(.fini_array .fini_array_onexit))
     PROVIDE_HIDDEN(__fini_array_end = .);
   }
   . = ALIGN(16);
@@ -34,5 +43,5 @@ SECTIONS
   __aif_ro_size = __ro_end - 0x8000;
   __aif_rw_size = __data_end - __ro_end;
   __aif_zi_size = __bss_end - __bss_start;
-  /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) *(.ARM.attributes) }
+  /DISCARD/ : { *(.comment) *(.note*) *(.ARM.attributes) }
 }

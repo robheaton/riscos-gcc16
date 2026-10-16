@@ -2,7 +2,18 @@
    The command line from OS_GetEnv is the whole line, the program first ("RAM::RamDisc0.$.hello a "b c" d"): words are separated by spaces, a word in double quotes may hold spaces. */
 extern int main (int, char **, char **);
 extern void exit (int);
-extern void __libc_init_array (void);
+
+extern void (*__preinit_array_start[]) (void);
+extern void (*__preinit_array_end[]) (void);
+extern void (*__init_array_start[]) (void);
+extern void (*__init_array_end[]) (void);
+/* picolibc's __libc_init_array is empty in this build: the constructors (C++ static objects, __attribute__ ((constructor)), the registration of the unwind tables by crtbegin.o) are run here */
+static void run_init_arrays (void)
+{
+  void (**f) (void);
+  for (f = __preinit_array_start; f != __preinit_array_end; f++) (*f) ();
+  for (f = __init_array_start; f != __init_array_end; f++) (*f) ();
+}
 extern char __heap_start[];
 
 unsigned long __riscos_ramlimit;
@@ -37,6 +48,6 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 	}
     }
   argvec[argc] = 0;
-  __libc_init_array ();
+  run_init_arrays ();
   exit (main (argc, argvec, envvec));
 }

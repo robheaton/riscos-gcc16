@@ -295,3 +295,10 @@ int system (const char *cmd)
   if (!cmd) return 1;
   return swi_x (OS_CLI, r) ? -1 : 0;
 }
+
+/* Directory listing and free space are not provided (the C++ <filesystem> of libstdc++ refers to them): they fail with ENOSYS, so that std::filesystem reports an error instead of failing to link */
+struct statvfs;
+void *opendir (const char *path) { (void) path; errno = ENOSYS; return 0; }
+void *readdir (void *dir) { (void) dir; errno = EBADF; return 0; }
+int closedir (void *dir) { (void) dir; errno = EBADF; return -1; }
+int statvfs (const char *path, struct statvfs *buf) { (void) path; (void) buf; errno = ENOSYS; return -1; }

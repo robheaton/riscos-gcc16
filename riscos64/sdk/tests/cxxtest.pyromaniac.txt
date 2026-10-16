@@ -1,0 +1,13 @@
+*** /cxxtest
+static ctor
+hello from C++ on RISC OS 64, argc = 1, *p = 42
+apple 5
+cherry 6
+fig 3
+pear 4
+caught: an exception
+caught out_of_range
+atexit handler
+static dtor
+*** Done
+
