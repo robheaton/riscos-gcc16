@@ -96,6 +96,11 @@ int open (const char *path, int flags, ...)
   if (acc != O_RDONLY && (flags & O_CREAT) == 0 && r[0] == 0x80) r[0] = 0xC0;		/* no create without O_CREAT: open for update (the file must exist) */
   if (swi_x (OS_Find, r)) { errno = EIO; return -1; }
   if (r[0] == 0) { errno = ENOENT; return -1; }
+  if ((flags & O_TRUNC) && acc == O_RDWR)		/* "w+": opened for update above, which keeps the old contents: empty the file (OS_Args 3, extent 0) */
+    {
+      unsigned long q[10] = { 3, r[0], 0 };
+      swi_x (OS_Args, q);
+    }
   if (flags & O_APPEND)
     {
       unsigned long q[10] = { 2, r[0] };
