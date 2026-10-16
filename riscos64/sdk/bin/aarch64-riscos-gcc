@@ -38,7 +38,7 @@ if [ $link = 0 ]; then
   [ -n "$out" ] && exec $CC $CFL "${args[@]}" -o "$out"
   exec $CC $CFL "${args[@]}"
 fi
-[ -n "$out" ] || out=a
+[ -n "$out" ] || { out=a; [ -n "${RISCOS64_RAW:-}" ] && out=a.out; }
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/riscos64-cc.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 if [ -n "$module" ]; then
@@ -49,6 +49,7 @@ if [ -n "$module" ]; then
   exit 0
 fi
 case "$out" in *,*) final=$out;; *) final=$out,ff8;; esac
+[ -n "${RISCOS64_RAW:-}" ] && final=$out         # configure scripts want the file name they asked for (no ,ff8)
 $CC $CFL "${args[@]}" -nostdlib -static -T "$SDK/aif64.ld" -Wl,--no-warn-rwx-segments \
     "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" \
     -L"$PICO/lib" -Wl,--start-group -lc -lm -lgcc -Wl,--end-group -o "$tmp/prog.elf"
