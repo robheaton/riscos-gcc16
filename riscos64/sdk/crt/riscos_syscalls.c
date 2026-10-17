@@ -87,6 +87,7 @@ ssize_t read (int fd, void *buf, size_t n)
   return (ssize_t) (n - r[3]);				/* r3 = the bytes that were not transferred: 0 bytes read is the end of the file */
 }
 
+static int os_errno_of (unsigned long *r);
 int open (const char *path, int flags, ...)
 {
   unsigned long r[10] = { 0 };
@@ -94,7 +95,7 @@ int open (const char *path, int flags, ...)
   r[1] = (unsigned long) path;
   r[0] = acc == O_RDONLY ? 0x40 : (acc == O_WRONLY && (flags & O_TRUNC)) ? 0x80 : 0xC0;
   if (acc != O_RDONLY && (flags & O_CREAT) == 0 && r[0] == 0x80) r[0] = 0xC0;		/* no create without O_CREAT: open for update (the file must exist) */
-  if (swi_x (OS_Find, r)) { errno = EIO; return -1; }
+  if (swi_x (OS_Find, r)) { errno = os_errno_of (r); return -1; }
   if (r[0] == 0) { errno = ENOENT; return -1; }
   if ((flags & O_TRUNC) && acc == O_RDWR)		/* "w+": opened for update above, which keeps the old contents: empty the file (OS_Args 3, extent 0) */
     {

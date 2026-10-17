@@ -1,0 +1,37 @@
+diff --git a/libc/stdio/freopen.c b/libc/stdio/freopen.c
+index e275521256..62edf3e039 100644
+--- a/libc/stdio/freopen.c
++++ b/libc/stdio/freopen.c
+@@ -35,6 +35,21 @@
+ 
+ #include "local-stdio.h"
+ 
++/* A stream that freopen () has given a file of its own must close that file: the static stdin, stdout and stderr have __bufio_close_nf, which does not (RISC OS refuses to open a file that is still open) */
++static int
++freopen_close(FILE *f)
++{
++    struct __file_bufio *pf = (struct __file_bufio *)f;
++    int                  ret;
++
++    __bufio_lock(f);
++    ret = __bufio_flush_locked(f);
++    if (pf->close_int((int)(intptr_t)(pf->ptr)) < 0 && ret == 0)
++        ret = -1;
++    __bufio_lock_close(f);
++    return ret;
++}
++
+ FILE *
+ freopen(const char *pathname, const char *mode, FILE *stream)
+ {
+@@ -83,6 +98,10 @@ freopen(const char *pathname, const char *mode, FILE *stream)
+     if (buf_size != pf->size || (pf->bflags & __BLBF))
+         (pf->xfile.setvbuf ? pf->xfile.setvbuf : __bufio_setvbuf)(stream, NULL, _IOFBF, buf_size);
+ 
++    /* (after the setvbuf above: it may set the close function itself) */
++    if (pathname != NULL && !(pf->bflags & __BFALL))
++        pf->xfile.cfile.close = freopen_close;
++
+     ret = stream;
+     __bufio_unlock(stream);
+ exit:
