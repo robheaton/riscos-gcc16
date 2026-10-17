@@ -66,4 +66,6 @@ not supported.
 ## Limits of this stage
 
 The linker cannot write the AIF64 image itself (the AArch64 backend refuses a change of output format), so the driver runs `objcopy -O binary` (programs) or `modreloc64` (modules) after the link. There is no debug
-information yet that a RISC OS debugger reads. The compiler runs on a PC; a compiler that runs on RISC OS 64 needs the process model of UnixLib 64 first (see [UNIXLIB64.md](UNIXLIB64.md)).
+information yet that a RISC OS debugger reads. The compiler runs on a PC.
+
+**Tools that run on RISC OS 64 (experimental).** [`riscos64/ports/build-native-binutils.sh`](../riscos64/ports/build-native-binutils.sh) builds binutils 2.45.1 as programs for RISC OS 64, and [`build-native-gcc.sh`](../riscos64/ports/build-native-gcc.sh) does the same for GCC. On RISC OS Pyromaniac the GNU assembler, linker, `objcopy`, `objdump`, `readelf` and `ar` run: the assembler turns a `.s` file made by the cross compiler into an object, the linker links it with the SDK's start-up files and libraries, `objcopy -O binary` makes the AIF64 image, and the program runs and prints. The compiler proper (`cc1`, 34 MB) builds but has not been run yet: the build service gives a program only about 12 MB of application space. The driver (`gcc`) also needs the process model above to start `cc1`, `as` and `ld`.
