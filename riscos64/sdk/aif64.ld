@@ -13,8 +13,8 @@ SECTIONS
     KEEP(*crtbegin.o(.eh_frame))                    /* the unwind tables, in the order that crtbegin.o and crtend.o need: crtend.o has the zero word that ends the list */
     KEEP(*(EXCLUDE_FILE(*crtend.o *crtbegin.o) .eh_frame .eh_frame.*))
     KEEP(*crtend.o(.eh_frame))
+    . = ALIGN(16);
   }
-  . = ALIGN(16);
   __ro_end = .;
   .data : {
     *(.data .data.*)
@@ -30,6 +30,7 @@ SECTIONS
     KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
     KEEP(*(.fini_array .fini_array_onexit))
     PROVIDE_HIDDEN(__fini_array_end = .);
+    . = ALIGN(16);                                   /* inside the section: the image that objcopy writes is then exactly the read-only plus the read/write size of the header */
   }
   . = ALIGN(16);
   __data_end = .;

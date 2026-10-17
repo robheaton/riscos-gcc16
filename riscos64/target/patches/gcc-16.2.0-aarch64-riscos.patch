@@ -1,0 +1,44 @@
+--- a/gcc/config.gcc	2026-08-07 08:46:05.819684556 +0100
++++ b/gcc/config.gcc	2026-10-17 11:34:43.932368412 +0100
+@@ -1236,6 +1236,30 @@
+ esac
+ 
+ case ${target} in
++aarch64*-*-riscos*)
++	# RISC OS 64: AArch64 ELF objects, linked into AIF64 programs and 64-bit modules (riscos64/ in the repository)
++	tm_file="${tm_file} elfos.h newlib-stdint.h"
++	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-elf-raw.h aarch64/riscos.h"
++	tmake_file="${tmake_file} aarch64/t-aarch64"
++	use_gcc_stdint=wrap
++	extra_options="${extra_options} aarch64/riscos.opt"
++	aarch64_multilibs="${with_multilib_list}"
++	if test "$aarch64_multilibs" = "default"; then
++		aarch64_multilibs="lp64"
++	fi
++	aarch64_multilibs=`echo $aarch64_multilibs | sed -e 's/,/ /g'`
++	for aarch64_multilib in ${aarch64_multilibs}; do
++		case ${aarch64_multilib} in
++		lp64)
++			TM_MULTILIB_CONFIG="${TM_MULTILIB_CONFIG},${aarch64_multilib}"
++			;;
++		*)
++			echo "--with-multilib-list=${aarch64_multilib} not supported on riscos."
++			exit 1
++		esac
++	done
++	TM_MULTILIB_CONFIG=`echo $TM_MULTILIB_CONFIG | sed 's/^,//'`
++	;;
+ aarch64*-*-elf | aarch64*-*-fuchsia* | aarch64*-*-rtems*)
+ 	tm_file="${tm_file} elfos.h newlib-stdint.h"
+ 	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-elf-raw.h"
+--- a/libgcc/config.host	2026-08-07 08:46:09.988749343 +0100
++++ b/libgcc/config.host	2026-10-17 11:34:43.932583494 +0100
+@@ -389,7 +389,7 @@
+ esac
+ 
+ case ${host} in
+-aarch64*-*-elf | aarch64*-*-rtems*)
++aarch64*-*-elf | aarch64*-*-rtems* | aarch64*-*-riscos*)
+ 	extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o"
+ 	extra_parts="$extra_parts crtfastmath.o"
+ 	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
