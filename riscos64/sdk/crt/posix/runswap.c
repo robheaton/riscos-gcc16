@@ -55,6 +55,9 @@ int __ul64_swap_enabled (void)
 }
 
 /* 0: the command ran and the program is back; -1: not done (errno set; swap not enabled gives ENOSYS), the caller falls back to OS_CLI */
+/* the text of the error when OS_CLI could not start the command (e.g. "Cannot load file ... as memory is not valid") */
+char __ul64_run_error[256];
+
 int __ul64_run_swap (const char *cmd)
 {
   unsigned long r[10] = { 0, (unsigned long) -1, 4096, (unsigned long) -1, 0, 0, 0, 0, (unsigned long) "UL64 parent" };
@@ -95,13 +98,17 @@ int __ul64_run_swap (const char *cmd)
       { unsigned long s[10] = { 1, base, base + HANDLER_SIZE }; swi_x (OS_SynchroniseCodeAreas, s); }
       e[0] = 11; e[1] = base; e[2] = 0; e[3] = base + 0x1000 - 64;
       if (swi_x (OS_ChangeEnvironment, e)) { unsigned long k[10] = { 1, area }; swi_x (OS_DynamicArea, k); errno = ENOSYS; return -1; }
-      swi_x (OS_CLI, c);							/* if the child ends the normal way the handler takes over and this never returns */
+      {
+	int failed = swi_x (OS_CLI, c);						/* if the child ends the normal way the handler takes over and this never returns */
+	__ul64_run_error[0] = 0;
+	if (failed) { const char *m = (const char *) c[0] + 4; size_t i; for (i = 0; m[i] && i < sizeof __ul64_run_error - 1; i++) __ul64_run_error[i] = m[i]; __ul64_run_error[i] = 0; }
+      }
       {											/* the parent came back by itself: the kernel returned from OS_CLI (no copy needed) */
 	unsigned long b[10] = { 11, old_handler[0], old_handler[1], old_handler[2] };
 	unsigned long k[10] = { 1, area };
 	swi_x (OS_ChangeEnvironment, b);
 	swi_x (OS_DynamicArea, k);
-	return 0;
+	return __ul64_run_error[0] ? 2 : 0;
       }
     }
   {											/* back through the handler: the image and the stack are those of before the run */

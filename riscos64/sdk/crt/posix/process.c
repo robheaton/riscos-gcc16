@@ -28,37 +28,71 @@ static int return_code (void)				/* Sys$ReturnCode: the result of the program th
 }
 
 /* A program that RISC OS starts sees system variables, not this program's environ: before a command is run the variables that setenv and putenv made are set as system variables (literal strings), as UnixLib
-   does for exec.  They stay set afterwards. */
+   does for exec, and removed again when the command has ended (a variable that was set before is put back).  They must not stay: the next program started from the command line would find GCC's COMPILER_PATH
+   and COLLECT_GCC_OPTIONS and take them for its own. */
 extern char **environ;
+#define MAXEXPORT 64
+static struct { char name[96]; char *old; } exported[MAXEXPORT];
+static int nexported;
+
+static char *sysvar (const char *name)			/* the value of a system variable (malloc'd), or NULL */
+{
+  char buf[1024];
+  unsigned long r[10] = { (unsigned long) name, (unsigned long) buf, sizeof buf - 1, 0, 3 };
+  if (swi_x (OS_ReadVarVal, r) || r[2] >= sizeof buf) return 0;
+  buf[r[2]] = 0;
+  return strdup (buf);
+}
+static void setsysvar (const char *name, const char *value)	/* value NULL: remove it */
+{
+  unsigned long r[10] = { (unsigned long) name, (unsigned long) (value ? value : ""), value ? strlen (value) : (unsigned long) -1, 0, 4, 0, 0, 0, 0, 0 };
+  swi_x (0x24, r);					/* OS_SetVarVal, type 4: a literal string */
+}
 static void export_environ (void)
 {
   char **e;
+  nexported = 0;
   if (!environ) return;
-  for (e = environ; *e; e++)
+  for (e = environ; *e && nexported < MAXEXPORT; e++)
     {
       const char *eq = strchr (*e, '=');
-      char name[256];
       size_t n;
-      unsigned long r[10];
       if (!eq) continue;
       n = (size_t) (eq - *e);
-      if (n == 0 || n >= sizeof name) continue;
-      memcpy (name, *e, n); name[n] = 0;
-      r[0] = (unsigned long) name; r[1] = (unsigned long) (eq + 1); r[2] = strlen (eq + 1); r[3] = 0; r[4] = 4; r[5] = r[6] = r[7] = r[8] = r[9] = 0;
-      swi_x (0x24, r);					/* OS_SetVarVal, type 4: a literal string */
+      if (n == 0 || n >= sizeof exported[0].name) continue;
+      memcpy (exported[nexported].name, *e, n); exported[nexported].name[n] = 0;
+      exported[nexported].old = sysvar (exported[nexported].name);
+      setsysvar (exported[nexported].name, eq + 1);
+      nexported++;
     }
+}
+static void unexport_environ (void)
+{
+  int i;
+  for (i = 0; i < nexported; i++)
+    {
+      setsysvar (exported[i].name, exported[i].old);
+      free (exported[i].old);
+    }
+  nexported = 0;
 }
 
 /* run the command; the POSIX wait status of it: (result & 255) << 8, or 127 << 8 when RISC OS could not run it */
 extern int __ul64_run_swap (const char *cmd);
+extern char __ul64_run_error[];
 static int run (const char *cmd)
 {
   unsigned long r[10] = { (unsigned long) cmd };
   unsigned long clear[10] = { (unsigned long) "Sys$ReturnCode" , 0, (unsigned long) -1, 0, 0 };
   export_environ ();
   swi_x (0x24, clear);					/* OS_SetVarVal with a length of -1: remove the variable, so that an old result is not taken for this one */
-  if (__ul64_run_swap (cmd) == 0) return (return_code () & 255) << 8;	/* UnixEnv$swap=1: the parent is saved and comes back (runswap.c) */
-  if (swi_x (OS_CLI, r)) return 127 << 8;
+  {
+    int sr = __ul64_run_swap (cmd);
+    if (sr == 2) { unexport_environ (); fprintf (stderr, "%s\n", __ul64_run_error); return 127 << 8; }	/* the command could not be started */
+    if (sr == 0) { unexport_environ (); return (return_code () & 255) << 8; }
+  }	/* UnixEnv$swap=1: the parent is saved and comes back (runswap.c) */
+  if (swi_x (OS_CLI, r)) { unexport_environ (); fprintf (stderr, "%s\n", (const char *) r[0] + 4); return 127 << 8; }
+  unexport_environ ();
   return (return_code () & 255) << 8;
 }
 
