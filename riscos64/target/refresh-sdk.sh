@@ -7,6 +7,7 @@ PREFIX=$(cd "${1:?PREFIX of the installed tool chain}" && pwd); W=${2:-/var/tmp/
 T=$PREFIX/aarch64-riscos; CC=$PREFIX/bin/aarch64-riscos-gcc
 mkdir -p "$W/stubs"
 cp -a "$SDK/include/." "$T/include/"
+python3 "$SDK/fix-picolibc-stdio.py" "$T/include/stdio.h"
 for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
   $CC -O2 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -Wall -Wextra -c "$SDK/crt/$f" -o "$T/lib/${f%.*}.o"
 done

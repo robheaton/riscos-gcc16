@@ -7,8 +7,6 @@ PREFIX=$(cd "${1:?PREFIX of the aarch64-riscos tool chain}" && pwd); W=${2:?WORK
 SRC=${3:-$PREFIX/../target6-work/binutils-src}
 [ -d "$SRC" ] || { echo "no source at $SRC"; exit 1; }
 export PATH=$PREFIX/bin:$PATH
-# picolibc has putchar_unlocked etc. as macros with two arguments (and the SDK has some as functions without a declaration): tell configure that the *_unlocked functions are not there
-UNLOCKED=""; for f in getc putc getchar putchar fgetc fputc fputs fwrite fread fflush clearerr feof ferror fileno; do UNLOCKED="$UNLOCKED ac_cv_func_${f}_unlocked=no ac_cv_have_decl_${f}_unlocked=no"; done
 if [ ! -d "$W/src" ]; then
   cp -a "$SRC" "$W/src"
   sed -i 's|^#if O_BINARY$|#if 0 /* RISC OS: no text mode */|' "$W/src/include/binary-io.h"
@@ -22,6 +20,6 @@ PY
 fi
 mkdir -p "$W/build" && cd "$W/build"
 [ -f Makefile ] || "$W/src/configure" --host=aarch64-riscos --build=$(gcc -dumpmachine) --target=aarch64-riscos --prefix="$W/inst" --disable-nls --disable-werror --disable-gdb --disable-sim --disable-gprof --disable-plugins --disable-shared --enable-static \
-  ac_cv_func_getrusage=no $UNLOCKED CC="aarch64-riscos-gcc -munixlib" CFLAGS="-O2 -DHAVE_MEMRCHR=1" > configure.log 2>&1
+  ac_cv_func_getrusage=no CC="aarch64-riscos-gcc -munixlib" CFLAGS="-O2 -DHAVE_MEMRCHR=1" > configure.log 2>&1
 make -k -j"${J:-8}" all-binutils all-gas all-ld > make.log 2>&1 || true
 ls -l binutils/readelf binutils/objdump binutils/ar gas/as-new ld/ld-new 2>&1 | sed 's/^/  /'
