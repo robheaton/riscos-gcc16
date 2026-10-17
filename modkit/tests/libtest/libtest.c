@@ -62,7 +62,7 @@ extern int mk_errno;
 
 /* ---- the results: a hash of everything, and in verbose mode the text ---- */
 static unsigned g_hash, g_count, g_fail;
-static int g_verbose;
+static int g_verbose, g_trace;				/* g_trace (system variable LT_TRACE): a line "ok ..." for every check that holds, to see where a crash is */
 static const char *g_sect;
 static char g_line[9000];
 static size_t g_ll;
@@ -119,6 +119,7 @@ static void case_begin (unsigned i) { g_ll = 0; if (g_verbose) { vcat (g_sect); 
 static void case_end (void) { if (g_verbose) { g_line[g_ll] = 0; puts (g_line); } g_ll = 0; }
 static void check (int ok, const char *what)
 {
+  if (ok && g_trace) { char b[220] = "ok   "; t_cpy (b + 5, what); puts (b); }
   if (!ok)
     {
       char b[220] = "FAIL ", d[12];
@@ -2824,6 +2825,7 @@ int main (int argc, char **argv)
   setenv ("TZ", "UTC", 1);
   tzset ();
 #endif
+  { const char *v = getenv ("LT_TRACE"); if (v && *v) g_trace = 1; }
   { const char *v = getenv ("LT_VERBOSE"); if (v && *v) g_verbose = 1; }                           /* (a system variable on the machine and the interpreter: the results of every case, as -v on the host) */
 #if defined (T_HW)
   { const char *d = getenv ("Wimp$ScrapDir"); size_t l = d ? t_len (d) : 0; if (l > 150) l = 150; if (d) t_mov (g_fsbase, d, l); g_fsbase[l] = '.'; t_cpy (g_fsbase + l + 1, "MK");

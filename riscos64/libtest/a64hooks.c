@@ -88,6 +88,7 @@ static int model (unsigned swi, unsigned *r, unsigned *flags, oserr **err)
 	kpos++;
       }
       break;
+    case 0x5AB03 ... 0x5AB3F: break;                                                            /* the other test SWIs of the model (the file system's faults, &5AB07): nothing to do here, and they must never reach the kernel (they could be another module's SWIs) */
     default: return 0;
     }
   if (flags) *flags = fl;
