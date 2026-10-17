@@ -27,14 +27,17 @@ export PATH=$PREFIX/bin:$PATH
 step "GCC and libgcc"
 mkdir -p "$W/gcc-build" && cd "$W/gcc-build"
 "$W/gcc-src/configure" --target=aarch64-riscos --prefix="$PREFIX" --with-gmp="$H" --with-mpfr="$H" --with-mpc="$H" --enable-languages=c,c++ --without-headers --with-newlib --disable-nls --disable-shared \
-  --disable-threads --disable-libssp --disable-libgomp --disable-libquadmath --disable-libatomic --disable-multilib --disable-bootstrap --disable-werror > configure.log 2>&1
+  --disable-threads --disable-libssp --disable-libgomp --disable-libquadmath --disable-libatomic --disable-multilib --disable-bootstrap --disable-werror \
+  --disable-libstdcxx-pch --with-default-libstdcxx-abi=new --disable-libstdcxx-threads --disable-libstdcxx-filesystem-ts --disable-libstdcxx-backtrace > configure.log 2>&1
 make -j"$J" all-gcc > make-gcc.log 2>&1 && make install-gcc > install-gcc.log 2>&1
 make -j"$J" all-target-libgcc > make-libgcc.log 2>&1 && make install-target-libgcc > install-libgcc.log 2>&1
-step "the SDK files and picolibc into $PREFIX/aarch64-riscos"
+step "the SDK files and picolibc into $PREFIX/aarch64-riscos (before libstdc++: its configure links test programs)"
 T=$PREFIX/aarch64-riscos
 mkdir -p "$T/lib" "$T/include"
 cp -a "$PICO/include/." "$T/include/" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
 cp "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" "$T/lib/" && cp "$SDK/aif64.ld" "$T/lib/"
+step "libstdc++ (C++ for programs)"
+make -j"$J" all-target-libstdc++-v3 > make-libstdcxx.log 2>&1 && make install-target-libstdc++-v3 > install-libstdcxx.log 2>&1
 step "the module kit (aarch64-riscos-gcc -mmodule): runtime, C library, linker script, headers, modreloc64"
 KIT=$SDK/../kit; OUT=$KIT/../out/kit-lib
 [ -f "$OUT/libmodkit64.a" ] || { echo "run kit/build-kit.sh first (out/kit-lib)"; exit 1; }

@@ -18,6 +18,7 @@ SECTIONS
   __ro_end = .;
   .data : {
     *(.data .data.*)
+    *(.tm_clone_table) *(.igot.plt) *(.got) *(.got.plt)   /* (otherwise these are placed after the data by the linker, behind the padding that makes the file the size of its header) */
     . = ALIGN(8);
     PROVIDE_HIDDEN(__preinit_array_start = .);
     KEEP(*(.preinit_array))

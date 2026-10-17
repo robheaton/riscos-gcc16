@@ -22,9 +22,12 @@ Until now the programs and modules of `riscos64/` were made with the freestandin
   hello64_hdr.o -o Hello64,ffa`. `kit/module64.mk` works with it (`CC64` and `CMUNGE64_CC=aarch64-riscos-gcc`; `cmunge64` then assembles the module header with it). The kit library itself (`libmodkit64.a`) is still built by
   `kit/build-kit.sh` with the older compiler.
 
-Not done yet: C++ for programs with libstdc++, a sysroot layout for `--sysroot`, the `.ld`-level AIF64 output (no `objcopy`), building the kit library with this compiler, debug information for RISC OS, and tests
+* **C++ for programs:** `aarch64-riscos-g++` links libstdc++ and libsupc++ (built by `build-target.sh` with the new compiler, in `PREFIX/aarch64-riscos/lib`, headers in `include/c++`): containers, strings, iostream, exceptions,
+  static constructors and destructors, `atexit`. No threads, no `std::filesystem`, no locales but "C" (as with the SDK's wrapper).
+
+Not done yet: a sysroot layout for `--sysroot`, the `.ld`-level AIF64 output (no `objcopy`), building the kit library with this compiler, debug information for RISC OS, and tests
 beyond the examples.
 
 Tested on RISC OS Pyromaniac (17 October 2026): `sdk/tests/hello.c` and `sdk/tests/sdktest.c` (20 of 20 checks) compiled and linked with `aarch64-riscos-gcc` from this target run as the wrapper's do; the modules `Hello64` (8 of 8),
 `Cxx64` (C++, 8 of 8) and `Fpmod64` (floating point, 5 of 5) built with `-mmodule` / `-mmodule-fp` pass the tests of `kit/examples`, and `cxx64` built through `module64.mk` is byte for byte the same. The whole build
-(`build-target.sh`, binutils, GCC, libgcc and the SDK files) takes about 10 minutes on 22 cores. The wrapper `sdk/bin/aarch64-riscos-gcc` is still the supported way to build until this target has modules and C++.
+(`build-target.sh`, binutils, GCC, libgcc, libstdc++ and the SDK files) takes about 12 minutes on 22 cores; `sdk/tests/cxxtest.cc` built with `aarch64-riscos-g++` gives the same output as the wrapper's build. The wrapper `sdk/bin/aarch64-riscos-gcc` is still the supported way to build until this target has modules and C++.
