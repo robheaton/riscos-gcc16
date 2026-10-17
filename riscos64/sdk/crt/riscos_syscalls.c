@@ -16,6 +16,8 @@
 #include <unistd.h>
 
 extern int swi_x (unsigned long swi, unsigned long *regs);	/* swi.S: the SWI with the X bit set; 1 if V was set */
+int __riscos_tty_lflag = 0x11;				/* termios c_lflag of the console: ECHO | ICANON (termios.c changes it) */
+int __riscos_tty_vmin = 1;				/* termios c_cc[VMIN] */
 extern char __heap_start[];
 extern char *__riscos_heap_end;
 
@@ -30,6 +32,7 @@ extern char *__riscos_heap_end;
 #define OS_File 0x08
 #define OS_CLI 0x05
 #define OS_Word 0x07
+#define OS_Byte 0x06
 #define OS_ReadVarVal 0x23
 #define OS_ReadMonotonicTime 0x42
 #define OS_FSControl 0x29
@@ -73,6 +76,27 @@ ssize_t write (int fd, const void *buf, size_t n)
 ssize_t read (int fd, void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
+  if (fd == 0 && !(__riscos_tty_lflag & 0x10))		/* the keyboard, termios non-canonical: no line editing, returns when VMIN characters have come (0 = whatever is waiting) */
+    {
+      char *p = (char *) buf;
+      size_t k = 0, want = __riscos_tty_vmin > 0 ? (size_t) __riscos_tty_vmin : 0;
+      if (want > n) want = n;
+      while (k < n)
+	{
+	  unsigned long q[10] = { 0 };
+	  if (k >= want)
+	    {
+	      q[0] = 128; q[1] = 255;			/* OS_Byte 128: the number of characters waiting in the keyboard buffer */
+	      if (swi_x (OS_Byte, q) || (q[1] & 255) == 0) break;
+	      q[0] = q[1] = 0;
+	    }
+	  if (swi_x (OS_ReadC, q)) { errno = EIO; return -1; }
+	  if (q[1] == 1) return k ? (ssize_t) k : 0;
+	  p[k++] = (char) (q[0] & 255);
+	  if (__riscos_tty_lflag & 1) { unsigned long z[10] = { q[0] & 255 }; swi_x (OS_WriteC, z); }
+	}
+      return (ssize_t) k;
+    }
   if (fd == 0)						/* the keyboard: one line, echoed, with backspace; Escape ends the input */
     {
       char *p = (char *) buf;
