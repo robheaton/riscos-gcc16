@@ -6,6 +6,8 @@ import io, os, re, subprocess, sys, tempfile, time, zipfile
 def nm(path): return os.path.basename(os.path.dirname(os.path.abspath(path))) + "_" + os.path.basename(path)        # the folder and the name: tests of the same name in two folders (mpz/t-cmp, mpq/t-cmp)
 HERE = os.path.dirname(os.path.abspath(__file__))
 batch, timeout, out = 6, 300, "tests-results.txt"
+extra = []                                                      # --file PATH: a data file put next to the programs, its name as the tests ask for it with the dots made underscores (rofile.h)
+pre = []                                                        # --pre "Set NAME value": RISC OS commands run before the programs (the tests read their settings from system variables)
 progs = []
 a = sys.argv[1:]
 while a:
@@ -13,16 +15,20 @@ while a:
     if x == "--batch": batch = int(a.pop(0))
     elif x == "--timeout": timeout = int(a.pop(0))
     elif x == "--out": out = a.pop(0)
+    elif x == "--pre": pre.append(a.pop(0))
+    elif x == "--file": extra.append(a.pop(0))
     else: progs.append(x)
 ansi = re.compile(r"\x1b\[[0-9;]*m")
 def job(names):
     y = "%YAML 1.0\n---\njobs:\n  build:\n    env:\n      \"Sys$Environment\": ROBuild\n    script:\n"
+    for c in pre: y += "      - %s\n" % c
     for n in names: y += "      - echo *** %s\n      - /%s\n" % (nm(n), nm(n))
     y += "      - echo *** Done\n"
     z = io.BytesIO()
     with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(".robuild.yaml", y)
         for n in names: zf.write(n, nm(n) + ",ff8")
+        for e in extra: zf.write(e, os.path.basename(e).replace(".", "_"))
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f: f.write(z.getvalue()); path = f.name
     try: r = subprocess.run([sys.executable, os.path.join(HERE, "ws_build.py"), path, "--arch", "aarch64", "--timeout", str(timeout)], capture_output=True, text=True, timeout=timeout + 180)
     finally: os.unlink(path)

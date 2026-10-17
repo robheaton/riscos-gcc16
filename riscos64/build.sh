@@ -55,6 +55,15 @@ $P-gcc $CFLAGS -c "$HERE/src/mod64s.S" -o o/mod64s.o
 $P-gcc -nostdlib -static -T "$HERE/src/mod64sf.ld" -Wl,--no-warn-rwx-segments -o o/mod64s.elf o/mod64s.o
 $P-objcopy -O binary o/mod64s.elf "Mod64S,ffa"
 python3 -I "$HERE/tools/check_mod64.py" --name Mod64S --swis "Setup,Svc,Ring" --chunk 0x59AC0 --nocmds "Mod64S,ffa"
+# Mod64P: the service call probe of test pack 0.7 (assembler only, like Mod64S) and its test program t10svc
+$P-gcc $CFLAGS -c "$HERE/src/mod64p.S" -o o/mod64p.o
+$P-gcc -nostdlib -static -T "$HERE/src/mod64sf.ld" -Wl,--no-warn-rwx-segments -o o/mod64p.elf o/mod64p.o
+$P-objcopy -O binary o/mod64p.elf "Mod64P,ffa"
+python3 -I "$HERE/tools/check_mod64.py" --name Mod64P --swis "Setup,Get,Count,Add,Add32" --chunk 0x59B00 --nocmds "Mod64P,ffa"
+$P-gcc $CFLAGS -c "$HERE/src/t10svc.c" -o o/t10svc.o
+$P-gcc -nostdlib -static -T "$HERE/src/aif64.ld" -Wl,--no-warn-rwx-segments -o o/t10svc.elf o/aifhdr.o o/start.o o/swi.o o/rt.o o/t10svc.o
+$P-objcopy -O binary o/t10svc.elf o/t10svc.bin
+python3 "$HERE/tools/mkaif64.py" o/t10svc.bin "t10svc,ff8" o/t10svc.elf
 $P-gcc $CFLAGS -c "$HERE/src/fpregs.S" -o o/fpregs.o
 $P-gcc $CFLAGS -c "$HERE/src/t09fp.c" -o o/t09fp.o
 $P-gcc -nostdlib -static -T "$HERE/src/aif64.ld" -Wl,--no-warn-rwx-segments -o o/t09fp.elf o/aifhdr.o o/start.o o/swi.o o/rt.o o/fpregs.o o/t09fp.o
