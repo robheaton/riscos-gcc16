@@ -20,11 +20,13 @@ __asm__ (
   "	mov	x0, #10\n	adr	x1, exp_h_name\n	mov	x2, #0xFFD\n	mov	x3, #0\n"
   "	mov	x4, x16\n	add	x5, x16, #64\n"
   "	mov	x10, #8\n	orr	x10, x10, #0x20000\n	svc	#0\n"			/* OS_File 10: save */
+  "	mov	x0, #11\n	ldr	x1, [x16, #64]\n	mov	x2, #0\n	mov	x3, #0\n"				/* put the old exit handler back, or OS_Exit calls this one again */
+  "	mov	x10, #0x40\n	orr	x10, x10, #0x20000\n	svc	#0\n"
   "	mov	x0, #55\n	mov	x10, #0x11\n	orr	x10, x10, #0x20000\n	svc	#0\n"	/* OS_Exit */
   "1:	b	1b\n"
   ".balign 8\nexp_h_msg:	.asciz	\"[exit handler called]\\r\\n\"\n"
   "exp_h_name:	.asciz	\"exitreg\"\n"
-  ".balign 8\nexp_h_data:	.space	64\n"
+  ".balign 8\nexp_h_data:	.space	80\n"
   "exp_h_end:\n");
 extern char exp_h_start[], exp_h_end[];
 
@@ -45,6 +47,11 @@ int main (int argc, char **argv)
   base = r[3];
   memcpy ((void *) base, exp_h_start, n);
   { unsigned long s[10] = { 1, base, base + n }; swi_x (0x6E, s); }
+  {
+    unsigned long e[10] = { 11, 0, 0, 0 };
+    swi_x (0x40, e);									/* the handler that is set now */
+    *(unsigned long *) (base + (size_t) (exp_h_end - exp_h_start) - 16) = e[1];		/* into the data block, offset 64 */
+  }
   {
     unsigned long e[10] = { 11, base, 0, base + 0x1000 };				/* handler, r12 value, buffer */
     if (swi_x (0x40, e)) { printf ("OS_ChangeEnvironment 11 failed: %s\n", (char *) e[0] + 4); return 1; }

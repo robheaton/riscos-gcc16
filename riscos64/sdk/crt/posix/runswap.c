@@ -67,6 +67,7 @@ int __ul64_run_swap (const char *cmd)
   sp_now &= ~15UL;
   stack_len = (__riscos_ramlimit - sp_now + 15) & ~15UL;
   total = ((HANDLER_SIZE + DA_STACK + image + stack_len) + 4095) & ~4095UL;
+  r[2] = total;							/* the size now (all of it is written below) and the largest size */
   r[5] = total;
   if (swi_x (OS_DynamicArea, r)) { errno = ENOMEM; return -1; }
   area = r[1] & 0xFFFFFFFF;
