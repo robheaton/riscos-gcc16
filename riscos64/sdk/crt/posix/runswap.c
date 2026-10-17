@@ -47,7 +47,7 @@ static void resume (void)				/* called by the handler once the memory is back */
   longjmp (resume_point, 1);
 }
 
-static int swap_enabled (void)
+int __ul64_swap_enabled (void)
 {
   char buf[8];
   unsigned long r[10] = { (unsigned long) "UnixEnv$swap", (unsigned long) buf, sizeof buf - 1, 0, 3 };
@@ -61,7 +61,7 @@ int __ul64_run_swap (const char *cmd)
   unsigned long image = (unsigned long) __heap_start - IMAGE_BASE;
   unsigned long sp_now, stack_len, area, base, total, *d;
   char *p;
-  if (!swap_enabled ()) { errno = ENOSYS; return -1; }
+  if (!__ul64_swap_enabled ()) { errno = ENOSYS; return -1; }
   image = (image + 15) & ~15UL;
   sp_now = (unsigned long) __builtin_frame_address (0) - 256;			/* a little below this frame; the stack part is copied from here */
   sp_now &= ~15UL;

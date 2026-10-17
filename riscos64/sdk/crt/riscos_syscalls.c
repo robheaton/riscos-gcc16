@@ -265,10 +265,12 @@ void *sbrk (ptrdiff_t incr)
   return old;
 }
 
+extern void __ul64_vfork_exit (int) __attribute__ ((weak));	/* process.c: when a vfork "child" ends, go back to the parent instead */
 void _exit (int code)
 {
   static const struct { unsigned num; char msg[20]; } done = { 0, "Program finished" };
   unsigned long r[10] = { 0 };
+  if (__ul64_vfork_exit) __ul64_vfork_exit (code);
   if (da_mode == 1) { unsigned long q[10] = { 1, da_number }; swi_x (OS_DynamicArea, q); }		/* remove the heap */
   r[0] = (unsigned long) &done;
   r[1] = 0x58454241UL;					/* "ABEX" */

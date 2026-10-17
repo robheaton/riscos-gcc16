@@ -109,6 +109,26 @@ pid_t waitpid (pid_t pid, int *status, int options)
 }
 pid_t wait (int *status) { return waitpid (-1, status, 0); }
 
+extern int __ul64_swap_enabled (void);
+extern void __ul64_vfork_return (pid_t pid);		/* process.c asm: back to the vfork that is active, returning pid */
+int __ul64_vfork_depth;
+#define vfork_depth __ul64_vfork_depth					/* vfork calls waiting for their "child" to exec or _exit */
+
+/* the "child" of a vfork ended (exec has run the program, or _exit): record the status and let vfork return again, in the parent, with the pid of the child */
+static void vfork_finish (int status)
+{
+  int i;
+  pid_t pid = ++next_pid;
+  for (i = 0; i < NCHILD; i++) if (!children[i].pid) break;
+  if (i < NCHILD) { children[i].pid = pid; children[i].status = status; }
+  vfork_depth--;
+  __ul64_vfork_return (pid);
+}
+void __ul64_vfork_exit (int code)			/* called by _exit: does not return while a vfork child is running */
+{
+  if (vfork_depth > 0) vfork_finish ((code & 255) << 8);
+}
+
 int execv (const char *path, char *const argv[])
 {
   char b[1024], *cmd;
@@ -119,6 +139,7 @@ int execv (const char *path, char *const argv[])
   if (!cmd) { errno = ENOMEM; return -1; }
   status = run (cmd);
   if (status == (127 << 8)) { free (cmd); errno = ENOENT; return -1; }
+  if (vfork_depth > 0) { free (cmd); vfork_finish (status); }	/* the parent goes on after its vfork */
   _exit (status >> 8);						/* exec does not return: the program that was started has run, and this one ends with its result */
 }
 int execvp (const char *file, char *const argv[]) { return execv (file, argv); }
@@ -149,7 +170,40 @@ int execlp (const char *file, const char *arg0, ...)
 }
 
 pid_t fork (void) { errno = ENOSYS; return -1; }
-pid_t vfork (void) { errno = ENOSYS; return -1; }
+
+/* vfork: returns 0 (the "child", which may only call exec*, posix_spawn, _exit), and once more, in the parent, with the child's pid when the child has exec'd or ended.  The registers the caller keeps (x19-x30,
+   sp) are saved here; __ul64_vfork_return puts them back.  Needs the swap run (UnixEnv$swap=1), else -1 and ENOSYS (OS_CLI would replace this program).  The state is a stack, so vfork can nest. */
+#define VFORK_MAX 8
+unsigned long __ul64_vfork_regs[VFORK_MAX][14];
+__asm__ (
+  ".text\n.balign 4\n.global vfork\n.type vfork, %function\n"
+  "vfork:\n"
+  "	stp	x29, x30, [sp, #-32]!\n"
+  "	bl	__ul64_vfork_enter\n"			/* x0 = the buffer for this call, or 0 */
+  "	ldp	x29, x30, [sp], #32\n"
+  "	cbz	x0, 1f\n"
+  "	stp	x19, x20, [x0]\n	stp	x21, x22, [x0, #16]\n	stp	x23, x24, [x0, #32]\n	stp	x25, x26, [x0, #48]\n"
+  "	stp	x27, x28, [x0, #64]\n	stp	x29, x30, [x0, #80]\n"
+  "	mov	x1, sp\n	str	x1, [x0, #96]\n"
+  "	mov	x0, #0\n	ret\n"
+  "1:	mov	x0, #-1\n	ret\n"
+  ".size vfork, .-vfork\n"
+  ".global __ul64_vfork_return\n.type __ul64_vfork_return, %function\n"
+  "__ul64_vfork_return:\n"			/* x0 = the pid */
+  "	adrp	x9, __ul64_vfork_depth\n	ldr	w9, [x9, #:lo12:__ul64_vfork_depth]\n"	/* depth after the decrement = the index of the buffer */
+  "	adrp	x10, __ul64_vfork_regs\n	add	x10, x10, #:lo12:__ul64_vfork_regs\n"
+  "	mov	x11, #112\n	madd	x10, x9, x11, x10\n"
+  "	ldp	x19, x20, [x10]\n	ldp	x21, x22, [x10, #16]\n	ldp	x23, x24, [x10, #32]\n	ldp	x25, x26, [x10, #48]\n"
+  "	ldp	x27, x28, [x10, #64]\n	ldp	x29, x30, [x10, #80]\n"
+  "	ldr	x1, [x10, #96]\n	mov	sp, x1\n"
+  "	ret\n"
+  ".size __ul64_vfork_return, .-__ul64_vfork_return\n");
+unsigned long *__ul64_vfork_enter (void)
+{
+  if (!__ul64_swap_enabled () || vfork_depth >= VFORK_MAX) { errno = ENOSYS; return 0; }
+  return __ul64_vfork_regs[vfork_depth++];
+}
+int __ul64_vfork_depth_get (void) { return vfork_depth; }
 
 /* popen: through a file.  "r": the command runs now with its screen output spooled (*Spool) to a scrap file, which is what the stream reads (OS_CLI does not have the { > file } of the command line); "w": the stream writes
    a scrap file, and pclose runs the command with the file as its keyboard input (*Exec).  A program that the command starts replaces this one (see the comment at the top), so this works for the commands of the
