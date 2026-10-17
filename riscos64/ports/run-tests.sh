@@ -5,6 +5,7 @@
 # The result is WORKDIR/results-SUITE.txt (the failures, with their output) and WORKDIR/results-SUITE.log (the PASS and FAIL lines).  A program that exits with 77 is a test that skips itself (it is reported FAIL by the runner).
 # ONLY="name name" runs just these programs (folder_name as in the result files); SKIP_SLOW=1 leaves the second run out; SKIP="name name" leaves programs out of the first run (their folder_name, as in the result files).
 # After the first run the tests that timed out (rc=124) are run again, one at a time, with a limit of 900 s (most of the MPFR and MPC tests that time out at 300 s finish in that time); for GMP also with
+# AS_SLOW=1 (with ONLY) skips the first run.
 # GMP_CHECK_REPFACTOR=0.05 (GMP's tests take it from the environment: fewer repetitions of the random tests, which the emulator is too slow for at the default).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -31,8 +32,11 @@ PY
 if [ -n "${ONLY:-}" ]; then : > "$LIST.new"; for n in $ONLY; do grep "/${n%%_*}/${n#*_}\$" "$LIST" >> "$LIST.new"; done; mv "$LIST.new" "$LIST"; fi
 for n in ${SKIP:-}; do grep -v "/${n%%_*}/${n#*_}\$" "$LIST" > "$LIST.new" && mv "$LIST.new" "$LIST"; done
 echo "$(wc -l < "$LIST") programs"
+if [ -n "${AS_SLOW:-}" ]; then SLOW="$ONLY"	# AS_SLOW=1 with ONLY: the programs are known to be slow: only the second run, one at a time, with the longer limit
+else
 python3 "$RUN" --batch 8 --keep-names --out "$W/results-$SUITE.txt" $DATA $(cat "$LIST") | tee "$W/results-$SUITE.log" | tail -3
 SLOW=$([ -n "${SKIP_SLOW:-}" ] || grep '^===== FAIL .* rc=124' "$W/results-$SUITE.txt" | awk '{print $3}' || true)
+fi
 if [ -n "$SLOW" ]; then
   echo "timed out: $(echo $SLOW | tr '\n' ' '): again, one at a time, with a longer limit"
   ARGS=""
