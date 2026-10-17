@@ -68,9 +68,11 @@ mk_oserr *mk_error (u32 num, const char *msg)
 }
 
 /* ---- the entries ---- */
+static void find_kernel (void);
 KEEP mk_oserr *__modrt_init (const char *tail, int instance, void *pw)
 {
   mk_oserr *e;
+  find_kernel ();
   errbuf = mk_rma_claim (sizeof (mk_oserr));
   __mod_cxx_init ();
   e = module_init (tail, instance, pw);
@@ -85,7 +87,29 @@ KEEP mk_oserr *__modrt_final (int fatal, int podule, void *pw)
   errbuf = 0;
   return 0;
 }
-KEEP mk_oserr *__modrt_swi (int offset, mk_reg *regs, void *pw) { return fix_error (module_swi (offset, regs, pw)); }
+/* The kernel: the size of a slot of the register block of a SWI (and of a service call): 4 bytes on RISC OS Pyromaniac, 8 on a kernel with 64-bit slots.  It is found when the module starts: OS_ValidateAddress of the
+   low addresses says "valid" (x0 = 1) on Pyromaniac and "not valid" (x0 = 0) on a kernel with 64-bit slots, which is how they differ; and a service call, which has another convention on each, corrects it (see below). */
+int __mod_slot = 4;
+static int slot_known;
+static void find_kernel (void)
+{
+  u64 r[10] = { 0x100, 0x104 };
+  if (slot_known) return;
+  slot_known = 1;
+  if (!mk_swi (0x3A, r) && (r[0] & 0xFFFFFFFFUL) == 0) __mod_slot = 8;		/* OS_ValidateAddress */
+}
+KEEP mk_oserr *__modrt_swi (int offset, void *block, void *pw)
+{
+  mk_reg r[10], o[10];
+  mk_oserr *e;
+  int i;
+  if (__mod_slot == 8) for (i = 0; i < 10; i++) o[i] = r[i] = ((u64 *) block)[i];
+  else for (i = 0; i < 10; i++) o[i] = r[i] = ((u32 *) block)[i];
+  e = module_swi (offset, r, pw);
+  if (__mod_slot == 8) { for (i = 0; i < 10; i++) if (r[i] != o[i]) ((u64 *) block)[i] = r[i]; }
+  else { for (i = 0; i < 10; i++) if (r[i] != o[i]) ((u32 *) block)[i] = (u32) r[i]; }
+  return fix_error (e);
+}
 KEEP mk_oserr *__modrt_command (const char *args, int argc, int command, void *pw)
 {
   mk_oserr *e = module_command (command, args, argc, pw);
@@ -101,16 +125,24 @@ static void call_service (int number, u64 *x, void *pw)
   module_service (number, r, pw);
   for (i = 0; i < 10; i++) if (r[i] != o[i]) x[i] = r[i];
 }
-/* the fast entry gets x1 = the index of the number in the table; 1 for the first one on Pyromaniac; another kernel's convention may differ */
-KEEP void __modrt_service (u64 index, u64 *x, void *pw)
+/* A service call.  The kernels differ: RISC OS Pyromaniac calls the entry with the number in x1 and the other registers as the caller gave them (a claim is x1 = 0 on return); a kernel with 64-bit slots calls it with
+   x0 = the number and x1 = the ADDRESS of a block of 64-bit slots r0-r9 (r1 is the number too), x12 = the private word, and a claim is a 0 written into the r1 slot of the block.  The table of service
+   numbers that CMunge writes is read by Pyromaniac only if the entry starts with a RET, and not at all by a kernel with 64-bit slots, so the entry is a plain one that is called for every service, and the numbers of the module's list filter here.
+   x = the registers as the veneer saved them (x0-x9; what the module changes goes back to the registers). */
+KEEP void __modrt_service_any (u64 x0, u64 x1, u64 *x, void *pw)
 {
-  u64 i = 0;
-  if (index < 1) return;
-  while (i < index - 1 && __mod_svc_numbers[i]) i++;
-  if (i == index - 1 && __mod_svc_numbers[i]) call_service ((int) __mod_svc_numbers[i], x, pw);
+  u64 number;
+  u64 *regs;
+  if (x0 < 0x1000000 && x1 >= 0x1000000 && !(x1 & 7)) { number = x0; regs = (u64 *) x1; __mod_slot = 8; slot_known = 1; }
+  else { number = x1; regs = x; }
+  if (__mod_svc_numbers[0])
+    {
+      int i;
+      for (i = 0; __mod_svc_numbers[i]; i++) if (__mod_svc_numbers[i] == (u32) number) break;
+      if (!__mod_svc_numbers[i]) return;
+    }
+  call_service ((int) number, regs, pw);
 }
-/* the plain entry (a header with no service table) is called for every service, with the number in x1 */
-KEEP void __modrt_service_plain (u64 number, u64 *x, void *pw) { call_service ((int) number, x, pw); }
 
 /* the SWI decoding code: x0-x3 as the kernel gave them (in and out) */
 KEEP void __modrt_decode (u64 *x, void *pw)

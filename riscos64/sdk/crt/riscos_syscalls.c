@@ -1,5 +1,5 @@
 #define _GNU_SOURCE 1
-/* riscos_syscalls.c - the system calls that picolibc wants (open, close, read, write, lseek, fstat, sbrk, _exit, isatty), made with RISC OS 64 SWIs: OS_WriteN, OS_NewLine, OS_ReadC, OS_Find, OS_GBPB, OS_Args,
+/* riscos_syscalls.c - the system calls that picolibc wants (open, close, read, write, lseek, fstat, sbrk, _exit, isatty), made with RISC OS 64 SWIs: OS_Write0, OS_NewLine, OS_ReadC, OS_Find, OS_GBPB, OS_Args,
    OS_Exit.  The registers are those of the tests of riscos64/ (t05file passes on RISC OS Pyromaniac).  Descriptors 0, 1 and 2 are the keyboard and the screen; the others are
    RISC OS file handles plus 3 (so that no file is mistaken for the console). */
 #include <errno.h>
@@ -22,7 +22,7 @@ extern char *__riscos_heap_end;
 #define OS_WriteC 0x00
 #define OS_NewLine 0x03
 #define OS_ReadC 0x04
-#define OS_WriteN 0x46
+#define OS_Write0 0x02
 #define OS_Args 0x09
 #define OS_GBPB 0x0C
 #define OS_Find 0x0D
@@ -39,18 +39,24 @@ static int isfile (int fd) { return fd >= 3; }
 /* for UnixLib 64 and the other parts of the SDK that work on a descriptor: the RISC OS file handle of a descriptor, or -1 for the console */
 int __riscos_handle (int fd) { return isfile (fd) ? fdhandle (fd) : -1; }
 
-/* the screen: OS_WriteN for runs of text, OS_NewLine for each \n */
+/* the screen: OS_Write0 for runs of text (copied to a buffer with a 0 at the end), OS_WriteC for a 0 byte, OS_NewLine for each \n.  (These are the SWIs that every RISC OS has had from the start; OS_WriteN was used before.)  */
 static void put_text (const char *s, size_t n)
 {
   size_t i = 0;
+  char buf[256];
   while (i < n)
     {
-      size_t j = i;
-      unsigned long r[10] = { 0 };
-      while (j < n && s[j] != '\n') j++;
-      if (j > i) { r[0] = (unsigned long) (s + i); r[1] = j - i; swi_x (OS_WriteN, r); }
-      if (j < n) { unsigned long q[10] = { 0 }; swi_x (OS_NewLine, q); j++; }
-      i = j;
+      if (s[i] == '\n') { unsigned long q[10] = { 0 }; swi_x (OS_NewLine, q); i++; }
+      else if (s[i] == 0) { unsigned long q[10] = { 0 }; swi_x (OS_WriteC, q); i++; }
+      else
+	{
+	  size_t k = 0;
+	  unsigned long r[10] = { 0 };
+	  while (i < n && s[i] != '\n' && s[i] != 0 && k < sizeof buf - 1) buf[k++] = s[i++];
+	  buf[k] = 0;
+	  r[0] = (unsigned long) buf;
+	  swi_x (OS_Write0, r);
+	}
     }
 }
 
@@ -378,7 +384,7 @@ clock_t times (struct tms *t)							/* microseconds (picolibc's CLK_TCK is CLOCK
 /* getenv: the variables that the program set itself (setenv, putenv: picolibc keeps them in environ) first, then the system variables of RISC OS (OS_ReadVarVal, GSTrans'd, type 3).  The value of a system variable
    is kept in a small cache, so that the result of one call is not overwritten by the next call for another name (a name's value is replaced when the name is asked again).  */
 extern char **environ;
-char *getenv (const char *name)
+__attribute__ ((weak)) char *getenv (const char *name)
 {
   static struct { char *name, *val; } cache[32];
   static unsigned next;
@@ -397,10 +403,4 @@ char *getenv (const char *name)
   free (cache[i].val);
   cache[i].val = strdup (buf);
   return cache[i].val;
-}
-int system (const char *cmd)
-{
-  unsigned long r[10] = { (unsigned long) cmd };
-  if (!cmd) return 1;
-  return swi_x (OS_CLI, r) ? -1 : 0;
 }

@@ -143,10 +143,8 @@ def check_header(e, img, data, nrel):
         if zi != want: errs.append("the zero-initialised size in the header is %d, the linker's is %d" % (zi, want))
         if e.syms["__ZIStart"][0] != img["addr"] + n: errs.append("the zero-initialised area is not right after the image")
     else: errs.append("no flags word")
-    if 0 < h["service"] < n:                                   # a service table: the word before the entry is the offset of the table; the entry is RET
-        tab = w(h["service"] - 4)
-        if w(h["service"]) != 0xD65F03C0: errs.append("the service entry is not a RET: the kernel would call it for every service")
-        elif not (0 < tab < h["service"] and w(tab) == 1 and w(h["service"] - 8) == 0): errs.append("the service table is malformed")
+    if 0 < h["service"] < n:                                   # the service entry: a plain one, called for every service (a RET there would be the marker of a table, which only Pyromaniac reads: the kit does not use it)
+        if w(h["service"]) == 0xD65F03C0: errs.append("the service entry is a RET (the marker of a service table): the kit's entry is a plain one that filters the numbers itself (MOD_SERVICE_PLAIN)")
     o, nc = h["cmds"], 0
     while h["cmds"] and 0 < o < n - 20 and data[o] != 0 or (h["cmds"] and nc == 0 and data[o] != 0):
         e0 = data.index(b"\0", o); o = (e0 + 1 + 3) & ~3

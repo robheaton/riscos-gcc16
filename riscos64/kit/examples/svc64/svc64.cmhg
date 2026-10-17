@@ -1,0 +1,8 @@
+; svc64.cmhg - Svc64: a module with a service call handler; its test calls the kit's service entry as the two kernels do (the number in x1, or the number in x0 and the address of the register block in x1)
+title-string: Svc64
+help-string: Svc64 0.01
+date-string: 17 Oct 2026
+swi-chunk-base-number: 0x59C00
+swi-handler-code: sv_swi
+swi-decoding-table: Svc64 Check
+service-call-handler: sv_service 0x59BE1 0x59BE2

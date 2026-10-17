@@ -5,32 +5,12 @@
    - the module is linked at address 4 and loaded at a page plus 4; code and data are reached PC-relative; mod_reloc fixes the 64-bit words that hold addresses (reloc_table, written into the image by
      tools/modreloc64.py) the first time the module runs, then the zero-initialised area is cleared (the kernel allocates it, but *RMReInit does not clear it again);
    - entry registers as CMHG: init x0 -> tail, x1 = instance, x12 = private word; final x0 = fatal, x1 = podule, x12; SWI x0 = offset, x1 -> the register block, x12; commands x0 -> arguments,
-     x1 = count, x2 = command number (set by the stub in the command table), x12; service: the fast entry of the service table, x1 = the index of the number in the table. */
+     x1 = count, x2 = command number (set by the stub in the command table), x12; service: a plain entry for every service (two conventions, see __modrt_service_any in modrt64.c). */
 	.set	SWIBASE_UNUSED, 0
 #ifndef RELOC_CAP
 #define RELOC_CAP 1024				/* how many relocations the table has room for (4 bytes each) */
 #endif
 
-	.macro	MOD_SERVICE_TABLE nums:vararg		/* the service call table (flags 1, the fast entry, the numbers and a 0, the offset of the table), then the service entry itself: a RET, which is what marks a table */
-	.balign	4
-svc_table:
-	.word	1
-	.word	__mod_svc_fast - _mod_start
-	.irp	n, \nums
-	.word	\n
-	.endr
-	.word	0
-	.word	svc_table - _mod_start
-mod_service:
-	ret
-	.global	__mod_svc_numbers
-	.hidden	__mod_svc_numbers
-__mod_svc_numbers:				/* the same numbers, for the C part: index -> number */
-	.irp	n, \nums
-	.word	\n
-	.endr
-	.word	0
-	.endm
 
 	.section .text.header, "ax"
 __mod_reloc:				/* adds the distance between where the image was linked (or last relocated to: link_addr is itself in the table) and where it is now to every 64-bit word that the table lists.  Uses x0-x5, x16, x17. */
@@ -120,29 +100,8 @@ __mod_cmd_v:				/* x0 -> the arguments, x1 = the count, x2 = the command number,
 	bl	__modrt_command
 	ldp	x29, x30, [sp], #16
 	ret
-__mod_svc_fast:				/* x1 = the index in the table; the other registers as the caller gave them; they are given back, as the C part left them */
-	stp	x29, x30, [sp, #-112]!
-	mov	x29, sp
-	stp	x0, x1, [sp, #16]
-	stp	x2, x3, [sp, #32]
-	stp	x4, x5, [sp, #48]
-	stp	x6, x7, [sp, #64]
-	stp	x8, x9, [sp, #80]
-	str	x12, [sp, #96]
-	mov	x0, x1
-	add	x1, sp, #16
-	mov	x2, x12
-	bl	__modrt_service
-	ldp	x0, x1, [sp, #16]
-	ldp	x2, x3, [sp, #32]
-	ldp	x4, x5, [sp, #48]
-	ldp	x6, x7, [sp, #64]
-	ldp	x8, x9, [sp, #80]
-	ldr	x12, [sp, #96]
-	ldp	x29, x30, [sp], #112
-	ret
 
-	.macro	MOD_SERVICE_PLAIN			/* a header with no service table: the service entry is called for every service, x1 = the number */
+	.macro	MOD_SERVICE_PLAIN nums:vararg		/* the service entry: a plain one, called for every service (see __modrt_service_any in modrt64.c for the two conventions); the numbers of the module are a list for the filter there */
 mod_service:
 	stp	x29, x30, [sp, #-112]!
 	mov	x29, sp
@@ -152,10 +111,9 @@ mod_service:
 	stp	x6, x7, [sp, #64]
 	stp	x8, x9, [sp, #80]
 	str	x12, [sp, #96]
-	mov	x0, x1
-	add	x1, sp, #16
-	mov	x2, x12
-	bl	__modrt_service_plain
+	add	x2, sp, #16			/* x0 and x1 are still as the kernel gave them */
+	mov	x3, x12
+	bl	__modrt_service_any
 	ldp	x0, x1, [sp, #16]
 	ldp	x2, x3, [sp, #32]
 	ldp	x4, x5, [sp, #48]
@@ -164,6 +122,13 @@ mod_service:
 	ldr	x12, [sp, #96]
 	ldp	x29, x30, [sp], #112
 	ret
+	.global	__mod_svc_numbers
+	.hidden	__mod_svc_numbers
+__mod_svc_numbers:				/* the numbers, 0 at the end (an empty list: every service) */
+	.irp	n, \nums
+	.word	\n
+	.endr
+	.word	0
 	.endm
 
 	.section .data.rel, "aw"

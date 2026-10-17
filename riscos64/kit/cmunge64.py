@@ -119,8 +119,7 @@ def generate_asm(mk, m, src):
     A("#include \"modcore64.S\"")
     A("\t.section .text.header, \"ax\"")
     if has_svc:
-        if nums: A("\tMOD_SERVICE_TABLE %s" % ", ".join("%#x" % n for n in nums))
-        else: A("\tMOD_SERVICE_PLAIN")
+        A("\tMOD_SERVICE_PLAIN %s" % ", ".join("%#x" % n for n in nums) if nums else "\tMOD_SERVICE_PLAIN")
     else: A("\t.global\t__mod_svc_numbers\n\t.hidden\t__mod_svc_numbers\n__mod_svc_numbers:\n\t.word\t0\t\t\t\t\t/* no services: the kit's runtime refers to the list */")
     return "\n".join(o) + "\n"
 

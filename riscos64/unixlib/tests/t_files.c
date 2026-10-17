@@ -83,5 +83,5 @@ int main (void)
   CHECK (stat ("ultest", &st) != 0 && errno == ENOENT, "ultest is gone");
   CHECK (opendir ("nosuchdir") == NULL && errno == ENOENT, "opendir of a missing directory: ENOENT");
   printf ("SUMMARY %d failed\n", fails);
-  return 1;
+  return fails ? 2 : 0;
 }

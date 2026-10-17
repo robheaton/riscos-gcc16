@@ -1,5 +1,5 @@
 /* t_posix - UnixLib 64 / the SDK: the process and memory calls: environment, ids, uname, sleeping, mmap, limits, and the file calls with an equivalent (ftruncate, truncate, chmod, utime, realpath, fcntl).
-   Prints PASS/FAIL lines and a summary; exit code 1 so that the runner shows the output.  Built with  aarch64-riscos-gcc -munixlib t_posix.c */
+   Prints PASS/FAIL lines and a summary; exit code 0 if all passed, else 2.  Built with  aarch64-riscos-gcc -munixlib t_posix.c */
 #define _GNU_SOURCE 1
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,5 +102,5 @@ int main (int argc, char **argv)
   signal (SIGUSR1, SIG_IGN); got_sig = 0; CHECK (raise (SIGUSR1) == 0 && got_sig == 0, "an ignored signal does nothing");
   CHECK (kill (999999, SIGTERM) == -1 && errno == ESRCH, "kill of another process: ESRCH");
   printf ("SUMMARY %d failed\n", fails);
-  return 1;
+  return fails ? 2 : 0;
 }

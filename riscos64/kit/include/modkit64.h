@@ -13,17 +13,11 @@ extern "C" {
 #endif
 #pragma GCC visibility push(hidden)
 
-/* the slots of the register block of a SWI handler: 32 bits on RISC OS Pyromaniac (and in riscos64-clib), 64 bits for a kernel that uses 64-bit slots: -DMODKIT_SLOT=8 */
-#ifndef MODKIT_SLOT
-#define MODKIT_SLOT 4
-#endif
-#if MODKIT_SLOT == 8
-typedef uint64_t mk_reg;
-typedef int64_t mk_sreg;
-#else
+/* the registers of a SWI or a service call as the module sees them: 32 bits (the same as _kernel_swi_regs of CMHG handlers: int r[10]), whichever size the kernel's slots have.  The kernel's register block has slots of 32
+   bits (RISC OS Pyromaniac, riscos64-clib) or of 64 bits (a kernel with 64-bit slots); the kit's entry converts (the size is found when the module starts: __mod_slot in modrt64.c).  An address is its low 32 bits, which is
+   all of it for the RMA, the module and the heap; a result is zero extended into a 64-bit slot. */
 typedef uint32_t mk_reg;
 typedef int32_t mk_sreg;
-#endif
 typedef mk_reg mk_regs[10];			/* r0-r9 of a SWI; the flags word (r10) is not provided */
 
 typedef _kernel_oserror mk_oserr;

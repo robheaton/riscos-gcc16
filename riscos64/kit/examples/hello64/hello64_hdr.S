@@ -58,4 +58,4 @@ cmd1:	mov	x2, #1
 	b	__mod_cmd_v
 #include "modcore64.S"
 	.section .text.header, "ax"
-	MOD_SERVICE_TABLE SVC_NUMBER
+	MOD_SERVICE_PLAIN SVC_NUMBER

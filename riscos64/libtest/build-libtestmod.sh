@@ -32,7 +32,7 @@ $P-gcc $FL -Wall -Wno-unused-function -DT_HOSTLIB -DMK_NO_VARS -DT_FSDIR="\"${FS
     -c "$K/tests/libtest/libtest.c" -o "$OUT/o/libtest.o" 2> "$OUT/o/libtest.log" || { echo "FAILED libtest.c"; head -40 "$OUT/o/libtest.log"; exit 1; }
 # the module: the header from the CMHG file, the module's own code, the kit's runtime
 python3 "$KIT/cmunge64.py" -d "$OUT/libtestmodh.h" -o "$OUT/o/libtestmod_hdr.o" "$HERE/libtestmod.cmhg"
-$P-gcc $FL -Wall -Wextra -Wno-unused-parameter -I"$KIT/include" -I"$OUT" -c "$HERE/libtestmod.c" -o "$OUT/o/libtestmod.o"
+$P-gcc $FL -Wall -Wextra -Wno-unused-parameter -I"$KIT/include" -I"$OUT" -isystem "$K/include" -include modkit64.h -c "$HERE/libtestmod.c" -o "$OUT/o/libtestmod.o"
 "$KIT/build-kit.sh" >/dev/null
 LIBOBJ=$(for f in $LIBSRC; do echo "$OUT/o/$f.o"; done)
 $P-gcc -nostdlib -static -T "$KIT/module64.ld" -Wl,--no-warn-rwx-segments -Wl,--emit-relocs -Wl,-Map="$OUT/o/mod.map" \

@@ -10,6 +10,17 @@ while a:
     if x == "--arch": arch = a.pop(0)
     elif x == "--only": only = list(a); a = []
     else: only.append(x)
+
+def obey_lines(name):
+    """the commands of an Obey file of a test pack, for a dry run on the service (it has no *Obey): <T64$Dir>. is dropped, the current directory is the folder of the job"""
+    out = []
+    for l in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "obey", name + ",feb"), encoding="latin-1").read().split("\n"):
+        l = l.strip()
+        if not l or l.startswith("|") or l.startswith("Set T64$Dir") or l.startswith("Dir <T64$Dir>"): continue
+        out.append(l.replace("<T64$Dir>.", ""))
+    return out
+PACK08 = ["Cxx64,ffa", "Dec64,ffa", "Fpmod64,ffa", "Hello64,ffa", "Libmod64,ffa", "Svc64,ffa", "Swi64,ffa", "cxx64test,ff8", "cxxtest,ff8", "dec64test,ff8", "fpmod64test,ff8", "hello,ff8", "hello64test,ff8", "libmod64test,ff8", "libtest64,ff8", "sdktest,ff8",
+          "svc64test,ff8", "swi64test,ff8", "t_files,ff8", "t_posix,ff8", "t_proc,ff8", "t_riscosify,ff8", "testriscosify,ff8", "testunixify,ff8", "tst_seekdir,ff8"]
 JOBS = [("t01hello", ["/t01hello"]), ("t02swi", ["/t02swi"]), ("t03int", ["/t03int"]), ("t04fp", ["/t04fp"]), ("t05file", ["/t05file"]),
         ("mod64", ["RMLoad Mod64", "Mod64_Hello", "Help Mod64", "/t07mod", "RMKill Mod64"]),
         ("mod64d", ["RMLoad Mod64D", "RMLoad Mod64S", "Help Mod64D", "/t08data", "RMKill Mod64S", "RMKill Mod64D"]), ("mod64f", ["RMLoad Mod64F", "/t09fp", "RMKill Mod64F"]),
@@ -23,22 +34,26 @@ JOBS = [("t01hello", ["/t01hello"]), ("t02swi", ["/t02swi"]), ("t03int", ["/t03i
         ("fpmod64", ["RMLoad Fpmod64", "/fpmod64test", "RMKill Fpmod64"]),
         ("libmod64", ["RMLoad Libmod64", "/libmod64test", "RMKill Libmod64"]),
         ("swi64", ["RMLoad Swi64", "/swi64test", "RMKill Swi64"]),
+        ("pack08kit", obey_lines("Run64Kit")), ("pack08unix", obey_lines("Run64Unix")), ("pack08prog", obey_lines("Run64Prog")),
+        ("echotest", [l for l in obey_lines("Run64Kit") if l.startswith("Echo") or l.startswith("Spool")]),
+        ("spooltest", ["Spool ResultsX", "Echo hi there", "RMLoad Hello64", "Run hello64test", "RMKill Hello64", "Spool", "Type ResultsX"]),
+        ("svc64", ["RMLoad Svc64", "/svc64test", "RMKill Svc64"]),
         ("oslib64", ["Set OlT$Var hello there", "RMLoad OlTest", "OlTest", "RMKill OlTest"]),
         ("sdktest", ["/sdktest"]),
         ("zlib", ["/zlibtest", "/example foogz"]),
         ("cxxtest", ["/cxxtest"]),
-        ("ul_riscosify", ["/t_riscosify"]), ("ul_files", ["/t_files"]), ("ul_posix", ["/t_posix"]), ("ul_seekdir", ["/tst_seekdir"]), ("ul_oracle", ["Set UnixEnv$testriscosify$sfix c:o:h:cc:s:cpp", "Set UnixFS$/xxx xxx", "/testriscosify", "/testunixify"]),
+        ("ul_riscosify", ["/t_riscosify"]), ("ul_files", ["/t_files"]), ("ul_posix", ["/t_posix"]), ("ul_seekdir", ["/tst_seekdir"]), ("ul_proc", ["/t_proc"]), ("ul_oracle", ["Set UnixEnv$testriscosify$sfix c:o:h:cc:s:cpp", "Set UnixFS$/xxx xxx", "/testriscosify", "/testunixify"]),
         ("svcprobe", ["RMLoad Mod64P", "/t10svc", "RMKill Mod64P"]),
         ("fsdiff", ["/fsdiff"]), ("fsdiff3", ["/fsdiff args3"])]
 for _s in [x for x in os.environ.get("LT64_SECTIONS", "").split(",") if x]:         # LT64_SECTIONS=a,b,c: one job (and result file lt64-NAME) for each section of the library test
     JOBS.append(("lt64-" + _s, ["/libtest64 -only=" + _s]))
-FILES = {"t01hello": ["t01hello,ff8"], "t02swi": ["t02swi,ff8"], "t03int": ["t03int,ff8"], "t04fp": ["t04fp,ff8"], "t05file": ["t05file,ff8"], "mod64": ["Mod64,ffa", "t07mod,ff8"], "mod64d": ["Mod64D,ffa", "Mod64S,ffa", "t08data,ff8"], "mod64f": ["Mod64F,ffa", "t09fp,ff8"], "mod64r": ["Mod64D,ffa", "t08data,ff8"], "hello": ["hello,ff8"], "libc": ["libctest,ff8"], "lt64": ["libtest64,ff8"], "hello64": ["Hello64,ffa", "hello64test,ff8"], "libtestmod": ["LibTest64,ffa"], "dec64": ["Dec64,ffa", "dec64test,ff8"], "cxx64": ["Cxx64,ffa", "cxx64test,ff8"], "fpmod64": ["Fpmod64,ffa", "fpmod64test,ff8"], "libmod64": ["Libmod64,ffa", "libmod64test,ff8"], "swi64": ["Swi64,ffa", "swi64test,ff8"], "oslib64": ["OlTest,ffa"], "sdktest": ["sdktest,ff8"], "zlib": ["example,ff8", "zlibtest,ff8"], "cxxtest": ["cxxtest,ff8"], "svcprobe": ["Mod64P,ffa", "t10svc,ff8"], "ul_riscosify": ["t_riscosify,ff8"], "ul_files": ["t_files,ff8"], "ul_posix": ["t_posix,ff8"], "ul_seekdir": ["tst_seekdir,ff8"], "ul_oracle": ["testriscosify,ff8", "testunixify,ff8"], "fsdiff": ["fsdiff,ff8"], "fsdiff3": ["fsdiff,ff8"]}
+FILES = {"t01hello": ["t01hello,ff8"], "t02swi": ["t02swi,ff8"], "t03int": ["t03int,ff8"], "t04fp": ["t04fp,ff8"], "t05file": ["t05file,ff8"], "mod64": ["Mod64,ffa", "t07mod,ff8"], "mod64d": ["Mod64D,ffa", "Mod64S,ffa", "t08data,ff8"], "mod64f": ["Mod64F,ffa", "t09fp,ff8"], "mod64r": ["Mod64D,ffa", "t08data,ff8"], "hello": ["hello,ff8"], "libc": ["libctest,ff8"], "lt64": ["libtest64,ff8"], "hello64": ["Hello64,ffa", "hello64test,ff8"], "libtestmod": ["LibTest64,ffa"], "dec64": ["Dec64,ffa", "dec64test,ff8"], "cxx64": ["Cxx64,ffa", "cxx64test,ff8"], "fpmod64": ["Fpmod64,ffa", "fpmod64test,ff8"], "libmod64": ["Libmod64,ffa", "libmod64test,ff8"], "swi64": ["Swi64,ffa", "swi64test,ff8"], "svc64": ["Svc64,ffa", "svc64test,ff8"], "spooltest": ["Hello64,ffa", "hello64test,ff8"], "echotest": ["Hello64,ffa"], "pack08kit": PACK08, "pack08unix": PACK08, "pack08prog": PACK08, "oslib64": ["OlTest,ffa"], "sdktest": ["sdktest,ff8"], "zlib": ["example,ff8", "zlibtest,ff8"], "cxxtest": ["cxxtest,ff8"], "svcprobe": ["Mod64P,ffa", "t10svc,ff8"], "ul_riscosify": ["t_riscosify,ff8"], "ul_files": ["t_files,ff8"], "ul_posix": ["t_posix,ff8"], "ul_seekdir": ["tst_seekdir,ff8"], "ul_proc": ["t_proc,ff8"], "ul_oracle": ["testriscosify,ff8", "testunixify,ff8"], "fsdiff": ["fsdiff,ff8"], "fsdiff3": ["fsdiff,ff8"]}
 for _n, _c in JOBS:
     if _n.startswith("lt64-"): FILES[_n] = ["libtest64,ff8"]
 os.makedirs(out + "/service-results", exist_ok=True)
 def yaml(cmds):
     y = "%YAML 1.0\n---\njobs:\n  build:\n    env:\n      \"Sys$Environment\": ROBuild\n    script:\n"
-    for c in cmds: y += "      - echo *** %s\n      - %s\n" % (c, c)
+    for c in cmds: y += "      - %s\n      - %s\n" % (json.dumps("echo *** " + c.replace('"', "'")), json.dumps(c))          # (JSON strings are YAML strings: a command with ": " in it would be a mapping)
     y += "      - echo *** Done\n"
     return y
 def post(zipbytes, timeout=int(os.environ.get("SERVICE_TIMEOUT", "60"))):
