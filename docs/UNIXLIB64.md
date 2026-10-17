@@ -10,6 +10,7 @@ The first release has been started, in [`riscos64/unixlib/`](../riscos64/unixlib
 |---|---|
 | 1. File-name translation and directories | **done for the common cases**: UnixLib's `__riscosify`/`__unixify` ported (Unix names to RISC OS names and back, suffix swapping, `,xyz` file types, the special directories), `opendir`/`readdir`/`closedir`, `chdir`/`getcwd`/`rmdir`, `statvfs`, new files get a file type; not yet: the merging of suffix directories into the listing of the parent, `.` and `..` |
 | 2. Process and memory model | **started**: the heap is a dynamic area (grows to 1 GB), `getenv` sees what `setenv` set, `clearenv`, ids, `uname`, `gethostname`, `umask`, sleeping, `getrusage`, `getrlimit`, anonymous `mmap`, `ftruncate`, `chmod`, `utime`, `realpath`; `argv[0]` as a Unix path; not yet: `environ` from the system variables, exit handlers for a killed program, the Wimp slot |
+| 3. Terminal and console | **started** (written, test pending): `tcgetattr`/`tcsetattr`, `cfmakeraw`, `tcflush`, speeds; `read` on the keyboard without `ICANON` returns keys as they come (`ECHO`, `VMIN` honoured); `poll` and `select` (files always ready, keyboard by its buffer, timeouts); not yet `ioctl`, `kbhit`, `VTIME`, signals from `ISIG` |
 | 4. errno, locale, wide characters, iconv | not started (picolibc's own for now) |
 | 11. Tests | `riscos64/unixlib/tests` (translation, files, POSIX calls); and GMP, MPFR and MPC (`riscos64/ports`) built with `-munixlib`, whose tests use Unix file names, run on Pyromaniac |
 
