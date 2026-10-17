@@ -2,7 +2,8 @@
 #include <errno.h>
 #include <sys/socket.h>
 
-#define FAIL do { errno = ENOSYS; return -1; } while (0)
+extern void __ul64_nosys (const char *);
+#define FAIL do { __ul64_nosys (__func__); return -1; } while (0)
 int socket (int d, int t, int p) { (void) d; (void) t; (void) p; FAIL; }
 int socketpair (int d, int t, int p, int sv[2]) { (void) d; (void) t; (void) p; (void) sv; FAIL; }
 int bind (int s, const struct sockaddr *a, socklen_t l) { (void) s; (void) a; (void) l; FAIL; }

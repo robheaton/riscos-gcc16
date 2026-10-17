@@ -13,6 +13,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* Called by the calls of the SDK that are not implemented (they fail with ENOSYS): with the system variable UL64_TraceNosys set, the name goes to the error stream - the quickest way to find which
+   call a program needs. */
+void __ul64_nosys (const char *name)
+{
+  if (getenv ("UL64_TraceNosys")) { fputs ("[ENOSYS: ", stderr); fputs (name, stderr); fputs ("]\n", stderr); }
+  errno = ENOSYS;
+}
+
 size_t confstr (int name, char *buf, size_t len)
 {
   const char *s = 0;
@@ -21,6 +29,21 @@ size_t confstr (int name, char *buf, size_t len)
   if (len) { strncpy (buf, s, len); buf[len - 1] = 0; }
   return strlen (s) + 1;
 }
+/* pathconf: the limits of the file system of RISC OS 64 as the SDK implements them (a path up to 1024 characters, a leaf name up to 255) */
+long pathconf (const char *p, int name)
+{
+  (void) p;
+  switch (name)
+    {
+    case _PC_LINK_MAX: return 1;
+    case _PC_NAME_MAX: return 255;
+    case _PC_PATH_MAX: return 1024;
+    case _PC_PIPE_BUF: return 4096;
+    case _PC_NO_TRUNC: return 1;
+    default: errno = EINVAL; return -1;
+    }
+}
+long fpathconf (int fd, int name) { (void) fd; return pathconf ("/", name); }
 char *secure_getenv (const char *n) { return getenv (n); }
 int eaccess (const char *p, int m) { return access (p, m); }
 int getentropy (void *buf, size_t n)
@@ -40,8 +63,8 @@ int pselect (int n, fd_set *r, fd_set *w, fd_set *e, const struct timespec *ts, 
   return select (n, r, w, e, ts ? &tv : 0);
 }
 int madvise (void *a, size_t l, int adv) { (void) a; (void) l; (void) adv; return 0; }
-int mkfifo (const char *p, mode_t m) { (void) p; (void) m; errno = ENOSYS; return -1; }
-long syscall (long n, ...) { (void) n; errno = ENOSYS; return -1; }
+int mkfifo (const char *p, mode_t m) { (void) p; (void) m; __ul64_nosys ("mkfifo"); return -1; }
+long syscall (long n, ...) { (void) n; __ul64_nosys ("syscall"); return -1; }
 
 int fputc_unlocked (int c, FILE *f) { return fputc (c, f); }
 int fputs_unlocked (const char *s, FILE *f) { return fputs (s, f); }

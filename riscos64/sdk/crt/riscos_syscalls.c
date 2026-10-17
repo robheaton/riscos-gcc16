@@ -38,8 +38,15 @@ extern char *__riscos_heap_end;
 #define OS_ReadMonotonicTime 0x42
 #define OS_FSControl 0x29
 
-static int fdhandle (int fd) { return fd - 3; }
-static int isfile (int fd) { return fd >= 3; }
+/* dup: a RISC OS file handle cannot be duplicated, so a copy is a new descriptor number (ALIAS_BASE and up) that stands for the same handle; refs counts the descriptors that use each handle (the handle is closed
+   when the last one is closed).  The file position is shared, as it is for a dup'd descriptor.  Handles are 1-255. */
+#define ALIAS_BASE 1000
+#define NALIAS 256
+static int alias_to[NALIAS];				/* the real descriptor that ALIAS_BASE + i stands for, or 0 */
+static unsigned char refs[256];				/* descriptors per handle (0 = one: nothing was ever duplicated) */
+static int realfd (int fd) { return fd >= ALIAS_BASE && fd < ALIAS_BASE + NALIAS ? alias_to[fd - ALIAS_BASE] : fd; }
+static int fdhandle (int fd) { return realfd (fd) - 3; }
+static int isfile (int fd) { return realfd (fd) >= 3; }
 /* for UnixLib 64 and the other parts of the SDK that work on a descriptor: the RISC OS file handle of a descriptor, or -1 for the console */
 int __riscos_handle (int fd) { return isfile (fd) ? fdhandle (fd) : -1; }
 
@@ -160,7 +167,7 @@ int open (const char *path, int flags, ...)
       unsigned long q[10] = { 18, (unsigned long) path, filetype < 0 ? 0xFFF : (unsigned long) filetype };	/* OS_File 18: set the file type */
       swi_x (OS_File, q);
     }
-  if ((flags & O_TRUNC) && acc == O_RDWR)		/* "w+": opened for update above, which keeps the old contents: empty the file (OS_Args 3, extent 0) */
+  if ((flags & O_TRUNC) && acc != O_RDONLY && r[0] != 0 && !isnew)		/* opened for update above (O_RDWR, or O_WRONLY without O_CREAT), which keeps the old contents: empty the file (OS_Args 3, extent 0) */
     {
       unsigned long q[10] = { 3, r[0], 0 };
       swi_x (OS_Args, q);
@@ -172,16 +179,46 @@ int open (const char *path, int flags, ...)
       q[2] = q[2]; q[0] = 1; q[1] = r[0];
       swi_x (OS_Args, q);				/* OS_Args 1: set the pointer */
     }
+  refs[r[0] & 255] = 1;
   return (int) r[0] + 3;
 }
 
 int close (int fd)
 {
   unsigned long r[10] = { 0 };
+  int rf, h;
   if (!isfile (fd)) return 0;
-  r[0] = 0; r[1] = (unsigned long) fdhandle (fd);
+  rf = realfd (fd);
+  h = rf - 3;
+  if (fd >= ALIAS_BASE) alias_to[fd - ALIAS_BASE] = 0;
+  if (refs[h & 255] > 1) { refs[h & 255]--; return 0; }	/* another descriptor still has the handle */
+  refs[h & 255] = 0;
+  r[0] = 0; r[1] = (unsigned long) h;
   if (swi_x (OS_Find, r)) { errno = EIO; return -1; }
   return 0;
+}
+
+/* dup and dup2 of a file descriptor (not of the console: the screen and keyboard cannot be redirected to a file this way) */
+int __riscos_dup (int fd, int want)			/* want < 0: any free number; else that one (dup2) */
+{
+  int i, rf = realfd (fd), h = rf - 3;
+  if (rf < 3 || h < 0 || h > 255) { errno = rf >= 0 && rf < 3 ? ENOSYS : EBADF; return -1; }
+  if (want >= 0 && want == fd) return want;
+  if (want >= 0)
+    {
+      if (want < ALIAS_BASE || want >= ALIAS_BASE + NALIAS) { errno = ENOSYS; return -1; }	/* (only the numbers the SDK hands out for copies) */
+      if (alias_to[want - ALIAS_BASE]) close (want);
+      i = want - ALIAS_BASE;
+    }
+  else
+    {
+      for (i = 0; i < NALIAS && alias_to[i]; i++) ;
+      if (i == NALIAS) { errno = EMFILE; return -1; }
+    }
+  alias_to[i] = rf;
+  if (refs[h & 255] == 0) refs[h & 255] = 1;
+  refs[h & 255]++;
+  return ALIAS_BASE + i;
 }
 
 off_t lseek (int fd, off_t off, int whence)
@@ -312,6 +349,14 @@ int rename (const char *from, const char *to)
   char b1[ROSPATH], b2[ROSPATH];
   unsigned long r[10] = { 25 };
   if (!(from = ros_path (from, b1, 0, NULL)) || !(to = ros_path (to, b2, 1, NULL))) return -1;
+  {							/* POSIX rename replaces a file that is there; RISC OS refuses: delete it first (a directory is not replaced) */
+    unsigned long q[10] = { 17, (unsigned long) to };
+    if (!swi_x (OS_File, q) && q[0] == 1)
+      {
+	unsigned long d[10] = { 6, (unsigned long) to };
+	swi_x (OS_File, d);
+      }
+  }
   r[1] = (unsigned long) from; r[2] = (unsigned long) to;
   if (swi_x (OS_FSControl, r)) { errno = os_errno_of (r); return -1; }
   return 0;

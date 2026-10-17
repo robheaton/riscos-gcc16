@@ -13,6 +13,7 @@
 
 extern unsigned long swi_x (unsigned long swi, unsigned long regs[10]);
 extern int __riscos_handle (int fd);
+extern void __ul64_nosys (const char *);
 extern const char *__riscos_path (const char *name, char *buf, int create_dir);
 extern char *__unixify_std (const char *name, char *buffer, size_t buf_len, int filetype) __attribute__ ((weak));
 #define OS_File 0x08
@@ -38,7 +39,7 @@ int fcntl (int fd, int cmd, ...)
     {
     case F_GETFD: case F_SETFD: case F_SETFL: return 0;
     case F_GETFL: return O_RDWR;
-    case F_DUPFD: errno = ENOSYS; return -1;
+    case F_DUPFD: return dup (fd);
     default: errno = EINVAL; return -1;
     }
 }
@@ -88,7 +89,7 @@ int chmod (const char *path, mode_t mode)
     if (swi_x (OS_File, q)) { errno = os_err (q); return -1; } }
   return 0;
 }
-int fchmod (int fd, mode_t mode) { (void) fd; (void) mode; errno = ENOSYS; return -1; }
+int fchmod (int fd, mode_t mode) { (void) fd; (void) mode; return 0; }			/* (like chown: there is nothing to change; objcopy and cp call it on the file they have made) */
 int chown (const char *path, uid_t u, gid_t g) { (void) u; (void) g; return access (path, F_OK); }
 int fchown (int fd, uid_t u, gid_t g) { (void) fd; (void) u; (void) g; return 0; }
 
@@ -131,14 +132,15 @@ char *realpath (const char *path, char *resolved)
   if (__unixify_std) { if (!__unixify_std (ros, tmp, sizeof tmp, -1)) { errno = ENAMETOOLONG; return 0; } }
   else { strncpy (tmp, ros, sizeof tmp - 1); tmp[sizeof tmp - 1] = 0; }
   if (!resolved) return strdup (tmp);
-  strncpy (resolved, tmp, PATHMAX - 1); resolved[PATHMAX - 1] = 0;
+  memcpy (resolved, tmp, strlen (tmp) + 1);				/* (not strncpy: it pads with zeroes to the given size, and the caller's buffer may be smaller than PATHMAX: pathconf says what it is) */
   return resolved;
 }
 
-int dup (int fd) { (void) fd; errno = ENOSYS; return -1; }
-int dup2 (int fd, int fd2) { (void) fd; (void) fd2; errno = ENOSYS; return -1; }
-int pipe (int fds[2]) { (void) fds; errno = ENOSYS; return -1; }
-int link (const char *a, const char *b) { (void) a; (void) b; errno = ENOSYS; return -1; }
-int symlink (const char *a, const char *b) { (void) a; (void) b; errno = ENOSYS; return -1; }
+extern int __riscos_dup (int fd, int want);
+int dup (int fd) { return __riscos_dup (fd, -1); }
+int dup2 (int fd, int fd2) { if (fd2 < 0) { errno = EBADF; return -1; } return __riscos_dup (fd, fd2); }
+int pipe (int fds[2]) { (void) fds; __ul64_nosys ("pipe"); return -1; }
+int link (const char *a, const char *b) { (void) a; (void) b; __ul64_nosys ("link"); return -1; }
+int symlink (const char *a, const char *b) { (void) a; (void) b; __ul64_nosys ("symlink"); return -1; }
 ssize_t readlink (const char *p, char *buf, size_t n) { (void) p; (void) buf; (void) n; errno = EINVAL; return -1; }
 char *ttyname (int fd) { (void) fd; errno = ENOTTY; return 0; }
