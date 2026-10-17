@@ -44,8 +44,7 @@ Always available (with or without the option): the environment (`getenv` sees `s
 `getrlimit`, anonymous `mmap`, `fcntl`, `ioctl`, `fsync`, `ftruncate`, `truncate`, `chmod`, `utime`, `realpath`, `signal`/`raise`/`sigaction` over a table of handlers, `system`, `popen` (commands of the operating
 system), `posix_spawn`, `waitpid`.
 
-**Not done:** a program that starts another **program** (by `system`, `popen`, `posix_spawn` or `exec`) is replaced by it: RISC OS loads the child over the parent. Commands of the operating system (`*Set`, `*Echo`...) are
-fine. `fork` fails with `ENOSYS`. Also not yet: threads, sockets, `termios`, signals that arrive from outside (Escape, a timer), dynamic loading.
+**Running other programs.** RISC OS loads a program started by `OS_CLI` over the one that started it. With `*Set UnixEnv$swap 1` the C library keeps the parent: it copies its image and stack to a dynamic area, sets an exit handler that lives in that area, and when the child ends the handler copies everything back and the call returns. `system`, `popen` and `posix_spawn` of a program then return the child's status, `vfork` + `exec*` / `_exit` and `wait`/`waitpid` work (a `vfork` child may only call `exec*`, `posix_spawn` or `_exit`, as usual), and the calls nest. This is tried on RISC OS Pyromaniac (`riscos64/unixlib/tests/t_run.c`, `t_vfork.c`); it is off unless the variable is set, because other kernels have not been checked. Without it, a started program replaces its parent. Commands of the operating system (`*Set`, `*Echo`...) are always fine. `fork` fails with `ENOSYS`. Also not yet: threads, sockets, signals that arrive from outside (Escape, a timer), dynamic loading. `termios`, `poll` and `select` exist for the console (`tcgetattr`/`tcsetattr`, keys returned as they come without `ICANON`).
 
 ## A module
 
