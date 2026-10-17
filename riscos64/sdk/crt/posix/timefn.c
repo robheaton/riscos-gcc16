@@ -15,13 +15,25 @@ static unsigned long monotonic (void)			/* OS_ReadMonotonicTime: centiseconds */
   return r[0] & 0xFFFFFFFFUL;
 }
 
+extern void __ul64_poll_signals (void);
+extern int __ul64_take_signalled (void);
 int nanosleep (const struct timespec *req, struct timespec *rem)
 {
   unsigned long cs, start;
   if (!req || req->tv_sec < 0 || req->tv_nsec < 0 || req->tv_nsec >= 1000000000L) { errno = EINVAL; return -1; }
   cs = (unsigned long) req->tv_sec * 100 + (unsigned long) (req->tv_nsec + 9999999L) / 10000000L;
   start = monotonic ();
-  while (((monotonic () - start) & 0xFFFFFFFFUL) < cs) ;
+  while (((monotonic () - start) & 0xFFFFFFFFUL) < cs)
+    {
+      __ul64_poll_signals ();					/* Escape or an alarm ends the sleep early (the handler may leave by longjmp) */
+      if (__ul64_take_signalled ())
+	{
+	  unsigned long done = (monotonic () - start) & 0xFFFFFFFFUL;
+	  if (rem) { unsigned long left = done < cs ? cs - done : 0; rem->tv_sec = (time_t) (left / 100); rem->tv_nsec = (long) (left % 100) * 10000000L; }
+	  errno = EINTR;
+	  return -1;
+	}
+    }
   if (rem) rem->tv_sec = rem->tv_nsec = 0;
   return 0;
 }

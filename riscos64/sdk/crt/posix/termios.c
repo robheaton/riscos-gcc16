@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 extern int swi_x (unsigned long swi, unsigned long *regs);
+extern void __ul64_poll_signals (void);
 extern int __riscos_tty_lflag, __riscos_tty_vmin;
 
 static struct termios tty;
@@ -115,6 +116,7 @@ int poll (struct pollfd *fds, nfds_t n, int ms)
 	  if (got) ready++;
 	}
       if (ready || ms == 0) return ready;
+      __ul64_poll_signals ();
       if (ms > 0 && now () - start >= limit) return 0;
     }
 }
@@ -137,6 +139,7 @@ int select (int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
 	  if (FD_ISSET (fd, &ri) && (fd == 0 ? key_waiting () : fd > 2)) { FD_SET (fd, &ro); ready++; }
 	  if (FD_ISSET (fd, &wi) && fd != 0) { FD_SET (fd, &wo); ready++; }
 	}
+      __ul64_poll_signals ();
       if (ready || (tv && now () - start >= limit))
 	{
 	  if (r) *r = ro;

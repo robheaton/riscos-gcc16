@@ -18,6 +18,7 @@
 extern int swi_x (unsigned long swi, unsigned long *regs);	/* swi.S: the SWI with the X bit set; 1 if V was set */
 int __riscos_tty_lflag = 0x11;				/* termios c_lflag of the console: ECHO | ICANON (termios.c changes it) */
 int __riscos_tty_vmin = 1;				/* termios c_cc[VMIN] */
+extern void __ul64_poll_signals (void);			/* posix/signal.c: Escape as SIGINT, the alarm () time as SIGALRM */
 extern char __heap_start[];
 extern char *__riscos_heap_end;
 
@@ -66,7 +67,7 @@ static void put_text (const char *s, size_t n)
 ssize_t write (int fd, const void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
-  if (fd == 1 || fd == 2) { put_text ((const char *) buf, n); return (ssize_t) n; }
+  if (fd == 1 || fd == 2) { __ul64_poll_signals (); put_text ((const char *) buf, n); return (ssize_t) n; }
   if (!isfile (fd)) { errno = EBADF; return -1; }
   r[0] = 2; r[1] = (unsigned long) fdhandle (fd); r[2] = (unsigned long) buf; r[3] = n;
   if (swi_x (OS_GBPB, r)) { errno = EIO; return -1; }
@@ -91,7 +92,7 @@ ssize_t read (int fd, void *buf, size_t n)
 	      q[0] = q[1] = 0;
 	    }
 	  if (swi_x (OS_ReadC, q)) { errno = EIO; return -1; }
-	  if (q[1] == 1) return k ? (ssize_t) k : 0;
+	  if (q[1] == 1) { __ul64_poll_signals (); return k ? (ssize_t) k : 0; }
 	  p[k++] = (char) (q[0] & 255);
 	  if (__riscos_tty_lflag & 1) { unsigned long z[10] = { q[0] & 255 }; swi_x (OS_WriteC, z); }
 	}
@@ -106,7 +107,7 @@ ssize_t read (int fd, void *buf, size_t n)
 	  unsigned long q[10] = { 0 };
 	  int c;
 	  if (swi_x (OS_ReadC, q)) { errno = EIO; return -1; }
-	  if (q[1] == 1) return (ssize_t) k;		/* Escape */
+	  if (q[1] == 1) { __ul64_poll_signals (); return (ssize_t) k; }		/* Escape */
 	  c = (int) (q[0] & 255);
 	  if (c == 13 || c == 10) { unsigned long z[10] = { 0 }; swi_x (OS_NewLine, z); p[k++] = '\n'; break; }
 	  if ((c == 8 || c == 127) && k > 0) { unsigned long z[10] = { 127 }; swi_x (OS_WriteC, z); k--; continue; }
