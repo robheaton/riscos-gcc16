@@ -18,5 +18,5 @@ int main (void)
   printf ("calling %#lx\n", base);
   fflush (stdout);
   printf ("called: %ld\n", fn ());
-  return 1;
+  return 0;
 }

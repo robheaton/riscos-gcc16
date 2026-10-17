@@ -1,5 +1,5 @@
 /* exp_exit - E2 of the process model design: is the exit handler (OS_ChangeEnvironment 11) called when a CHILD program ends, and with what?  The handler is position independent code copied into a dynamic area (the
-   child is loaded over this program).  It saves x0-x3, x12, sp and the first words at sp to the area, writes the area to the file "exitreg" (OS_File 10), prints a marker and ends with OS_Exit code 55.
+   child is loaded over this program).  It saves x0-x3, x12, sp and the first words at sp to the area, writes the area to the file "exitreg" (OS_File 10), prints a marker and ends with OS_Exit (return code 0: a non-zero code would be an error on RISC OS, where Sys$RCLimit is 1).
    Run: exp_exit [command]   (default "t_child"); afterwards "*Type exitreg" is not useful (binary): the job reads it with exp_exit -d.  With -d it prints the saved registers. */
 #include <stdio.h>
 #include <string.h>
@@ -22,7 +22,7 @@ __asm__ (
   "	mov	x10, #8\n	orr	x10, x10, #0x20000\n	svc	#0\n"			/* OS_File 10: save */
   "	mov	x0, #11\n	ldr	x1, [x16, #64]\n	mov	x2, #0\n	mov	x3, #0\n"				/* put the old exit handler back, or OS_Exit calls this one again */
   "	mov	x10, #0x40\n	orr	x10, x10, #0x20000\n	svc	#0\n"
-  "	mov	x0, #55\n	mov	x10, #0x11\n	orr	x10, x10, #0x20000\n	svc	#0\n"	/* OS_Exit */
+  "	mov	x0, #0\n	movz	x1, #0x4241\n	movk	x1, #0x5845, lsl #16\n	mov	x2, #0\n	mov	x10, #0x11\n	orr	x10, x10, #0x20000\n	svc	#0\n"	/* OS_Exit */
   "1:	b	1b\n"
   ".balign 8\nexp_h_msg:	.asciz	\"[exit handler called]\\r\\n\"\n"
   "exp_h_name:	.asciz	\"exitreg\"\n"
@@ -63,5 +63,5 @@ int main (int argc, char **argv)
     unsigned long err = swi_x (0x05, c);						/* OS_CLI */
     printf ("OS_CLI returned (%s)\n", err ? "error" : "no error");			/* reached only if the parent survives */
   }
-  return 3;
+  return 0;
 }

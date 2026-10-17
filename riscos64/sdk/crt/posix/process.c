@@ -34,6 +34,8 @@ extern char **environ;
 #define MAXEXPORT 64
 static struct { char name[96]; char *old; } exported[MAXEXPORT];
 static int nexported;
+static char *old_rclimit;					/* Sys$RCLimit before the command: RISC OS turns a return code at or above it into an error, which a command line program that returns a status would trigger */
+static int rclimit_set;
 
 static char *sysvar (const char *name)			/* the value of a system variable (malloc'd), or NULL */
 {
@@ -48,10 +50,19 @@ static void setsysvar (const char *name, const char *value)	/* value NULL: remov
   unsigned long r[10] = { (unsigned long) name, (unsigned long) (value ? value : ""), value ? strlen (value) : (unsigned long) -1, 0, 4, 0, 0, 0, 0, 0 };
   swi_x (0x24, r);					/* OS_SetVarVal, type 4: a literal string */
 }
+static void setsysnum (const char *name, unsigned long v)
+{
+  unsigned int word = (unsigned int) v;
+  unsigned long r[10] = { (unsigned long) name, (unsigned long) &word, 4, 0, 1, 0, 0, 0, 0, 0 };
+  swi_x (0x24, r);					/* OS_SetVarVal, type 1: a number (R1 points at the word) */
+}
 static void export_environ (void)
 {
   char **e;
   nexported = 0;
+  old_rclimit = sysvar ("Sys$RCLimit");
+  setsysnum ("Sys$RCLimit", 0x7FFFFFFFUL);
+  rclimit_set = 1;
   if (!environ) return;
   for (e = environ; *e && nexported < MAXEXPORT; e++)
     {
@@ -69,6 +80,14 @@ static void export_environ (void)
 static void unexport_environ (void)
 {
   int i;
+  if (rclimit_set)
+    {
+      if (old_rclimit) setsysnum ("Sys$RCLimit", (unsigned long) atol (old_rclimit));
+      else setsysvar ("Sys$RCLimit", 0);
+      free (old_rclimit);
+      old_rclimit = 0;
+      rclimit_set = 0;
+    }
   for (i = 0; i < nexported; i++)
     {
       setsysvar (exported[i].name, exported[i].old);

@@ -18,5 +18,5 @@ int main (void)
       if (e) printf ("handler %2d: error &%X %s\n", h, ((unsigned *) q[0])[0], (char *) q[0] + 4);
       else printf ("handler %2d: r1 = %#lx r2 = %#lx r3 = %#lx\n", h, q[1], q[2], q[3]);
     }
-  return 1;
+  return 0;
 }
