@@ -45,6 +45,12 @@ log = open(out, "w")
 while rest:
     names = rest[:batch]; t0 = time.time()
     rc, text = job(names)
+    tries = 0
+    while rc == 255 and "*** " + nm(names[0]) not in text and tries < 4:		# the service dropped the connection before the job ran (nothing of it came back): wait and send the batch again
+        tries += 1
+        print("retry %d: the service dropped the connection (%s ...)" % (tries, nm(names[0])), flush=True)
+        time.sleep(30 * tries)
+        rc, text = job(names)
     marks = [m.group(1) for m in re.finditer(r"^\*\*\* (\S+)$", text, re.M) if m.group(1) != "Done"]
     done_ok = "*** Done" in text and rc == 0
     if done_ok:

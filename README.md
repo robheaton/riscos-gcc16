@@ -138,6 +138,7 @@ The test programs are in [tests/](tests/) and are described in [docs/TESTING.md]
 | [docs/MODULES.md](docs/MODULES.md) | modkit: building relocatable modules (experimental): what works, the C library of the kit, what does not yet, and the plan |
 | [docs/PORTING-FROM-4.7.4.md](docs/PORTING-FROM-4.7.4.md) | moving a module from GCCSDK 4.7.4: why, who should stay with it, what works as it is, what to change, what behaves differently |
 | [docs/RISCOS64.md](docs/RISCOS64.md) | RISC OS 64 (AArch64) on Pyromaniac: the tests, the module kit, the SDK, the library test |
+| [docs/AARCH64.md](docs/AARCH64.md) | the `aarch64-riscos` tool chain for RISC OS 64: build it, programs, C++, `-munixlib`, modules, what is tested and what is not |
 | [docs/MODULES64.md](docs/MODULES64.md) | writing modules for RISC OS 64 in C and C++: `aarch64-riscos-gcc -mmodule`, `cmunge64`, the C library, floating point, what is not supported |
 | [docs/UNIXLIB64.md](docs/UNIXLIB64.md) | a C library for programs on RISC OS 64: what UnixLib is (measured), three ways to port it, a component plan with hours, risks |
 | [docs/SHAREDULIB-FIX.md](docs/SHAREDULIB-FIX.md) | the optional fixed SharedUnixLibrary module: what it fixes, how to install it and go back |
