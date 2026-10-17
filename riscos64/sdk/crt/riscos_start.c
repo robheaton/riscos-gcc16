@@ -16,6 +16,19 @@ static void run_init_arrays (void)
   for (f = __init_array_start; f != __init_array_end; f++) (*f) ();
 }
 extern char __heap_start[];
+/* Thread-local storage for the one thread: the linker script puts .tdata and .tbss in the image and reserves __tls_space for the block; the initial values are copied there, and tpidr_el0 points at the thread control
+   block that AArch64 expects just before it (16 bytes, rounded up to the alignment of the TLS segment).  The anchors make sure that both sections exist, so that the script can ask for their alignment. */
+extern char __tdata_start[], __tdata_end[], __tbss_start[], __tbss_end[], __tls_space[], __tls_align[];
+__thread char __ul64_tls_anchor_d = 1;
+__thread char __ul64_tls_anchor_b;
+static void init_tls (void)
+{
+  unsigned long a = (unsigned long) __tls_align, i;
+  unsigned long tcb = (16 + a - 1) & ~(a - 1);
+  for (i = 0; i < (unsigned long) (__tdata_end - __tdata_start); i++) __tls_space[i] = __tdata_start[i];
+  for (i = (unsigned long) (__tbss_start - __tdata_start); i < (unsigned long) (__tbss_end - __tdata_start); i++) __tls_space[i] = 0;
+  __asm__ volatile ("msr tpidr_el0, %0" : : "r" ((unsigned long) __tls_space - tcb));
+}
 
 unsigned long __riscos_ramlimit;
 char *__riscos_heap_end;				/* sbrk may not go beyond it */
@@ -49,6 +62,7 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 	}
     }
   argvec[argc] = 0;
+  init_tls ();
   run_init_arrays ();
   if (__ul64_init) __ul64_init (argc, argvec);				/* UnixLib 64, if it is linked in (riscos64/unixlib) */
   exit (main (argc, argvec, envvec));

@@ -2,6 +2,13 @@
    "nonametrans" (no file name translation) and "sfix" (the suffixes that are swapped, default c:cc:f:h:i:ii:l:o:p:s:y), and the special directories (UnixFS$/<name>) of __riscosify.
    riscos_start.c of the SDK calls __ul64_init (argc, argv) before main () if this file is linked in.  Revised BSD licence (licenses/UnixLib-COPYING.txt).  */
 #include "ul64.h"
+#include <dirent.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
+
+/* References to the functions that libriscosstub.a also has as stubs (ENOSYS): code in libriscosstub.a that is linked in later (glob) needs these, and the stubs would be taken for it if UnixLib's were not
+   already in the link.  This file is always linked in with -munixlib (-u __ul64_init), so these are UnixLib's. */
+const void *const __ul64_exports[] = { (const void *) opendir, (const void *) readdir, (const void *) closedir, (const void *) statvfs, (const void *) chdir, (const void *) getcwd, (const void *) rmdir };
 
 static const char sfix_default[] = "c:cc:f:h:i:ii:l:o:p:s:y";
 

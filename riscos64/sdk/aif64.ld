@@ -33,10 +33,27 @@ SECTIONS
     PROVIDE_HIDDEN(__fini_array_end = .);
     . = ALIGN(16);                                   /* inside the section: the image that objcopy writes is then exactly the read-only plus the read/write size of the header */
   }
+  .tdata : {                                        /* thread-local data: the initial values (crt/riscos_start.c copies them to __tls_space and sets tpidr_el0) */
+    __tdata_start = .;
+    *(.tdata .tdata.* .gnu.linkonce.td.*)
+    . = ALIGN(16);
+    __tdata_end = .;
+  }
+  .tbss : {                                         /* (takes no room in the image: the linker does not advance the location counter over it) */
+    __tbss_start = .;
+    *(.tbss .tbss.* .gnu.linkonce.tb.*) *(.tcommon)
+    __tbss_end = .;
+  }
+  __tls_align = MAX (ALIGNOF (.tdata), ALIGNOF (.tbss));
   . = ALIGN(16);
   __data_end = .;
   __bss_start = .;
-  .bss : { *(.bss .bss.* COMMON) }
+  .bss : {
+    *(.bss .bss.* COMMON)
+    . = ALIGN(MAX (__tls_align, 16));
+    __tls_space = .;                                /* the thread-local block of the one thread: tdata then tbss */
+    . += __tbss_end - __tdata_start;
+  }
   . = ALIGN(16);
   __bss_end = .;
   _end = .;

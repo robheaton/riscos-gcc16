@@ -21,5 +21,7 @@ fi
 mkdir -p "$W/build" && cd "$W/build"
 [ -f Makefile ] || "$W/src/configure" --host=aarch64-riscos --build=$(gcc -dumpmachine) --target=aarch64-riscos --prefix="$W/inst" --disable-nls --disable-werror --disable-gdb --disable-sim --disable-gprof --disable-plugins --disable-shared --enable-static \
   ac_cv_func_getrusage=no CC="aarch64-riscos-gcc -munixlib" CFLAGS="-O2 -DHAVE_MEMRCHR=1" > configure.log 2>&1
+# configure ignores the cache variable in some directories: take getrusage out of the config.h files that mention it
+grep -rl "define HAVE_GETRUSAGE" --include=config.h . 2>/dev/null | xargs -r sed -i 's|^#define HAVE_GETRUSAGE 1|/* #undef HAVE_GETRUSAGE */|'
 make -k -j"${J:-8}" all-binutils all-gas all-ld > make.log 2>&1 || true
 ls -l binutils/readelf binutils/objdump binutils/ar gas/as-new ld/ld-new 2>&1 | sed 's/^/  /'

@@ -34,7 +34,7 @@ make -j"$J" all-target-libgcc > make-libgcc.log 2>&1 && make install-target-libg
 step "the SDK files and picolibc into $PREFIX/aarch64-riscos (before libstdc++: its configure links test programs)"
 T=$PREFIX/aarch64-riscos
 mkdir -p "$T/lib" "$T/include"
-cp -a "$PICO/include/." "$T/include/" && cp -a "$SDK/include/." "$T/include/" && python3 "$SDK/fix-picolibc-stdio.py" "$T/include/stdio.h" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
+cp -a "$PICO/include/." "$T/include/" && cp -a "$SDK/include/." "$T/include/" && python3 "$SDK/fix-picolibc-headers.py" "$T/include" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
 # the start-up files and the system calls of the SDK (sdk/crt), compiled with the new compiler
 CC=$PREFIX/bin/aarch64-riscos-gcc
 for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do

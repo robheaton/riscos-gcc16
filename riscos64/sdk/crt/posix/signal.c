@@ -8,6 +8,7 @@
 
 #define NSIG_ 65
 static void (*handlers[NSIG_]) (int);
+static char resethand[NSIG_];					/* SA_RESETHAND was set: the handler is used once */
 static sigset_t blocked;
 
 extern void _exit (int);
@@ -26,6 +27,7 @@ void (*signal (int sig, void (*handler) (int))) (int)
   if (sig <= 0 || sig >= NSIG_ || sig == SIGKILL || sig == SIGSTOP) { errno = EINVAL; return SIG_ERR; }
   old = handlers[sig];
   handlers[sig] = handler;
+  resethand[sig] = 0;
   return old;
 }
 
@@ -41,7 +43,7 @@ int raise (int sig)
       if (ignored_by_default (sig)) return 0;
       _exit (128 + sig);
     }
-  handlers[sig] = SIG_DFL;							/* ISO C: the default action is restored before the handler runs (unless SA_RESETHAND is not wanted: see sigaction) */
+  if (resethand[sig]) { handlers[sig] = SIG_DFL; resethand[sig] = 0; }	/* only for SA_RESETHAND: signal () has the BSD meaning, as in glibc and UnixLib, and keeps the handler */
   signalled = 1;
   h (sig);
   return 0;
@@ -63,7 +65,7 @@ int sigaction (int sig, const struct sigaction *act, struct sigaction *old)
       old->sa_flags = 0;
       sigemptyset (&old->sa_mask);
     }
-  if (act) handlers[sig] = act->sa_handler;
+  if (act) { handlers[sig] = act->sa_handler; resethand[sig] = (act->sa_flags & SA_RESETHAND) != 0; }
   return 0;
 }
 
@@ -120,6 +122,7 @@ unsigned int alarm (unsigned int seconds)
 }
 int pause (void)
 {
+  signalled = 0;
   for (;;)						/* until a signal handler has run */
     {
       __ul64_poll_signals ();

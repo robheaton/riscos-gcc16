@@ -23,6 +23,7 @@ int nanosleep (const struct timespec *req, struct timespec *rem)
   if (!req || req->tv_sec < 0 || req->tv_nsec < 0 || req->tv_nsec >= 1000000000L) { errno = EINVAL; return -1; }
   cs = (unsigned long) req->tv_sec * 100 + (unsigned long) (req->tv_nsec + 9999999L) / 10000000L;
   start = monotonic ();
+  __ul64_take_signalled ();					/* (a handler that ran before this call is not an interruption of it) */
   while (((monotonic () - start) & 0xFFFFFFFFUL) < cs)
     {
       __ul64_poll_signals ();					/* Escape or an alarm ends the sleep early (the handler may leave by longjmp) */

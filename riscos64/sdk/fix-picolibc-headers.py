@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""fix-picolibc-stdio.py STDIO.H: repairs two things in picolibc's <stdio.h> that GCC's and binutils' configure scripts trip over (idempotent):
+"""fix-picolibc-headers.py INCLUDEDIR: repairs things in picolibc's headers that GCC's and binutils' configure scripts trip over (idempotent):
+ * <sys/ioctl.h> defines TIOCGWINSZ but not struct winsize (it is in <sys/termios.h>): the include is added.
  * getchar_unlocked and putchar_unlocked are macros with the wrong number of arguments (getchar_unlocked (f), putchar_unlocked (c, f)); they take (void) and (c) in POSIX.
  * fputc_unlocked, fputs_unlocked, fread_unlocked, fwrite_unlocked, fflush_unlocked and fileno_unlocked have no prototype; the SDK (crt/posix/misc.c) defines them, and GCC's system.h calls them
    when configure finds them in the library."""
 import sys
-p = sys.argv[1]
+inc = sys.argv[1]
+io = inc + "/sys/ioctl.h"
+i = open(io).read()
+if "sys/termios.h" not in i:
+    i = i.replace("#define TIOCGWINSZ", "#include <sys/termios.h>\n#define TIOCGWINSZ", 1)
+    open(io, "w").write(i)
+p = inc + "/stdio.h"
 t = open(p).read()
 t = t.replace("#define getchar_unlocked(f)    getc(stdin)", "#define getchar_unlocked()     getc(stdin)")
 t = t.replace("#define putchar_unlocked(c, f) putc(c, stdout)", "#define putchar_unlocked(c)    putc(c, stdout)")
