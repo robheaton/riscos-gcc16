@@ -22,10 +22,9 @@
 * `-mmodule-fp` (instead of `-mmodule`) allows hardware floating point and vector registers in the module: Pyromaniac keeps the caller's v0-v31 and FPCR across a SWI of a module. `examples/fpmod64` computes in double precision in a module and passes on Pyromaniac; interrupt handlers and the other entries were not tested for this. The default stays `-mgeneral-regs-only`.
 * `build-kit.sh` builds the runtime objects (`out/kit-lib/modrt64.o`, `modswi64.o`); `examples/hello64/hello64test.c` is a program that tests the module (`tools/run_on_service.py`, job `hello64`: 8 checks pass on Pyromaniac).
 
-What is not decided: the slot width of the SWI register block (`-DMODKIT_SLOT=8` for a kernel with 64-bit slots; the default is 32 bits, Pyromaniac's), how a module
-claims a service call and what index the fast entry gets, floating point at EL1, vectors/IRQ/events.
+**Service calls and the register block.** The service entry of a module is a plain one, called for every service; the kit filters the numbers of the module's list itself and handles both conventions that are known:
+the number in `x1` with the other registers as the caller gave them (RISC OS Pyromaniac), or the number in `x0` with `x1` = the address of a block of 64-bit slots, a claim being a 0 written into r1 of the block. The
+handler (`module_service`, or the CMHG `service-call-handler`) is the same for both: it gets `r[0]`-`r[9]`, sets `r[1] = 0` to claim. The slots of the register block of a SWI are 32 bits on Pyromaniac and 64 bits on a kernel
+with 64-bit slots; the kit finds out when the module starts and converts, so a handler always sees `mk_reg` (32 bits, like `_kernel_swi_regs`). `examples/svc64` tests the service entry in both conventions.
 
-**C++ modules** (16 October 2026): `cxxrt64.c` and `cxxheap64.c` (libmodcxx64.a: static constructors and destructors, operator new/delete with the Itanium ABI names of LP64, guards of local statics, malloc on the RMA),
-`module-is-c-plus-plus:` in `cmunge64`, `.init_array` in `module64.ld`, `extern "C"` in the headers; `-mmodule` adds `-fno-exceptions -fno-rtti -fno-threadsafe-statics` for `.cc/.cpp/.cxx` files. No libstdc++ and no
-exceptions. `examples/cxx64` (virtual functions, new/delete, a template, a local static, static objects constructed before the module's initialisation and destroyed after its finalisation) passes its 8 checks on
-Pyromaniac. `tools/build-a64-toolchain.sh` builds the C++ compiler (`c,c++`, about 7 minutes on top of the C one).
+What is not decided: floating point at EL1 on kernels other than Pyromaniac (the example `fpmod64` works there), vectors/IRQ/events.

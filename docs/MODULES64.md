@@ -40,7 +40,8 @@ or with a Makefile that includes `riscos64/kit/module64.mk` (`MODULE`, `CMHG`, `
 ## What a module must know
 
 * A module is linked at address 4 and loaded at a page plus 4; it relocates its own pointers when it starts, and the kit clears its `.bss` at every start (Pyromaniac keeps `.data` and does not zero the area again after `*RMReInit`; another kernel may do either).
-* The registers of a SWI are passed as slots of **32 bits** by default (Pyromaniac); build with `-DMODKIT_SLOT=8` for a kernel that uses 64-bit slots. Addresses handed to SWIs through the library are cut to 32 bits: they must be below 4 GB, as they are today.
+* The registers of a SWI or of a service call reach your handler as 32-bit values (`mk_reg`, the same as `_kernel_swi_regs`), whatever the size of the slots of the kernel's register block (32 bits on Pyromaniac, 64 on a kernel with 64-bit slots: the kit converts). Addresses handed to SWIs through the library are cut to 32 bits: they must be below 4 GB, as they are today.
+* **Service calls:** the module's service entry is a plain one that the kernel calls for every service; the kit works out which convention the kernel uses and filters the numbers of your list. Set `r[1] = 0` in the handler to claim a service, as in CMHG.
 * A module's stack is the 32 KB SVC stack that the whole OS shares: a module that needs more claims its own (see `libtest/libtestmod.c`).
 * Not supported yet: interrupt handlers, vectors, events and callbacks (`cmunge64` refuses them with a message), runnable modules, sockets, C++ exceptions.
 

@@ -28,7 +28,7 @@ with the kit is described in [MODULES64.md](MODULES64.md).
 
 The complete output is in [`riscos64/results-pyromaniac/`](../riscos64/results-pyromaniac). What it showed: an AIF64 absolute built to the README's layout is entered at `&8100` and runs; the RAM limit that `OS_GetEnv` gave was
 `&C08000` (12 MB); an unknown SWI returns with the V flag set and the error `&1E6`; on Pyromaniac **the register block that a module's SWI handler receives has slots of 32 bits** (the SWI that reads 32-bit slots gives the right sum, the one that reads
-64-bit slots does not). A module written for one slot width reads wrong values on a kernel that uses the other: the kit has a switch (`-DMODKIT_SLOT=8` for 64-bit slots).
+64-bit slots does not). A module written for one slot width would read wrong values on a kernel that uses the other, so the kit finds the slot width when the module starts and converts (see [`MODULES64.md`](MODULES64.md)).
 
 ### Module test 0.4: what a C module needs from its own memory
 
