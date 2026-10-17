@@ -1,0 +1,36 @@
+*** /t_riscosify
+foo                           [0] foo  [1] foo  [2] foo  back: foo
+foo/bar                       [0] foo.bar  [1] foo.bar  [2] foo.bar  back: foo/bar
+foo/bar/baz                   [0] foo.bar.baz  [1] foo.bar.baz  [2] foo.bar.baz  back: foo/bar/baz
+foo.c                         [0] c.foo  [1] c.foo  [2] foo/c  back: foo.c
+src/main.c                    [0] src.c.main  [1] src.c.main  [2] src.main/c  back: src/main.c
+src/main.h                    [0] src.h.main  [1] src.h.main  [2] src.main/h  back: src/main.h
+a/b/c.o                       [0] a.b.o.c  [1] a.b.o.c  [2] a.b.c/o  back: a/b/o.c
+lib/libfoo.a                  [0] lib.libfoo/a  [1] lib.libfoo/a  [2] lib.libfoo/a  back: lib/libfoo.a
+readme.txt                    [0] readme/txt  [1] readme/txt  [2] readme/txt  back: readme/txt
+x.y.z                         [0] x.y.z  [1] x.y.z  [2] x/y/z  back: x/z.y
+/tmp/scratch                  [0] <Wimp$ScrapDir>.scratch  [1] <Wimp$ScrapDir>.scratch  [2] <Wimp$ScrapDir>.scratch  back: <Wimp$ScrapDir>/scratch
+/dev/null                     [0] null:  [1] null:  [2] null:  back: /null:
+file,ff8                      [0] file,ff8  [1] file (type ff8)  [2] file,ff8  back: file,ff8
+file.txt,fff                  [0] file/txt,fff  [1] file/txt  [2] file/txt,fff  back: file/txt,fff
+.                             [0] @  [1] @  [2] @  back: .
+..                            [0] ^  [1] ^  [2] ^  back: ..
+../x                          [0] ^.x  [1] ^.x  [2] ^.x  back: ../x
+./x                           [0] @.x  [1] @.x  [2] @.x  back: @/x
+dir/../x                      [0] dir.^.x  [1] dir.^.x  [2] dir.^.x  back: dir/../x
+a b                           [0] a b  [1] a b  [2] a b  back: a b
+A-B_c                         [0] A-B_c  [1] A-B_c  [2] A-B_c  back: A-B_c
+~/file.c                      [0] <Choices$Write>.c.file  [1] <Choices$Write>.c.file  [2] <Choices$Write>.file/c  back: <Choices$Write>/file.c
+adfs::4.$.foo                 [0] adfs::4.$.foo  [1] adfs::4.$.foo  [2] adfs::4.$.foo  back: /adfs::4.$/foo
+<Obey$Dir>.x                  [0] <Obey$Dir>.x  [1] <Obey$Dir>.x  [2] <Obey$Dir>.x  back: <Obey$Dir>/x
+ADFS::HardDisc4.$.dir.file    [0] ADFS::HardDisc4.$.dir.file  [1] ADFS::HardDisc4.$.dir.file  [2] ADFS::HardDisc4.$.dir.file  back: /ADFS::HardDisc4.$/dir/file
+$.dir.file                    [0] $.dir.file  [1] $.dir.file  [2] $.dir.file  back: /dir/file
+gcc:include/stdio.h           [0] gcc:include.h.stdio  [1] gcc:include.h.stdio  [2] gcc:include.stdio/h  back: /gcc:include/stdio.h
+@.x                           [0] @.x  [1] @.x  [2] @.x  back: @/x
+%.x                           [0] %.x  [1] %.x  [2] %.x  back: /lib/x
+a//b                          [0] a.b  [1] a.b  [2] a.b  back: a/b
+a/                            [0] a  [1] a  [2] a  back: a
+/                             [0] $  [1] $  [2] $  back: $
+c.foo                         [0] c.foo  [1] c.foo  [2] c/foo  back: foo.c
+h.bar.baz                     [0] h/bar/baz  [1] h/bar/baz  [2] h/bar/baz  back: h/bar/baz
+

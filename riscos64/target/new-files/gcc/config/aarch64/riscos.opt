@@ -25,3 +25,7 @@ Build a 64-bit module (not a program): no GOT, no floating point or vector regis
 mmodule-fp
 Target Var(riscos_module_fp) Init(0)
 As -mmodule, with the floating point and vector registers allowed in the module.
+
+munixlib
+Target Var(riscos_unixlib) Init(0)
+Link UnixLib 64: Unix file names are translated to RISC OS file names, with directories, the current directory and the system variables UnixEnv$... of UnixLib.

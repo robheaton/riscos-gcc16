@@ -41,6 +41,14 @@ for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
   $CC -O2 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -Wall -Wextra -c "$SDK/crt/$f" -o "$T/lib/${f%.*}.o"
 done
 cp "$SDK/aif64.ld" "$T/lib/"
+# libriscosstub.a: ENOSYS stubs of functions that only UnixLib 64 provides (one per object, so that libunixlib64.a, searched before it, wins)
+mkdir -p "$W/stubs"
+for f in "$SDK"/crt/stubs/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -Wall -Wextra -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
+"$PREFIX/bin/aarch64-riscos-ar" rcs "$T/lib/libriscosstub.a" "$W"/stubs/*.o
+# UnixLib 64 (unixlib/): -munixlib links it
+UL=$SDK/../unixlib
+CC=$CC AR=$PREFIX/bin/aarch64-riscos-ar "$UL/build.sh" "$W/unixlib" > "$W/unixlib-build.log" 2>&1
+cp "$W/unixlib/libunixlib64.a" "$T/lib/" && mkdir -p "$T/include/unixlib" && cp "$UL/include/unixlib/local.h" "$T/include/unixlib/"
 step "libstdc++ (C++ for programs)"
 make -j"$J" all-target-libstdc++-v3 > make-libstdcxx.log 2>&1 && make install-target-libstdc++-v3 > install-libstdcxx.log 2>&1
 step "the module kit (aarch64-riscos-gcc -mmodule): runtime and C library built with the new compiler, linker script, headers, modreloc64, cmunge64"

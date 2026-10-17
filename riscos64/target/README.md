@@ -26,6 +26,9 @@ Until now the programs and modules of `riscos64/` were made with the freestandin
 * **C++ for programs:** `aarch64-riscos-g++` links libstdc++ and libsupc++ (built by `build-target.sh` with the new compiler, in `PREFIX/aarch64-riscos/lib`, headers in `include/c++`): containers, strings, iostream, exceptions,
   static constructors and destructors, `atexit`. No threads, no `std::filesystem`, no locales but "C" (as with the SDK's wrapper).
 
+* **UnixLib 64:** `-munixlib` links `libunixlib64.a` (Unix file names, directories, the current directory: see [`../unixlib/`](../unixlib/)); `build-target.sh` builds it and installs it in `PREFIX/aarch64-riscos/lib`. `libriscosstub.a`
+  (always linked) has `ENOSYS` stubs of the functions that only UnixLib 64 provides (`opendir`, `chdir` ...).
+
 `build-target.sh` is the installer of this target (`sdk/` + `install-kit64.sh` still install the wrapper).
 
 Not done yet: the `.ld`-level AIF64 output (no `objcopy`: the linker would have to write the image itself), debug information for RISC OS, a `--sysroot` layout (everything is in `PREFIX/aarch64-riscos`, which GCC

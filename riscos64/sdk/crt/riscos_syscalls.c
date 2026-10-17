@@ -88,15 +88,41 @@ ssize_t read (int fd, void *buf, size_t n)
 }
 
 static int os_errno_of (unsigned long *r);
+
+/* UnixLib 64 (riscos64/unixlib, -lunixlib64) translates Unix file names to RISC OS names: it provides __riscosify_std.  Without it the names are used as they are given (the names of RISC OS). */
+extern char *__riscosify_std (const char *name, int create_dir, char *buffer, size_t buf_len, int *filetype) __attribute__ ((weak));
+#define ROSPATH 1024
+static const char *ros_path (const char *name, char *buf, int create_dir, int *filetype)
+{
+  if (!__riscosify_std) return name;
+  if (!__riscosify_std (name, create_dir, buf, ROSPATH, filetype)) { errno = ENAMETOOLONG; return NULL; }
+  return buf;
+}
+
 int open (const char *path, int flags, ...)
 {
   unsigned long r[10] = { 0 };
   int acc = flags & O_ACCMODE;
+  char rosbuf[ROSPATH];
+  int filetype = -1, isnew = 0;
+  const char *rospath = ros_path (path, rosbuf, (flags & O_CREAT) != 0, &filetype);
+  if (!rospath) return -1;
+  if (__riscosify_std && (flags & O_CREAT))						/* a file that is made gets the file type of its name (",xyz" or MimeMap), else Text */
+    {
+      unsigned long q[10] = { 17, (unsigned long) rospath };
+      isnew = !swi_x (OS_File, q) && q[0] == 0;
+    }
+  path = rospath;
   r[1] = (unsigned long) path;
   r[0] = acc == O_RDONLY ? 0x40 : (acc == O_WRONLY && (flags & O_TRUNC)) ? 0x80 : 0xC0;
   if (acc != O_RDONLY && (flags & O_CREAT) == 0 && r[0] == 0x80) r[0] = 0xC0;		/* no create without O_CREAT: open for update (the file must exist) */
   if (swi_x (OS_Find, r)) { errno = os_errno_of (r); return -1; }
   if (r[0] == 0) { errno = ENOENT; return -1; }
+  if (isnew)
+    {
+      unsigned long q[10] = { 18, (unsigned long) path, filetype < 0 ? 0xFFF : (unsigned long) filetype };	/* OS_File 18: set the file type */
+      swi_x (OS_File, q);
+    }
   if ((flags & O_TRUNC) && acc == O_RDWR)		/* "w+": opened for update above, which keeps the old contents: empty the file (OS_Args 3, extent 0) */
     {
       unsigned long q[10] = { 3, r[0], 0 };
@@ -233,7 +259,10 @@ static int os_errno_of (unsigned long *r)					/* the error block that came back 
 
 int unlink (const char *path)
 {
-  unsigned long r[10] = { 6, (unsigned long) path };
+  char b[ROSPATH];
+  unsigned long r[10] = { 6 };
+  if (!(path = ros_path (path, b, 0, NULL))) return -1;
+  r[1] = (unsigned long) path;
   if (swi_x (OS_File, r)) { errno = os_errno_of (r); return -1; }
   if (r[0] == 0) { errno = ENOENT; return -1; }					/* r0 = the type of the object that was deleted: 0 = there was none */
   return 0;
@@ -241,24 +270,33 @@ int unlink (const char *path)
 
 int rename (const char *from, const char *to)
 {
-  unsigned long r[10] = { 25, (unsigned long) from, (unsigned long) to };
+  char b1[ROSPATH], b2[ROSPATH];
+  unsigned long r[10] = { 25 };
+  if (!(from = ros_path (from, b1, 0, NULL)) || !(to = ros_path (to, b2, 1, NULL))) return -1;
+  r[1] = (unsigned long) from; r[2] = (unsigned long) to;
   if (swi_x (OS_FSControl, r)) { errno = os_errno_of (r); return -1; }
   return 0;
 }
 
 int mkdir (const char *path, mode_t mode)
 {
-  unsigned long r[10] = { 8, (unsigned long) path, 0, 0, 0 };
+  char b[ROSPATH];
+  unsigned long r[10] = { 8, 0, 0, 0, 0 };
   (void) mode;
+  if (!(path = ros_path (path, b, 0, NULL))) return -1;
+  r[1] = (unsigned long) path;
   if (swi_x (OS_File, r)) { errno = os_errno_of (r); return -1; }
   return 0;
 }
 
 int stat (const char *path, struct stat *st)
 {
-  unsigned long r[10] = { 17, (unsigned long) path };
+  char b[ROSPATH];
+  unsigned long r[10] = { 17 };
   char *p = (char *) st;
   size_t i;
+  if (!(path = ros_path (path, b, 0, NULL))) return -1;
+  r[1] = (unsigned long) path;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;
   if (swi_x (OS_File, r)) { errno = os_errno_of (r); return -1; }
   if (r[0] == 0) { errno = ENOENT; return -1; }
@@ -345,10 +383,3 @@ int system (const char *cmd)
   if (!cmd) return 1;
   return swi_x (OS_CLI, r) ? -1 : 0;
 }
-
-/* Directory listing and free space are not provided (the C++ <filesystem> of libstdc++ refers to them): they fail with ENOSYS, so that std::filesystem reports an error instead of failing to link */
-struct statvfs;
-void *opendir (const char *path) { (void) path; errno = ENOSYS; return 0; }
-void *readdir (void *dir) { (void) dir; errno = EBADF; return 0; }
-int closedir (void *dir) { (void) dir; errno = EBADF; return -1; }
-int statvfs (const char *path, struct statvfs *buf) { (void) path; (void) buf; errno = ENOSYS; return -1; }

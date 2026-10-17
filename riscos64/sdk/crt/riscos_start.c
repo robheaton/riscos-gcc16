@@ -1,6 +1,7 @@
 /* riscos_start.c - the C start-up of a hosted program: copy the command line into argv[], set the limits of the heap (sbrk) and of the stack, run the constructors, call main and exit.
    The command line from OS_GetEnv is the whole line, the program first ("RAM::RamDisc0.$.hello a "b c" d"): words are separated by spaces, a word in double quotes may hold spaces. */
 extern int main (int, char **, char **);
+extern void __ul64_init (int, char **) __attribute__ ((weak));
 extern void exit (int);
 
 extern void (*__preinit_array_start[]) (void);
@@ -49,5 +50,6 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
     }
   argvec[argc] = 0;
   run_init_arrays ();
+  if (__ul64_init) __ul64_init (argc, argvec);				/* UnixLib 64, if it is linked in (riscos64/unixlib) */
   exit (main (argc, argvec, envvec));
 }

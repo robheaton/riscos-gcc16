@@ -3,6 +3,7 @@
 #   compiling (-c -S -E): -ffixed-x18 (x18 is reserved), -mstrict-align, the headers of picolibc;
 #   linking: the AIF64 header and start-up code, the system calls that picolibc wants (made with SWIs), picolibc's libc and libm, the linker script (linked at &8000), and then the AIF64 file:
 #            "-o hello" makes hello,ff8 (a name that already has a comma suffix is used as it is).
+#   -munixlib: link UnixLib 64 (unixlib/, build it with unixlib/build.sh first): Unix file names are translated to RISC OS names, directories ...
 #   -mmodule-fp: as -mmodule, with hardware floating point and vector registers allowed in the module (Pyromaniac keeps the caller's state across a module's SWI).
 #   -mmodule: a 64-bit MODULE instead of a program (file type &FFA): the options of kit/modflags.sh, the kit's headers (kit/include, <modkit64.h>) and no C library; linked with kit/module64.ld and the
 #            kit's runtime (kit/lib), made into a flat image by tools/modreloc64.py:  "-o Hello64" makes Hello64,ffa.  The module's header (hello64_hdr.S in kit/examples) is one of the files.
@@ -23,7 +24,9 @@ if [ -n "$cxx" ]; then V=$($CC -dumpversion); CFL="-isystem $CXXROOT/include/c++
 link=1; out=; args=(); module=
 KIT=$(cd "$SDK/../kit" && pwd)
 modfp=
-for a in "$@"; do [ "$a" = -mmodule ] && module=1; [ "$a" = -mmodule-fp ] && { module=1; modfp=1; }; done
+unixlib=
+for a in "$@"; do [ "$a" = -mmodule ] && module=1; [ "$a" = -mmodule-fp ] && { module=1; modfp=1; }; [ "$a" = -munixlib ] && unixlib=1; done
+[ -n "$unixlib" ] && CFL="$CFL -I$SDK/../unixlib/include"
 if [ -n "$module" ]; then
   . "$KIT/modflags.sh"
   CFL="$MODFLAGS -I$KIT/include -I$KIT -isystem $KIT/../../modkit/include"
@@ -32,7 +35,7 @@ if [ -n "$module" ]; then
 fi
 while [ $# -gt 0 ]; do
   case "$1" in
-    -mmodule|-mmodule-fp) ;;
+    -mmodule|-mmodule-fp|-munixlib) ;;
     -c|-S|-E|-M|-MM) link=0; args+=("$1");;
     -o) out=$2; shift;;
     -o*) out=${1#-o};;
@@ -58,7 +61,7 @@ case "$out" in *,*) final=$out;; *) final=$out,ff8;; esac
 [ -n "${RISCOS64_RAW:-}" ] && final=$out         # configure scripts want the file name they asked for (no ,ff8)
 $CC $CFL $( [ -n "$cxx" ] && $CC -print-file-name=crtbegin.o ) "${args[@]}" -nostdlib -static -T "$SDK/aif64.ld" -Wl,--no-warn-rwx-segments \
     "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" \
-    -L"$PICO/lib" -L"$CXXROOT/lib" -Wl,--start-group $( [ -n "$cxx" ] && echo "-lstdc++ -lsupc++" ) -lc -lm -lgcc -Wl,--end-group $( [ -n "$cxx" ] && $CC -print-file-name=crtend.o ) -o "$tmp/prog.elf"
+    $( [ -n "$unixlib" ] && echo "-Wl,-u,__ul64_init $SDK/../unixlib/out/libunixlib64.a" ) -L"$PICO/lib" -L"$CXXROOT/lib" -Wl,--start-group $( [ -n "$cxx" ] && echo "-lstdc++ -lsupc++" ) -lc -lm "$SDK/lib/libriscosstub.a" -lgcc -Wl,--end-group $( [ -n "$cxx" ] && $CC -print-file-name=crtend.o ) -o "$tmp/prog.elf"
 [ -n "${RISCOS64_KEEPELF:-}" ] && cp "$tmp/prog.elf" "$RISCOS64_KEEPELF"          # for debugging: the ELF file before it is made into an AIF64 absolute
 $A64/aarch64-none-elf-objcopy -O binary "$tmp/prog.elf" "$tmp/prog.bin"
 python3 -I "$SDK/bin/mkaif64.py" "$tmp/prog.bin" "$final" "$tmp/prog.elf"

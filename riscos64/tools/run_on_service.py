@@ -27,11 +27,12 @@ JOBS = [("t01hello", ["/t01hello"]), ("t02swi", ["/t02swi"]), ("t03int", ["/t03i
         ("sdktest", ["/sdktest"]),
         ("zlib", ["/zlibtest", "/example foogz"]),
         ("cxxtest", ["/cxxtest"]),
+        ("ul_riscosify", ["/t_riscosify"]), ("ul_files", ["/t_files"]),
         ("svcprobe", ["RMLoad Mod64P", "/t10svc", "RMKill Mod64P"]),
         ("fsdiff", ["/fsdiff"]), ("fsdiff3", ["/fsdiff args3"])]
 for _s in [x for x in os.environ.get("LT64_SECTIONS", "").split(",") if x]:         # LT64_SECTIONS=a,b,c: one job (and result file lt64-NAME) for each section of the library test
     JOBS.append(("lt64-" + _s, ["/libtest64 -only=" + _s]))
-FILES = {"t01hello": ["t01hello,ff8"], "t02swi": ["t02swi,ff8"], "t03int": ["t03int,ff8"], "t04fp": ["t04fp,ff8"], "t05file": ["t05file,ff8"], "mod64": ["Mod64,ffa", "t07mod,ff8"], "mod64d": ["Mod64D,ffa", "Mod64S,ffa", "t08data,ff8"], "mod64f": ["Mod64F,ffa", "t09fp,ff8"], "mod64r": ["Mod64D,ffa", "t08data,ff8"], "hello": ["hello,ff8"], "libc": ["libctest,ff8"], "lt64": ["libtest64,ff8"], "hello64": ["Hello64,ffa", "hello64test,ff8"], "libtestmod": ["LibTest64,ffa"], "dec64": ["Dec64,ffa", "dec64test,ff8"], "cxx64": ["Cxx64,ffa", "cxx64test,ff8"], "fpmod64": ["Fpmod64,ffa", "fpmod64test,ff8"], "libmod64": ["Libmod64,ffa", "libmod64test,ff8"], "swi64": ["Swi64,ffa", "swi64test,ff8"], "oslib64": ["OlTest,ffa"], "sdktest": ["sdktest,ff8"], "zlib": ["example,ff8", "zlibtest,ff8"], "cxxtest": ["cxxtest,ff8"], "svcprobe": ["Mod64P,ffa", "t10svc,ff8"], "fsdiff": ["fsdiff,ff8"], "fsdiff3": ["fsdiff,ff8"]}
+FILES = {"t01hello": ["t01hello,ff8"], "t02swi": ["t02swi,ff8"], "t03int": ["t03int,ff8"], "t04fp": ["t04fp,ff8"], "t05file": ["t05file,ff8"], "mod64": ["Mod64,ffa", "t07mod,ff8"], "mod64d": ["Mod64D,ffa", "Mod64S,ffa", "t08data,ff8"], "mod64f": ["Mod64F,ffa", "t09fp,ff8"], "mod64r": ["Mod64D,ffa", "t08data,ff8"], "hello": ["hello,ff8"], "libc": ["libctest,ff8"], "lt64": ["libtest64,ff8"], "hello64": ["Hello64,ffa", "hello64test,ff8"], "libtestmod": ["LibTest64,ffa"], "dec64": ["Dec64,ffa", "dec64test,ff8"], "cxx64": ["Cxx64,ffa", "cxx64test,ff8"], "fpmod64": ["Fpmod64,ffa", "fpmod64test,ff8"], "libmod64": ["Libmod64,ffa", "libmod64test,ff8"], "swi64": ["Swi64,ffa", "swi64test,ff8"], "oslib64": ["OlTest,ffa"], "sdktest": ["sdktest,ff8"], "zlib": ["example,ff8", "zlibtest,ff8"], "cxxtest": ["cxxtest,ff8"], "svcprobe": ["Mod64P,ffa", "t10svc,ff8"], "ul_riscosify": ["t_riscosify,ff8"], "ul_files": ["t_files,ff8"], "fsdiff": ["fsdiff,ff8"], "fsdiff3": ["fsdiff,ff8"]}
 for _n, _c in JOBS:
     if _n.startswith("lt64-"): FILES[_n] = ["libtest64,ff8"]
 os.makedirs(out + "/service-results", exist_ok=True)
