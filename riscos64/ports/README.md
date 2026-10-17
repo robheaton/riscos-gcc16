@@ -36,9 +36,9 @@ mapped names (`tmul_dat`). The SDK itself does not map names: that is the job of
 | Library | Programs | Pass | The others |
 |---|---|---|---|
 | GMP 6.1.0 | 168 | 168 | 6 (`mpz_convert`, `mpz_reuse`, `t-gcd`, `t-powm_ui`, `t-remove`, `t-tdiv`) only with `GMP_CHECK_REPFACTOR=0.05`: the random tests take too long on the emulator at the default |
-| MPFR 3.1.4 | 157 | 153 | `tadd_ui`, `ttanh`, `tzeta`: time out (300 s); `tget_set_d64`: skips itself (exit 77: no decimal64 support) |
-| MPC 1.0.3 | 64 | 63 | `texp`: more than 900 s (the service dropped the connection on the one long run); 5 others (`tatanh`, `tio_str`, `tpow`, `tpow_fr`, `ttan`) pass only with the 900 s limit, not at 300 s |
+| MPFR 3.1.4 | 157 | 155 | `tzeta`: not confirmed (see below); `tget_set_d64`: skips itself (exit 77: no decimal64 support). `tadd_ui` and `ttanh` pass only with the 900 s limit, not at 300 s |
+| MPC 1.0.3 | 64 | 63 | `texp`: not confirmed (see below). Five others (`tatanh`, `tio_str`, `tpow`, `tpow_fr`, `ttan`) pass only with the 900 s limit, not at 300 s |
 
-Every failure is a time-out or a skip; there is no wrong result. `run-tests.sh` runs the tests that time out again, one at a time, with a limit of 900 s.
+No test has given a wrong result. `tzeta` and `texp` are the two that were not seen to finish: the build service closes the connection of a job after about 10 minutes (whatever time limit is asked for; answering its pings, which `tools/ws_build.py` now does, made no difference), and both run longer than that on the emulator. `run-tests.sh` runs the tests that time out again, one at a time, with a limit of 900 s.
 
 Run only one job at a time on the service: with two the connections are dropped (the runner reports rc=255).

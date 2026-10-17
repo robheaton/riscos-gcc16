@@ -10,12 +10,14 @@ Supported: title-string, help-string, date-string, initialisation-code, finalisa
 no-handler: for a command), swi-chunk-base-number, swi-decoding-table (with NAME/FN), swi-handler-code, international-help-file, module-is-not-reentrant.  Also supported: swi-decoding-code (one function, or NAME/NUMBER: modkit64.h) and error-identifiers (error blocks in the module; the kit copies them to the RMA when they are returned). Not yet (refused with a message):
 the veneers (irq-handlers, vector-handlers, generic-veneers, vector-traps, event-handler: the kernel's conventions are not known), pdriver-handler, module-is-runnable, module-is-c-plus-plus.
   -p      run the C preprocessor over the file first (-D, -U and -I go to it)
-  -o FILE the object: the header assembled with the options of the kit (aarch64-none-elf-gcc on PATH or in A64, default /var/tmp/a64/prefix/bin)"""
+  -o FILE the object: the header assembled with the options of the kit (aarch64-none-elf-gcc on PATH or in A64, default /var/tmp/a64/prefix/bin); with CMUNGE64_CC=aarch64-riscos-gcc in the environment
+          that compiler is used, with -mmodule (it knows the options and the include folders itself)"""
 import os, re, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 A64 = os.environ.get("A64", "/var/tmp/a64/prefix/bin")
 CC = os.path.join(A64, "aarch64-none-elf-gcc")
+MODCC = os.environ.get("CMUNGE64_CC")             # a compiler that knows -mmodule (the real target's aarch64-riscos-gcc, or the SDK's wrapper): it is used for the object, with -mmodule, instead of CC with the options of modflags.sh
 
 def load_mkmodhdr():
     path = os.path.join(HERE, "..", "..", "modkit", "bin", "mkmodhdr.py")
@@ -168,8 +170,10 @@ def main(argv):
             open(sp, "w").write(asm)
             if out_o:
                 sys.path.insert(0, HERE)
-                mf = re.search(r'MODFLAGS="([^"]*)"', open(os.path.join(HERE, "modflags.sh")).read()).group(1).split()
-                r = subprocess.run([CC] + mf + ["-I" + HERE, "-I" + os.path.join(HERE, "include"), "-c", sp, "-o", out_o])
+                if MODCC: r = subprocess.run([MODCC, "-mmodule", "-c", sp, "-o", out_o])
+                else:
+                    mf = re.search(r'MODFLAGS="([^"]*)"', open(os.path.join(HERE, "modflags.sh")).read()).group(1).split()
+                    r = subprocess.run([CC] + mf + ["-I" + HERE, "-I" + os.path.join(HERE, "include"), "-c", sp, "-o", out_o])
                 if r.returncode: return r.returncode
         open(out_h or base + "_hdr.h", "w").write(h)
     finally:

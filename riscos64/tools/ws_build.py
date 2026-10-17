@@ -37,6 +37,11 @@ def send(s, text):
     s.sendall(hdr + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
 
 
+def pong(s, data):                              # the answer to a ping (RFC 6455: a pong with the same data, masked): without it the service drops a connection that has been quiet for some minutes
+    mask = os.urandom(4)
+    s.sendall(bytes([0x8A, 0x80 | len(data)]) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+
+
 class Reader:
     def __init__(self, s, pre):
         self.s = s
@@ -84,6 +89,7 @@ def main():
             if op == 8:
                 return
             if op == 9:
+                pong(s, d[:125])
                 continue
             yield json.loads(d.decode("utf-8", "replace"))
 

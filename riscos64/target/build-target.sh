@@ -35,4 +35,11 @@ T=$PREFIX/aarch64-riscos
 mkdir -p "$T/lib" "$T/include"
 cp -a "$PICO/include/." "$T/include/" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
 cp "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" "$T/lib/" && cp "$SDK/aif64.ld" "$T/lib/"
+step "the module kit (aarch64-riscos-gcc -mmodule): runtime, C library, linker script, headers, modreloc64"
+KIT=$SDK/../kit; OUT=$KIT/../out/kit-lib
+[ -f "$OUT/libmodkit64.a" ] || { echo "run kit/build-kit.sh first (out/kit-lib)"; exit 1; }
+cp "$OUT/modrt64.o" "$OUT/modswi64.o" "$OUT/libmodkit64.a" "$OUT/libmodcxx64.a" "$KIT/module64.ld" "$KIT/../tools/modreloc64.py" "$T/lib/"
+mkdir -p "$T/modkit/include" "$T/modkit/riscos64/include"
+cp -a "$KIT/../../modkit/include/." "$T/modkit/include/" && cp -a "$KIT/include/." "$T/modkit/riscos64/include/" && cp "$KIT/modcore64.S" "$T/modkit/riscos64/"
+printf '#!/bin/sh\n# modreloc64 [-q] ELF: makes the module image from the linked ELF file, in place (the last step of aarch64-riscos-gcc -mmodule)\nq=; [ "$1" = -q ] && { q=-q; shift; }\nd=$(dirname "$(readlink -f "$0")")\ntmp="$1.tmp.$$"\npython3 -I "$d/../lib/modreloc64.py" $q "$1" "$tmp" && mv "$tmp" "$1"\n' > "$T/bin/modreloc64" && chmod +x "$T/bin/modreloc64"
 step "done: $PREFIX/bin/aarch64-riscos-gcc"

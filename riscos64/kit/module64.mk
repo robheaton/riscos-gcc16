@@ -25,7 +25,7 @@ $(OBJDIR)/%.o: %.cpp $(HDR)
 $(OBJDIR)/%.o: %.S
 	$(CC64) $(MODFLAG) -c $< -o $@
 $(MODULE),ffa: $(OBJS) $(HDROBJ)
-	$(CC64) $(MODFLAG) -O2 $(OBJS) $(HDROBJ) -o $(MODULE)
+	$(CC64) $(MODFLAG) -O2 $(OBJS) $(HDROBJ) -o $(MODULE),ffa
 clean:
 	rm -f $(OBJS) $(HDR) $(HDROBJ) $(MODULE),ffa
 .PHONY: all clean

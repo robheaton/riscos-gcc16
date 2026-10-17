@@ -17,8 +17,14 @@ Until now the programs and modules of `riscos64/` were made with the freestandin
   the read/write size of its header. Name it `,ff8` yourself (the file type of an absolute); the wrapper did that for you.
 * The C library and the SDK files are in `PREFIX/aarch64-riscos/{include,lib}` and are found without any option.
 
-Not done yet: `-mmodule` (a 64-bit module: the options of `kit/modflags.sh`, `module64.ld`, the kit's runtime and `tools/modreloc64.py` as the last step), C++ with libstdc++, a sysroot layout for `--sysroot`, the
-`.ld`-level AIF64 output (no `objcopy`), debug information for RISC OS, and testing more than "hello".
+* **Modules:** `aarch64-riscos-gcc -mmodule` (and `-mmodule-fp`, with the floating point and vector registers allowed) compiles with the options of `kit/modflags.sh` (no library, no GOT, `-mgeneral-regs-only`; C++ without
+  exceptions and RTTI), finds the kit's headers (`PREFIX/aarch64-riscos/modkit`), links the kit's runtime and C library with `module64.ld`, and runs `modreloc64` on the result: `aarch64-riscos-gcc -mmodule -O2 hello64.o
+  hello64_hdr.o -o Hello64,ffa`. `kit/module64.mk` works with it (`CC64` and `CMUNGE64_CC=aarch64-riscos-gcc`; `cmunge64` then assembles the module header with it). The kit library itself (`libmodkit64.a`) is still built by
+  `kit/build-kit.sh` with the older compiler.
 
-Tested on RISC OS Pyromaniac (17 October 2026): `sdk/tests/hello.c` and `sdk/tests/sdktest.c` (20 of 20 checks) compiled and linked with `aarch64-riscos-gcc` from this target run as the wrapper's do. The whole build
+Not done yet: C++ for programs with libstdc++, a sysroot layout for `--sysroot`, the `.ld`-level AIF64 output (no `objcopy`), building the kit library with this compiler, debug information for RISC OS, and tests
+beyond the examples.
+
+Tested on RISC OS Pyromaniac (17 October 2026): `sdk/tests/hello.c` and `sdk/tests/sdktest.c` (20 of 20 checks) compiled and linked with `aarch64-riscos-gcc` from this target run as the wrapper's do; the modules `Hello64` (8 of 8),
+`Cxx64` (C++, 8 of 8) and `Fpmod64` (floating point, 5 of 5) built with `-mmodule` / `-mmodule-fp` pass the tests of `kit/examples`, and `cxx64` built through `module64.mk` is byte for byte the same. The whole build
 (`build-target.sh`, binutils, GCC, libgcc and the SDK files) takes about 10 minutes on 22 cores. The wrapper `sdk/bin/aarch64-riscos-gcc` is still the supported way to build until this target has modules and C++.

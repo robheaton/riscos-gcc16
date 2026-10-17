@@ -20,4 +20,8 @@
 
 mmodule
 Target Var(riscos_module) Init(0)
-Compile a 64-bit module (not a program): no GOT, no floating point registers, the options of riscos64/kit/modflags.sh.
+Build a 64-bit module (not a program): no GOT, no floating point or vector registers, the options of riscos64/kit/modflags.sh, the kit's runtime and C library.
+
+mmodule-fp
+Target Var(riscos_module_fp) Init(0)
+As -mmodule, with the floating point and vector registers allowed in the module.
