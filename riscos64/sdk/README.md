@@ -3,7 +3,7 @@
 `aarch64-riscos-gcc hello.c -o hello` makes `hello,ff8`, an AIF64 absolute that runs on RISC OS 64 (and on RISC OS Pyromaniac). It is the AArch64 GCC 16.2 of `tools/build-a64-toolchain.sh` with:
 
 * the AIF64 header and the start-up code (`crt/aifhdr.S`, `crt/crt0.S`, `aif64.ld`): linked at `&8000`, the stack at the RAM limit that `OS_GetEnv` gives;
-* **picolibc** as the C library (`tools/build-picolibc.sh`: stdio with `printf` and `scanf` for `double`, `long long`, files; string; `malloc`; `qsort`; `libm`; `setjmp`), built with `-ffixed-x18`;
+* **picolibc** as the C library (`tools/build-picolibc.sh`: stdio with `printf` and `scanf` for `double`, `long double`, `long long`, `%n` and positional arguments, files; string; `malloc`; `qsort`; `libm`; `setjmp`), built with `-ffixed-x18`;
 * the system calls that picolibc wants, made with SWIs (`crt/riscos_syscalls.c`): `OS_WriteN`/`OS_NewLine`, `OS_ReadC`, `OS_Find`, `OS_GBPB`, `OS_Args`, `OS_Exit`; `sbrk` from the end of the program to the RAM limit minus 128 KB of stack;
 * `argc` and `argv` from the command line (`crt/riscos_start.c`; double quotes keep spaces in a word);
 * `bin/mkaif64.py`, which makes the AIF64 file from the linked image.

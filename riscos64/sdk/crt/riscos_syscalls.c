@@ -147,10 +147,53 @@ int fstat (int fd, struct stat *st)
 
 int isatty (int fd) { return fd >= 0 && fd < 3; }
 
+/* The heap is a dynamic area (OS_DynamicArea), created on the first sbrk with room to grow to 1 GB (or the largest of 256 MB and 64 MB that the system allows) and grown a page at a time by OS_ChangeDynamicArea:
+   the application space that a program starts with is small (12 MB on Pyromaniac).  If no dynamic area can be made, sbrk uses the application space, from the end of the program to the RAM limit minus the stack.
+   _exit removes the area.  (A program that is killed leaves it; a stricter exit handler is part of the UnixLib plan.) */
+#define OS_ChangeDynamicArea 0x2A
+#define OS_DynamicArea 0x66
+static int da_mode;				/* 0 = not tried, 1 = a dynamic area, 2 = the application space */
+static unsigned long da_number, da_size;
+static char *da_base, *da_cur;
+
+static void da_create (void)
+{
+  static const unsigned long max[3] = { 1UL << 30, 256UL << 20, 64UL << 20 };
+  int i;
+  da_mode = 2;
+  for (i = 0; i < 3; i++)
+    {
+      unsigned long r[10] = { 0 };
+      r[0] = 0; r[1] = (unsigned long) -1; r[2] = 4096; r[3] = (unsigned long) -1; r[4] = 0x80; r[5] = max[i]; r[8] = (unsigned long) "SDK heap";
+      if (!swi_x (OS_DynamicArea, r))
+	{
+	  da_number = r[1] & 0xFFFFFFFF; da_base = da_cur = (char *) r[3]; da_size = 4096; da_mode = 1;
+	  return;
+	}
+    }
+}
+
 void *sbrk (ptrdiff_t incr)
 {
   static char *cur;
   char *old;
+  if (da_mode == 0) da_create ();
+  if (da_mode == 1)
+    {
+      char *new_ = da_cur + incr;
+      old = da_cur;
+      if (new_ < da_base) { errno = ENOMEM; return (void *) -1; }
+      if ((size_t) (new_ - da_base) > da_size)
+	{
+	  unsigned long grow = ((size_t) (new_ - da_base) - da_size + 4095) & ~4095UL, r[10] = { 0 };
+	  r[0] = da_number; r[1] = grow;
+	  if (swi_x (OS_ChangeDynamicArea, r)) { errno = ENOMEM; return (void *) -1; }
+	  da_size += r[1] & 0xFFFFFFFF;
+	  if ((size_t) (new_ - da_base) > da_size) { errno = ENOMEM; return (void *) -1; }
+	}
+      da_cur = new_;
+      return old;
+    }
   if (!cur) cur = __heap_start;
   old = cur;
   if (incr > 0 && (size_t) incr > (size_t) (__riscos_heap_end - cur)) { errno = ENOMEM; return (void *) -1; }
@@ -163,6 +206,7 @@ void _exit (int code)
 {
   static const struct { unsigned num; char msg[20]; } done = { 0, "Program finished" };
   unsigned long r[10] = { 0 };
+  if (da_mode == 1) { unsigned long q[10] = { 1, da_number }; swi_x (OS_DynamicArea, q); }		/* remove the heap */
   r[0] = (unsigned long) &done;
   r[1] = 0x58454241UL;					/* "ABEX" */
   r[2] = (unsigned long) (long) code;

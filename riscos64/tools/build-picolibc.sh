@@ -13,9 +13,9 @@ mkdir -p "$W"
 [ -d "$W/src" ] || { git clone -q https://github.com/picolibc/picolibc.git "$W/src"; git -C "$W/src" checkout -q $COMMIT; }
 mkdir -p "$W/build"
 # -ffixed-x18: x18 is reserved on RISC OS 64.  -mstrict-align as in the tests.  No semihosting, our own crt (picocrt off), the console through read/write (posix-console), no thread local storage, a plain
-# global errno, one thread, long long in printf.
+# global errno, one thread, long long and long double in printf and scanf, positional arguments (%1$d) and %n.
 meson setup "$W/build" "$W/src" --cross-file "$W/src/scripts/cross-aarch64-none-elf.txt" --prefix="$PREFIX" --buildtype=release \
   -Dmultilib=false -Dsemihost=false -Dpicocrt=false -Dposix-console=true -Dthread-local-storage=false -Dnewlib-global-errno=true -Dsingle-thread=true \
-  -Dio-long-long=true -Dtests=false -Dspecsdir="$PREFIX/lib" "-Dc_args=-ffixed-x18 -mstrict-align" > "$W/configure.log"
+  -Dio-long-long=true -Dio-long-double=true -Dio-pos-args=true -Dprintf-percent-n=true -Dtests=false -Dspecsdir="$PREFIX/lib" "-Dc_args=-ffixed-x18 -mstrict-align" > "$W/configure.log"
 ninja -C "$W/build" install > "$W/build.log"
 ls -l "$PREFIX/lib/libc.a" "$PREFIX/lib/libm.a"
