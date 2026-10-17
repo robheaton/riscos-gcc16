@@ -3,7 +3,8 @@
 # The programs are AIF64 absolutes; the runner (tools/run_tests_on_service.py) sends them in batches of 8, an end of the job at the first program that fails or times out (300 s) is reported and the rest is run again.
 # Run only ONE of these at a time: the service drops the connections (rc=255) when two jobs overlap.
 # The result is WORKDIR/results-SUITE.txt (the failures, with their output) and WORKDIR/results-SUITE.log (the PASS and FAIL lines).  A program that exits with 77 is a test that skips itself (it is reported FAIL by the runner).
-# After the first run the tests that timed out (rc=124) are run again, one at a time, with GMP_CHECK_REPFACTOR=0.05 (GMP's tests take it from the environment: fewer repetitions of the random tests).
+# After the first run the tests that timed out (rc=124) are run again, one at a time, with a limit of 900 s (most of the MPFR and MPC tests that time out at 300 s finish in that time); for GMP also with
+# GMP_CHECK_REPFACTOR=0.05 (GMP's tests take it from the environment: fewer repetitions of the random tests, which the emulator is too slow for at the default).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 RUN=$HERE/../tools/run_tests_on_service.py
@@ -30,8 +31,9 @@ echo "$(wc -l < "$LIST") programs"
 python3 "$RUN" --batch 8 --out "$W/results-$SUITE.txt" $DATA $(cat "$LIST") | tee "$W/results-$SUITE.log" | tail -3
 SLOW=$(grep '^===== FAIL .* rc=124' "$W/results-$SUITE.txt" | awk '{print $3}' || true)
 if [ -n "$SLOW" ]; then
-  echo "timed out: $(echo $SLOW | tr '\n' ' '): again, one at a time, with fewer repetitions"
+  echo "timed out: $(echo $SLOW | tr '\n' ' '): again, one at a time, with a longer limit"
   ARGS=""
   for n in $SLOW; do p=$(grep -E "/${n%%_*}/${n#*_}\$" "$LIST" | head -1); [ -n "$p" ] && ARGS="$ARGS $p"; done
-  python3 "$RUN" --batch 1 --timeout 900 --pre "Set GMP_CHECK_REPFACTOR 0.05" --out "$W/results-$SUITE-slow.txt" $DATA $ARGS | tee "$W/results-$SUITE-slow.log" | tail -3
+  PRE=""; [ "$SUITE" = gmp ] && PRE='--pre "Set GMP_CHECK_REPFACTOR 0.05"'
+  eval python3 '"$RUN"' --batch 1 --timeout 900 $PRE --out '"$W/results-$SUITE-slow.txt"' $DATA $ARGS | tee "$W/results-$SUITE-slow.log" | tail -3
 fi
