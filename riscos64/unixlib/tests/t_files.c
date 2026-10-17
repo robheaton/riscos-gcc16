@@ -13,6 +13,17 @@
 static int fails;
 #define CHECK(c, what) do { int ok_ = (c); printf ("%s %s\n", ok_ ? "PASS" : "FAIL", what); if (!ok_) { fails++; printf ("   errno %d (%s)\n", errno, strerror (errno)); } } while (0)
 
+static int has (const char *dir, const char *name)
+{
+  DIR *d = opendir (dir);
+  struct dirent *e;
+  int found = 0;
+  if (!d) return 0;
+  while ((e = readdir (d)) != NULL) if (strcmp (e->d_name, name) == 0) found = 1;
+  closedir (d);
+  return found;
+}
+
 static void list (const char *dir)
 {
   DIR *d = opendir (dir);
@@ -47,6 +58,7 @@ int main (void)
   CHECK (fd >= 0 && read (fd, buf, sizeof buf) == 6 && memcmp (buf, "hello\n", 6) == 0, "read it back");
   if (fd >= 0) close (fd);
   list ("ultest");
+  CHECK (has ("ultest", "hello.txt") && has ("ultest", "main.c") && !has ("ultest", "c"), "readdir: main.c comes from the suffix directory c, which is not listed itself");
   CHECK (rename ("ultest/hello.txt", "ultest/world.txt") == 0, "rename hello.txt to world.txt");
   CHECK (access ("ultest/hello.txt", F_OK) != 0 && access ("ultest/world.txt", F_OK) == 0, "the old name is gone, the new one is there");
   f = fopen ("ultest/data.bin", "w+");

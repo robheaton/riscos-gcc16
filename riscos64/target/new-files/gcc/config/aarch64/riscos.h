@@ -43,8 +43,8 @@
 #define ENDFILE_SPEC "%{" RISCOS_MODULE_P ":;: crtend%O%s crtn%O%s}"
 #undef LIB_SPEC
 /* -munixlib: UnixLib 64 (riscos64/unixlib): the translation of Unix file names, directories, the current directory ...; -u makes the linker take the library in (the start-up code refers to it only weakly).
-   libriscosstub.a has the functions that an SDK program may need but that only UnixLib 64 really provides (opendir ...): they fail with ENOSYS if UnixLib 64 is not linked in.  */
-#define LIB_SPEC "%{" RISCOS_MODULE_P ":-lmodkit64 -lmodcxx64 -lgcc;:%{munixlib:-u __ul64_init -lunixlib64} --start-group -lc -lm -lriscosstub -lgcc --end-group}"
+   libriscosstub.a (searched before libc.a, so that its signal () and raise () replace picolibc's fallbacks) has small POSIX functions and the ones that only UnixLib 64 really provides (opendir ...), which fail with ENOSYS if UnixLib 64 is not linked in.  */
+#define LIB_SPEC "%{" RISCOS_MODULE_P ":-lmodkit64 -lmodcxx64 -lgcc;:%{munixlib:-u __ul64_init -lunixlib64} --start-group -lriscosstub -lc -lm -lgcc --end-group}"
 #undef LINK_SPEC
 #define LINK_SPEC "-maarch64riscos -static -X --no-warn-rwx-segments %{" RISCOS_MODULE_P ":-T module64.ld%s --emit-relocs;:-T aif64.ld%s}" AARCH64_ERRATA_LINK_SPEC
 

@@ -19,7 +19,7 @@ case "$(basename "$0")" in *g++|*c++) cxx=1;; esac          # aarch64-riscos-g++
 [ -n "${RISCOS64_CXX:-}" ] && cxx=1
 [ -n "$cxx" ] && CC=$A64/aarch64-none-elf-g++
 CXXROOT=${CXXROOT:-$(dirname "$A64")}                 # where libstdc++ is installed: include/c++/<version> and lib/libstdc++.a (sdk/build-libstdcxx.sh)
-CFL="-ffixed-x18 -mstrict-align -D__riscos64__ -isystem $PICO/include"
+CFL="-ffixed-x18 -mstrict-align -D__riscos64__ -isystem $PICO/include -isystem $SDK/include"
 if [ -n "$cxx" ]; then V=$($CC -dumpversion); CFL="-isystem $CXXROOT/include/c++/$V -isystem $CXXROOT/include/c++/$V/aarch64-none-elf $CFL"; fi          # (before picolibc: the C++ headers #include_next the C ones)
 link=1; out=; args=(); module=
 KIT=$(cd "$SDK/../kit" && pwd)
@@ -61,7 +61,7 @@ case "$out" in *,*) final=$out;; *) final=$out,ff8;; esac
 [ -n "${RISCOS64_RAW:-}" ] && final=$out         # configure scripts want the file name they asked for (no ,ff8)
 $CC $CFL $( [ -n "$cxx" ] && $CC -print-file-name=crtbegin.o ) "${args[@]}" -nostdlib -static -T "$SDK/aif64.ld" -Wl,--no-warn-rwx-segments \
     "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" \
-    $( [ -n "$unixlib" ] && echo "-Wl,-u,__ul64_init $SDK/../unixlib/out/libunixlib64.a" ) -L"$PICO/lib" -L"$CXXROOT/lib" -Wl,--start-group $( [ -n "$cxx" ] && echo "-lstdc++ -lsupc++" ) -lc -lm "$SDK/lib/libriscosstub.a" -lgcc -Wl,--end-group $( [ -n "$cxx" ] && $CC -print-file-name=crtend.o ) -o "$tmp/prog.elf"
+    $( [ -n "$unixlib" ] && echo "-Wl,-u,__ul64_init $SDK/../unixlib/out/libunixlib64.a" ) -L"$PICO/lib" -L"$CXXROOT/lib" -Wl,--start-group $( [ -n "$cxx" ] && echo "-lstdc++ -lsupc++" ) "$SDK/lib/libriscosstub.a" -lc -lm -lgcc -Wl,--end-group $( [ -n "$cxx" ] && $CC -print-file-name=crtend.o ) -o "$tmp/prog.elf"
 [ -n "${RISCOS64_KEEPELF:-}" ] && cp "$tmp/prog.elf" "$RISCOS64_KEEPELF"          # for debugging: the ELF file before it is made into an AIF64 absolute
 $A64/aarch64-none-elf-objcopy -O binary "$tmp/prog.elf" "$tmp/prog.bin"
 python3 -I "$SDK/bin/mkaif64.py" "$tmp/prog.bin" "$final" "$tmp/prog.elf"

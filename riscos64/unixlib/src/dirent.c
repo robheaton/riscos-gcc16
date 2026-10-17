@@ -1,6 +1,6 @@
 /* dirent.c - opendir, readdir, rewinddir, closedir over OS_GBPB 12 (UnixLib 64; after libunixlib/unix/dirent.c of UnixLib, revised BSD licence, licenses/UnixLib-COPYING.txt).
    A name from the directory is turned into a Unix leaf name with __filename_char_map; with __RISCOSIFY_FILETYPE_EXT the file type is added as ",xyz" (unless it is Text).
-   Not done yet: the merging of the suffix directories (a directory "c" holding "main" is "main.c" of the parent in UnixLib), "." and "..", seekdir and telldir.  */
+   The suffix directories are listed as UnixLib does (a directory "c" holding "main" is listed as "main.c" in the parent).  Not done yet: "." and "..".  telldir counts the entries returned; seekdir reads forward (or rewinds first).  */
 #include "ul64.h"
 #include <dirent.h>
 
@@ -15,9 +15,27 @@ struct ul_dir
   int count, index;			/* how many, and how many were returned */
   char *p;				/* the next one */
   ino_t ino;
+  long pos;				/* how many entries readdir has returned (telldir) */
+  struct ul_dir *suffix;		/* the suffix directory that is being listed as name.suffix (see below), or NULL */
+  char suffix_name[32];			/* its name: "c" */
 };
 
 static struct ul_dir *state (DIR *d) { struct ul_dir *u; memcpy (&u, d->buf, sizeof u); return u; }
+
+static struct ul_dir *new_stream (const char *path)
+{
+  struct ul_dir *u = (struct ul_dir *) calloc (1, sizeof *u);
+  if (u) { u->path = strdup (path); u->buf = (char *) malloc (BUFSIZE); }
+  if (!u || !u->path || !u->buf) { if (u) { free (u->path); free (u->buf); } free (u); return NULL; }
+  return u;
+}
+
+static void free_stream (struct ul_dir *u)
+{
+  if (!u) return;
+  free_stream (u->suffix);
+  free (u->path); free (u->buf); free (u);
+}
 
 DIR *opendir (const char *name)
 {
@@ -37,49 +55,78 @@ DIR *opendir (const char *name)
   if (r[0] == 0) { errno = ENOENT; return NULL; }
   if (r[0] == 1) { errno = ENOTDIR; return NULL; }
   d = (DIR *) calloc (1, sizeof (DIR));
-  u = (struct ul_dir *) calloc (1, sizeof *u);
-  if (d && u) { u->path = strdup (path); u->buf = (char *) malloc (BUFSIZE); }
-  if (!d || !u || !u->path || !u->buf) { if (u) { free (u->path); free (u->buf); } free (u); free (d); errno = ENOMEM; return NULL; }
+  u = new_stream (path);
+  if (!d || !u) { free_stream (u); free (d); errno = ENOMEM; return NULL; }
   d->fd = -1;
   memcpy (d->buf, &u, sizeof u);
   return d;
 }
 
-struct dirent *readdir (DIR *d)
+/* the next entry of a stream: the leaf name as RISC OS has it (valid until the next call), the object type and the file type; 0 at the end (errno is set for an error) */
+static int fetch (struct ul_dir *u, const unsigned char **name, unsigned *objtype, unsigned *filetype)
 {
-  struct ul_dir *u;
-  if (!d) { errno = EBADF; return NULL; }
-  u = state (d);
   while (u->index >= u->count)
     {
       long r[10];
-      if (u->offset == -1) return NULL;
-      r[0] = 12; r[1] = (long) u->path; r[2] = (long) u->buf; r[3] = BUFSIZE / 64 > 0 ? 32 : 1; r[4] = u->offset; r[5] = BUFSIZE; r[6] = (long) "*";
-      if (__os_swi (OS_GBPB, r)) { errno = EIO; return NULL; }
+      if (u->offset == -1) return 0;
+      r[0] = 12; r[1] = (long) u->path; r[2] = (long) u->buf; r[3] = 32; r[4] = u->offset; r[5] = BUFSIZE; r[6] = (long) "*";
+      if (__os_swi (OS_GBPB, r)) { errno = EIO; return 0; }
       u->count = (int) r[3]; u->index = 0; u->p = u->buf; u->offset = (int) r[4];
-      if (u->count == 0 && u->offset == -1) return NULL;
+      if (u->count == 0 && u->offset == -1) return 0;
     }
   {
     const unsigned *e = (const unsigned *) u->p;			/* load, exec, length, attributes, object type, file type, then the name (as Pyromaniac and RISC OS 5 give it) */
-    unsigned objtype = e[4], filetype = e[5];
-    const unsigned char *name = (const unsigned char *) (e + 6);
-    char *o = d->dirent.d_name, *end = d->dirent.d_name + sizeof d->dirent.d_name - 1;
-    int ctl = __get_riscosify_control ();
-    size_t len = strlen ((const char *) name) + 1;
-    while (*name && o < end) *o++ = __filename_char_map[*name++];
-    /* the file type as ",xyz", for a file whose type is not Text */
-    if ((ctl & __RISCOSIFY_FILETYPE_EXT) && objtype == 1 && filetype <= 0xFFF)
-      {
-	unsigned ft = filetype;
-	if ((ft != 0xFFF || (ctl & __RISCOSIFY_FILETYPE_FFF_EXT)) && o + 4 <= end) o += sprintf (o, ",%03x", ft);
-      }
-    *o = 0;
-    u->p += (24 + len + 3) & ~3UL;
+    *objtype = e[4]; *filetype = e[5];
+    *name = (const unsigned char *) (e + 6);
+    u->p += (24 + strlen ((const char *) *name) + 1 + 3) & ~3UL;
     u->index++;
-    d->dirent.d_ino = ++u->ino;
-    d->dirent.d_type = objtype == 2 ? DT_DIR : DT_REG;
-    return &d->dirent;
+    return 1;
   }
+}
+
+/* A directory with the name of a suffix (c, h, o ...) holds the files that Unix calls name.c: they are listed as such, in the place of the directory (UnixLib: "reverse suffix swapping").  */
+struct dirent *readdir (DIR *d)
+{
+  struct ul_dir *u;
+  int ctl;
+  if (!d) { errno = EBADF; return NULL; }
+  u = state (d);
+  ctl = __get_riscosify_control ();
+  for (;;)
+    {
+      const unsigned char *name;
+      unsigned objtype, filetype;
+      struct ul_dir *from = u->suffix ? u->suffix : u;
+      char *o = d->dirent.d_name, *end = d->dirent.d_name + sizeof d->dirent.d_name - 1;
+      if (!fetch (from, &name, &objtype, &filetype))
+	{
+	  if (u->suffix) { free_stream (u->suffix); u->suffix = NULL; continue; }	/* the suffix directory is finished: go on in the main one */
+	  return NULL;
+	}
+      if (!u->suffix && objtype == 2 && !(ctl & (__RISCOSIFY_NO_SUFFIX | __RISCOSIFY_NO_REVERSE_SUFFIX)) && __sfixfind ((const char *) name, strlen ((const char *) name)))
+	{
+	  char sub[MAXPATHLEN];
+	  if (strlen (u->path) + strlen ((const char *) name) + 2 < sizeof sub)
+	    {
+	      sprintf (sub, "%s.%s", u->path, name);
+	      u->suffix = new_stream (sub);
+	      if (u->suffix) { strncpy (u->suffix_name, (const char *) name, sizeof u->suffix_name - 1); continue; }
+	    }
+	}
+      if (u->suffix && objtype == 2) continue;				/* directories inside a suffix directory are not shown */
+      while (*name && o < end) *o++ = __filename_char_map[*name++];
+      if (u->suffix) { size_t n = strlen (u->suffix_name); if (o + 1 + n <= end) { *o++ = '.'; memcpy (o, u->suffix_name, n); o += n; } }
+      /* the file type as ",xyz", for a file whose type is not Text */
+      if ((ctl & __RISCOSIFY_FILETYPE_EXT) && objtype == 1 && filetype <= 0xFFF)
+	{
+	  if ((filetype != 0xFFF || (ctl & __RISCOSIFY_FILETYPE_FFF_EXT)) && o + 4 <= end) o += sprintf (o, ",%03x", filetype);
+	}
+      *o = 0;
+      d->dirent.d_ino = ++u->ino;
+      u->pos++;
+      d->dirent.d_type = objtype == 2 ? DT_DIR : DT_REG;
+      return &d->dirent;
+    }
 }
 
 void rewinddir (DIR *d)
@@ -87,14 +134,29 @@ void rewinddir (DIR *d)
   struct ul_dir *u;
   if (!d) return;
   u = state (d);
-  u->offset = 0; u->count = u->index = 0; u->ino = 0;
+  free_stream (u->suffix); u->suffix = NULL;
+  u->offset = 0; u->count = u->index = 0; u->ino = 0; u->pos = 0;
 }
+
+long telldir (DIR *d)
+{
+  if (!d) { errno = EBADF; return -1; }
+  return state (d)->pos;
+}
+
+void seekdir (DIR *d, long loc)
+{
+  if (!d || loc < 0) return;
+  if (loc < state (d)->pos) rewinddir (d);
+  while (state (d)->pos < loc && readdir (d)) ;
+}
+
+int dirfd (DIR *d) { (void) d; errno = ENOTSUP; return -1; }
 
 int closedir (DIR *d)
 {
-  struct ul_dir *u;
   if (!d) { errno = EBADF; return -1; }
-  u = state (d);
-  free (u->path); free (u->buf); free (u); free (d);
+  free_stream (state (d));
+  free (d);
   return 0;
 }

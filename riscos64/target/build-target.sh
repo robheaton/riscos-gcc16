@@ -34,16 +34,16 @@ make -j"$J" all-target-libgcc > make-libgcc.log 2>&1 && make install-target-libg
 step "the SDK files and picolibc into $PREFIX/aarch64-riscos (before libstdc++: its configure links test programs)"
 T=$PREFIX/aarch64-riscos
 mkdir -p "$T/lib" "$T/include"
-cp -a "$PICO/include/." "$T/include/" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
+cp -a "$PICO/include/." "$T/include/" && cp -a "$SDK/include/." "$T/include/" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
 # the start-up files and the system calls of the SDK (sdk/crt), compiled with the new compiler
 CC=$PREFIX/bin/aarch64-riscos-gcc
 for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
   $CC -O2 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -Wall -Wextra -c "$SDK/crt/$f" -o "$T/lib/${f%.*}.o"
 done
 cp "$SDK/aif64.ld" "$T/lib/"
-# libriscosstub.a: ENOSYS stubs of functions that only UnixLib 64 provides (one per object, so that libunixlib64.a, searched before it, wins)
+# libriscosstub.a: small POSIX functions (crt/posix) and ENOSYS stubs of functions that only UnixLib 64 provides (crt/stubs); one per object, so that libunixlib64.a, searched before it, wins
 mkdir -p "$W/stubs"
-for f in "$SDK"/crt/stubs/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -Wall -Wextra -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
+for f in "$SDK"/crt/stubs/*.c "$SDK"/crt/posix/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -Wall -Wextra -I"$SDK/include" -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
 "$PREFIX/bin/aarch64-riscos-ar" rcs "$T/lib/libriscosstub.a" "$W"/stubs/*.o
 # UnixLib 64 (unixlib/): -munixlib links it
 UL=$SDK/../unixlib

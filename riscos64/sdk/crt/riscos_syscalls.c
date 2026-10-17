@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -35,6 +36,8 @@ extern char *__riscos_heap_end;
 
 static int fdhandle (int fd) { return fd - 3; }
 static int isfile (int fd) { return fd >= 3; }
+/* for UnixLib 64 and the other parts of the SDK that work on a descriptor: the RISC OS file handle of a descriptor, or -1 for the console */
+int __riscos_handle (int fd) { return isfile (fd) ? fdhandle (fd) : -1; }
 
 /* the screen: OS_WriteN for runs of text, OS_NewLine for each \n */
 static void put_text (const char *s, size_t n)
@@ -98,6 +101,9 @@ static const char *ros_path (const char *name, char *buf, int create_dir, int *f
   if (!__riscosify_std (name, create_dir, buf, ROSPATH, filetype)) { errno = ENAMETOOLONG; return NULL; }
   return buf;
 }
+
+/* the RISC OS name of a (Unix or RISC OS) file name: the name itself without UnixLib 64, else its translation in buf (NULL with errno set if it does not fit) */
+const char *__riscos_path (const char *name, char *buf, int create_dir) { return ros_path (name, buf, create_dir, NULL); }
 
 int open (const char *path, int flags, ...)
 {
@@ -369,13 +375,28 @@ clock_t times (struct tms *t)							/* microseconds (picolibc's CLK_TCK is CLOCK
 }
 
 /* the environment is the system variables of RISC OS (OS_ReadVarVal) */
+/* getenv: the variables that the program set itself (setenv, putenv: picolibc keeps them in environ) first, then the system variables of RISC OS (OS_ReadVarVal, GSTrans'd, type 3).  The value of a system variable
+   is kept in a small cache, so that the result of one call is not overwritten by the next call for another name (a name's value is replaced when the name is asked again).  */
+extern char **environ;
 char *getenv (const char *name)
 {
-  static char buf[256];
-  unsigned long r[10] = { (unsigned long) name, (unsigned long) buf, sizeof buf - 1, 0, 3 };
+  static struct { char *name, *val; } cache[32];
+  static unsigned next;
+  char buf[1024];
+  unsigned long r[10];
+  size_t n, i;
+  char **e;
+  if (!name || !*name || strchr (name, '=')) return 0;
+  n = strlen (name);
+  for (e = environ; e && *e; e++) if (strncmp (*e, name, n) == 0 && (*e)[n] == '=') return *e + n + 1;
+  r[0] = (unsigned long) name; r[1] = (unsigned long) buf; r[2] = sizeof buf - 1; r[3] = 0; r[4] = 3;
   if (swi_x (OS_ReadVarVal, r) || r[2] >= sizeof buf) return 0;
   buf[r[2]] = 0;
-  return buf;
+  for (i = 0; i < 32; i++) if (cache[i].name && strcmp (cache[i].name, name) == 0) break;
+  if (i == 32) { i = next++ % 32; free (cache[i].name); cache[i].name = strdup (name); cache[i].val = 0; }
+  free (cache[i].val);
+  cache[i].val = strdup (buf);
+  return cache[i].val;
 }
 int system (const char *cmd)
 {

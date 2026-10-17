@@ -2,6 +2,18 @@
 
 **The question:** what would it take to give programs for RISC OS 64 the C library that programs for 32-bit RISC OS have (UnixLib: POSIX, threads, signals, sockets, RISC OS file-name translation), and in what order, testing on Pyromaniac.
 
+## 0. Status (17 October 2026)
+
+The first release has been started, in [`riscos64/unixlib/`](../riscos64/unixlib) (`-munixlib`):
+
+| Component | State |
+|---|---|
+| 1. File-name translation and directories | **done for the common cases**: UnixLib's `__riscosify`/`__unixify` ported (Unix names to RISC OS names and back, suffix swapping, `,xyz` file types, the special directories), `opendir`/`readdir`/`closedir`, `chdir`/`getcwd`/`rmdir`, `statvfs`, new files get a file type; not yet: the merging of suffix directories into the listing of the parent, `.` and `..` |
+| 2. Process and memory model | **started**: the heap is a dynamic area (grows to 1 GB), `getenv` sees what `setenv` set, `clearenv`, ids, `uname`, `gethostname`, `umask`, sleeping, `getrusage`, `getrlimit`, anonymous `mmap`, `ftruncate`, `chmod`, `utime`, `realpath`; `argv[0]` as a Unix path; not yet: `environ` from the system variables, exit handlers for a killed program, the Wimp slot |
+| 4. errno, locale, wide characters, iconv | not started (picolibc's own for now) |
+| 11. Tests | `riscos64/unixlib/tests` (translation, files, POSIX calls); and GMP, MPFR and MPC (`riscos64/ports`) built with `-munixlib`, whose tests use Unix file names, run on Pyromaniac |
+
+
 ## 1. What UnixLib is (measured on the sources of fix level 17, `libunixlib`)
 
 * about **210,000 lines**: 972 C files, 89 assembler files; without the tests (26,000 lines) and the headers (25,000): about 160,000 lines of library.

@@ -28,6 +28,17 @@ static char *feature (const char *program, const char *variable, char *buf, size
   return r;
 }
 
+/* argv[0] as UnixLib gives it: the full path of the program in Unix form (OS_FSControl 37 canonicalises it, looking along Run$Path), "/ADFS::4.$/bin/hello" */
+static void unixify_argv0 (char **argv)
+{
+  char ros[MAXPATHLEN];
+  long r[10] = { 37, (long) argv[0], (long) ros, (long) "Run$Path", 0, sizeof ros };
+  char *u = NULL;
+  if (!__os_swi (0x29, r)) u = __unixify_std (ros, NULL, 0, __RISCOSIFY_FILETYPE_NOTSPECIFIED);		/* OS_FSControl */
+  if (!u) u = __unixify_std (argv[0], NULL, 0, __RISCOSIFY_FILETYPE_NOTSPECIFIED);
+  if (u) argv[0] = u;
+}
+
 void __ul64_init (int argc, char **argv)
 {
   char buf[256], program[128];
@@ -43,4 +54,5 @@ void __ul64_init (int argc, char **argv)
   if (v) __set_riscosify_control (__RISCOSIFY_NO_PROCESS);
   v = feature (program, "sfix", buf, sizeof buf);
   __sfixinit (v ? v : sfix_default);
+  if (argc > 0 && argv && argv[0] && !(__get_riscosify_control () & __RISCOSIFY_NO_PROCESS)) unixify_argv0 (argv);
 }

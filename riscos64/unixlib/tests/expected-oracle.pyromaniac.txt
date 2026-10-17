@@ -1,0 +1,1624 @@
+*** Set UnixEnv$testriscosify$sfix c:o:h:cc:s:cpp
+*** Set UnixFS$/xxx xxx
+*** /testriscosify
+Testing /tmp
+riscosified: <Wimp$ScrapDir>
+                                                            riscosify pass
+unixified back again <Wimp$ScrapDir> : DIFFERS
+
+
+Testing /tmp/file
+riscosified: <Wimp$ScrapDir>.file
+                                                            riscosify pass
+unixified back again <Wimp$ScrapDir>/file : DIFFERS
+
+
+Testing /tmp/file.c
+riscosified: <Wimp$ScrapDir>.c.file
+                                                            riscosify pass
+unixified back again <Wimp$ScrapDir>/file.c : DIFFERS
+
+
+Testing /usr/xxx/fred.c
+riscosified: xxx.c.fred
+                                                            riscosify pass
+unixified back again xxx/fred.c : DIFFERS
+
+
+Testing /xxx/fred.php
+riscosified: xxx.fred/php
+                                                            riscosify pass
+unixified back again xxx/fred.php : DIFFERS
+
+
+Testing $.work.!unixlib
+riscosified: $.work.!unixlib
+                                                            riscosify pass
+unixified back again /work/!unixlib : DIFFERS
+
+
+Testing $/work/!unixlib
+riscosified: $.work.!unixlib
+                                                            riscosify pass
+unixified back again /work/!unixlib : DIFFERS
+
+
+Testing %/cc1,ffb
+riscosified: %.cc1
+                                                            riscosify pass
+unixified back again /lib/cc1,ffb : DIFFERS
+
+
+Testing %/cc1.o
+riscosified: %.o.cc1
+                                                            riscosify pass
+unixified back again /lib/cc1.o : DIFFERS
+
+
+Testing %/cc1.o,ffb
+riscosified: %.o.cc1
+                                                            riscosify pass
+unixified back again /lib/cc1.o,ffb : DIFFERS
+
+
+Testing %.cc1
+riscosified: %.cc1
+                                                            riscosify pass
+unixified back again /lib/cc1 : DIFFERS
+
+
+Testing ^.fred/c
+riscosified: ^.fred/c
+                                                            riscosify pass
+unixified back again ../fred.c : DIFFERS
+
+
+Testing <GCC$dir>.cc.smart
+riscosified: <GCC$dir>.cc.smart
+                                                            riscosify pass
+unixified back again <GCC$dir>/smart.cc : DIFFERS
+
+
+Testing <GCC$Dir>/cc.smart
+riscosified: <GCC$Dir>.cc/smart
+                                                            riscosify pass
+unixified back again <GCC$Dir>/cc.smart : same
+
+
+Testing <GCC$Dir>/smart.cc
+riscosified: <GCC$Dir>.cc.smart
+                                                            riscosify pass
+unixified back again <GCC$Dir>/smart.cc : same
+
+
+Testing <GCC$Dir>.cc.smart
+riscosified: <GCC$Dir>.cc.smart
+                                                            riscosify pass
+unixified back again <GCC$Dir>/smart.cc : DIFFERS
+
+
+Testing <GCC$Dir>.config
+riscosified: <GCC$Dir>.config
+                                                            riscosify pass
+unixified back again <GCC$Dir>/config : DIFFERS
+
+
+Testing ./././c.cool
+riscosified: @.c/cool
+                                                            riscosify pass
+unixified back again @/c.cool : DIFFERS
+
+
+Testing ../../../c.cool
+riscosified: ^.^.^.c/cool
+                                                            riscosify pass
+unixified back again ../../../c.cool : same
+
+
+Testing ../cool.c
+riscosified: ^.c.cool
+                                                            riscosify pass
+unixified back again ../cool.c : same
+
+
+Testing ././/./c.cool
+riscosified: @.c/cool
+                                                            riscosify pass
+unixified back again @/c.cool : DIFFERS
+
+
+Testing ../../../c.cool
+riscosified: ^.^.^.c/cool
+                                                            riscosify pass
+unixified back again ../../../c.cool : same
+
+
+Testing ../cool.c
+riscosified: ^.c.cool
+                                                            riscosify pass
+unixified back again ../cool.c : same
+
+
+Testing ../cool.php
+riscosified: ^.cool/php
+                                                            riscosify pass
+unixified back again ../cool.php : same
+
+
+Testing .plan
+riscosified: /plan
+                                                            riscosify pass
+unixified back again /plan : DIFFERS
+
+
+Testing ..cunningplan
+riscosified: //cunningplan
+                                                            riscosify pass
+unixified back again //cunningplan : DIFFERS
+
+
+Testing /idefs::4/$/fred/preset/s
+riscosified: idefs::4.$.fred.preset.s
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred/preset.s : DIFFERS
+
+
+Testing /idefs::4/$/fred/preset.s
+riscosified: idefs::4.$.fred.s.preset
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred/preset.s : DIFFERS
+
+
+Testing /Sunfish#192.0.2.50::/home/joty.$/projects/gccsdk/index.html
+riscosified: Sunfish#192.0.2.50::/home/joty.$.projects.gccsdk.index/html
+                                                            riscosify pass
+unixified back again /Sunfish#192.0.2.50::/home/joty.$/projects/gccsdk/index.html : same
+
+
+Testing /HostFS:
+riscosified: HostFS:
+                                                            riscosify pass
+unixified back again /HostFS: : same
+
+
+Testing /HostFS:$
+riscosified: HostFS:$
+                                                            riscosify pass
+unixified back again /HostFS:$ : same
+
+
+Testing /HostFS:$.jo.html
+riscosified: HostFS:$.jo/html
+                                                            riscosify pass
+unixified back again /HostFS:$/jo.html : DIFFERS
+
+
+Testing /HostFS:$/jo.html
+riscosified: HostFS:$.jo/html
+                                                            riscosify pass
+unixified back again /HostFS:$/jo.html : same
+
+
+Testing /rname.c
+riscosified: $.c.rname
+                                                            riscosify pass
+unixified back again /rname.c : same
+
+
+Testing /arm/rname.c
+riscosified: $.arm.c.rname
+                                                            riscosify pass
+unixified back again /arm/rname.c : same
+
+
+Testing /arm//rname.c
+riscosified: $.arm.c.rname
+                                                            riscosify pass
+unixified back again /arm/rname.c : DIFFERS
+
+
+Testing //arm/rname.c
+riscosified: $.arm.c.rname
+                                                            riscosify pass
+unixified back again /arm/rname.c : DIFFERS
+
+
+Testing /arm/./rname.c
+riscosified: $.arm.c.rname
+                                                            riscosify pass
+unixified back again /arm/rname.c : DIFFERS
+
+
+Testing /<GCC$Dir>/config
+riscosified: <GCC$Dir>.config
+                                                            riscosify pass
+unixified back again <GCC$Dir>/config : DIFFERS
+
+
+Testing /dev/tty
+riscosified: tty:
+                                                            riscosify pass
+unixified back again /tty: : DIFFERS
+
+
+Testing idefs::4.$.fred
+riscosified: idefs::4.$.fred
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred : DIFFERS
+
+
+Testing idefs::4/$/fred
+riscosified: idefs::4.$.fred
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred : DIFFERS
+
+
+Testing fred.c
+riscosified: c.fred
+                                                            riscosify pass
+unixified back again fred.c : same
+
+
+Testing foo/fred.c
+riscosified: foo.c.fred
+                                                            riscosify pass
+unixified back again foo/fred.c : same
+
+
+Testing foo/fred.php
+riscosified: foo.fred/php
+                                                            riscosify pass
+unixified back again foo/fred.php : same
+
+
+Testing c/fred
+riscosified: c.fred
+                                                            riscosify pass
+unixified back again fred.c : DIFFERS
+
+
+Testing c.fred
+riscosified: c.fred
+                                                            riscosify pass
+unixified back again fred.c : DIFFERS
+
+
+Testing /gcc:/libgcc.o
+riscosified: gcc:o.libgcc
+                                                            riscosify pass
+unixified back again /gcc:o/libgcc : DIFFERS
+
+
+Testing /gcc:libgcc.o
+riscosified: gcc:o.libgcc
+                                                            riscosify pass
+unixified back again /gcc:o/libgcc : DIFFERS
+
+
+Testing gcc:/getopt.c
+riscosified: gcc:c.getopt
+                                                            riscosify pass
+unixified back again /gcc:c/getopt : DIFFERS
+
+
+Testing gcc:/o.libgcc
+riscosified: gcc:o/libgcc
+                                                            riscosify pass
+unixified back again /gcc:o/libgcc : DIFFERS
+
+
+Testing gcc:c.getopt
+riscosified: gcc:c.getopt
+                                                            riscosify pass
+unixified back again /gcc:c/getopt : DIFFERS
+
+
+Testing gcc:c/getopt
+riscosified: gcc:c.getopt
+                                                            riscosify pass
+unixified back again /gcc:c/getopt : DIFFERS
+
+
+Testing gcc:getopt.c
+riscosified: gcc:c.getopt
+                                                            riscosify pass
+unixified back again /gcc:c/getopt : DIFFERS
+
+
+Testing gcc:foo/getopt.c
+riscosified: gcc:foo.c.getopt
+                                                            riscosify pass
+unixified back again /gcc:foo/getopt.c : DIFFERS
+
+
+Testing gcc:foo.getopt/php
+riscosified: gcc:foo.getopt/php
+                                                            riscosify pass
+unixified back again /gcc:foo/getopt.php : DIFFERS
+
+
+Testing gcc:getopt.php
+riscosified: gcc:getopt.php
+                                                            riscosify pass
+unixified back again /gcc:getopt/php : DIFFERS
+
+
+Testing gcc:getopt/php
+riscosified: gcc:getopt/php
+                                                            riscosify pass
+unixified back again /gcc:getopt/php : DIFFERS
+
+
+Testing gcc:foo/getopt
+riscosified: gcc:foo/getopt
+                                                            riscosify pass
+unixified back again /gcc:foo/getopt : DIFFERS
+
+
+Testing foo.bar.o.getopt
+riscosified: foo.bar.o.getopt
+                                                            riscosify pass
+unixified back again foo/bar/getopt.o : DIFFERS
+
+
+Testing foo/bar/o/getopt
+riscosified: foo.bar.o.getopt
+                                                            riscosify pass
+unixified back again foo/bar/getopt.o : DIFFERS
+
+
+Testing /gccpkg:lib/gcc-lib/arm-riscos-aof/2_95_4/include/time.h
+riscosified: gccpkg:lib.gcc-lib.arm-riscos-aof.2_95_4.include.h.time
+                                                            riscosify pass
+unixified back again /gccpkg:lib/gcc-lib/arm-riscos-aof/2_95_4/include/time.h : same
+
+
+Testing /gccpkg:include/unixlib/stddef.h
+riscosified: gccpkg:include.unixlib.h.stddef
+                                                            riscosify pass
+unixified back again /gccpkg:include/unixlib/stddef.h : same
+
+
+Testing idefs::4.$.fred.s.preset
+riscosified: idefs::4.$.fred.s.preset
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred/preset.s : DIFFERS
+
+
+Testing idefs::4.$.fred.preset.s
+riscosified: idefs::4.$.fred.preset.s
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred/preset.s : DIFFERS
+
+
+Testing idefs::4/$/fred/preset.s
+riscosified: idefs::4.$.fred.s.preset
+                                                            riscosify pass
+unixified back again /idefs::4.$/fred/preset.s : DIFFERS
+
+
+Testing Devices#baud9600:serial
+riscosified: Devices#baud9600:serial
+                                                            riscosify pass
+unixified back again /Devices#baud9600:serial : DIFFERS
+
+
+Testing LanMan98#notypes::mint.$.index/php
+riscosified: LanMan98#notypes::mint.$.index/php
+                                                            riscosify pass
+unixified back again /LanMan98#notypes::mint.$/index.php : DIFFERS
+
+
+Testing LanMan98#no.types::mint/$/index.php
+riscosified: LanMan98#no.types::mint.$.index/php
+                                                            riscosify pass
+unixified back again /LanMan98#no.types::mint.$/index.php : DIFFERS
+
+
+Testing /LanMan98#no/types::mint/$/index.php
+riscosified: LanMan98#no/types::mint.$.index/php
+                                                            riscosify pass
+unixified back again /LanMan98#no/types::mint.$/index.php : DIFFERS
+
+
+Testing c/jimmyhill
+riscosified: c.jimmyhill
+                                                            riscosify pass
+unixified back again jimmyhill.c : DIFFERS
+
+
+Testing fred/preset.s
+riscosified: fred.s.preset
+                                                            riscosify pass
+unixified back again fred/preset.s : same
+
+
+Testing getopt.c
+riscosified: c.getopt
+                                                            riscosify pass
+unixified back again getopt.c : same
+
+
+Testing cc.smart
+riscosified: cc.smart
+                                                            riscosify pass
+unixified back again smart.cc : DIFFERS
+
+
+Testing php.smart
+riscosified: php/smart
+                                                            riscosify pass
+unixified back again php/smart : DIFFERS
+
+
+Testing smart.cc
+riscosified: cc.smart
+                                                            riscosify pass
+unixified back again smart.cc : same
+
+
+Testing gcc-2.7.2.2.tar.gz
+riscosified: gcc-2/7/2/2/tar/gz
+                                                            riscosify pass
+unixified back again gcc-2/7/2/2/tar/gz : DIFFERS
+
+
+Testing foo/fred.c.text-base
+riscosified: foo.fred/c/text-base
+                                                            riscosify pass
+unixified back again foo/fred.c.text-base : same
+
+
+Testing foo.o.bar
+riscosified: foo.o.bar
+                                                            riscosify pass
+unixified back again foo/bar.o : DIFFERS
+
+
+Testing :4.$.something
+riscosified: :4.$.something
+                                                            riscosify pass
+unixified back again /:4.$/something : DIFFERS
+
+
+Testing .
+riscosified: @
+                                                            riscosify pass
+unixified back again . : same
+
+
+Testing ..
+riscosified: ^
+                                                            riscosify pass
+unixified back again .. : same
+
+
+Testing gcc:/./o.libgcc
+riscosified: gcc:o/libgcc
+                                                            riscosify pass
+unixified back again /gcc:o/libgcc : DIFFERS
+
+
+Testing gcc:/../o.libgcc
+riscosified: gcc:^.o/libgcc
+                                                            riscosify pass
+unixified back again /gcc:/../o.libgcc : DIFFERS
+
+
+Testing gcc:/../libgcc.o
+riscosified: gcc:^.o.libgcc
+                                                            riscosify pass
+unixified back again /gcc:/../libgcc.o : DIFFERS
+
+
+Testing gcc:^.o.libgcc
+riscosified: gcc:^.o.libgcc
+                                                            riscosify pass
+unixified back again /gcc:/../libgcc.o : DIFFERS
+
+
+Testing a
+riscosified: a
+                                                            riscosify pass
+unixified back again a : same
+
+
+Testing abba
+riscosified: abba
+                                                            riscosify pass
+unixified back again abba : same
+
+
+Testing Makefile,fe1
+riscosified: Makefile
+                                                            riscosify pass
+unixified back again Makefile,fe1 : same
+
+
+Testing ./.
+riscosified: @
+                                                            riscosify pass
+unixified back again . : DIFFERS
+
+
+Testing ../.
+riscosified: ^
+                                                            riscosify pass
+unixified back again .. : DIFFERS
+
+
+Testing ./..
+riscosified: @.^
+                                                            riscosify pass
+unixified back again @/.. : DIFFERS
+
+
+Testing ./foo/..
+riscosified: @.foo.^
+                                                            riscosify pass
+unixified back again @/foo/.. : DIFFERS
+
+
+Testing foo/..
+riscosified: @
+                                                            riscosify pass
+unixified back again . : DIFFERS
+
+
+Testing foo/.
+riscosified: foo
+                                                            riscosify pass
+unixified back again foo : DIFFERS
+
+
+Testing ./foo/.
+riscosified: @.foo
+                                                            riscosify pass
+unixified back again @/foo : DIFFERS
+
+
+Testing ./foo.c
+riscosified: @.c.foo
+                                                            riscosify pass
+unixified back again @/foo.c : DIFFERS
+
+
+Testing foo/
+riscosified: foo
+                                                            riscosify pass
+unixified back again foo : DIFFERS
+
+
+Testing foo//
+riscosified: foo
+                                                            riscosify pass
+unixified back again foo : DIFFERS
+
+
+Testing dir/file.h/
+riscosified: dir.file/h
+                                                            riscosify pass
+unixified back again dir/file.h : DIFFERS
+
+
+Testing /usr/../var/../tmp/./file.c
+riscosified: <Wimp$ScrapDir>.c.file
+                                                            riscosify pass
+unixified back again <Wimp$ScrapDir>/file.c : DIFFERS
+
+
+Testing ~/foo
+riscosified: <Choices$Write>.foo
+                                                            riscosify no test
+unixified back again <Choices$Write>/foo : DIFFERS
+
+
+Testing /a/long/path/name/that/is/going/to/end/in/a.
+riscosified: $.a.long.path.name.that.is.going.to.end.in.a/
+                                                            riscosify pass
+unixified back again /a/long/path/name/that/is/going/to/end/in/a. : same
+
+
+Testing /a/long/path/name/that/is/not/going/to/end/in/a/.
+riscosified: $.a.long.path.name.that.is.not.going.to.end.in.a
+                                                            riscosify pass
+unixified back again /a/long/path/name/that/is/not/going/to/end/in/a : DIFFERS
+
+
+Testing /a/long/path/name/that/has/aaaa./in/the/middle
+riscosified: $.a.long.path.name.that.has.aaaa/.in.the.middle
+                                                            riscosify pass
+unixified back again /a/long/path/name/that/has/aaaa./in/the/middle : same
+
+
+Testing /
+riscosified: $
+                                                            riscosify pass
+unixified back again $ : DIFFERS
+
+
+Testing /.
+riscosified: $
+                                                            riscosify pass
+unixified back again $ : DIFFERS
+
+
+Testing /..
+riscosified: $
+                                                            riscosify pass
+unixified back again $ : DIFFERS
+
+
+Testing /../
+riscosified: $
+                                                            riscosify pass
+unixified back again $ : DIFFERS
+
+
+Testing /.a
+riscosified: $./a
+                                                            riscosify pass
+unixified back again /.a : same
+
+
+Testing /..a
+riscosified: $.//a
+                                                            riscosify pass
+unixified back again /..a : same
+
+
+Testing /.a.
+riscosified: $./a/
+                                                            riscosify pass
+unixified back again /.a. : same
+
+
+Testing /.a..
+riscosified: $./a//
+                                                            riscosify pass
+unixified back again /.a.. : same
+
+
+Testing /a/b/c/d/e..
+riscosified: $.a.b.c.d.e//
+                                                            riscosify pass
+unixified back again /a/b/c/d/e.. : same
+
+
+Testing /a/b/c/d/e.
+riscosified: $.a.b.c.d.e/
+                                                            riscosify pass
+unixified back again /a/b/c/d/e. : same
+
+
+Testing /ADFS::4.$/foo/h/info.php
+riscosified: ADFS::4.$.foo.h.info/php
+                                                            riscosify pass
+unixified back again /ADFS::4.$/foo/h/info.php : same
+
+
+Testing 
+riscosified: @
+                                                            riscosify pass
+unixified back again . : DIFFERS
+
+
+SUMMARY riscosify: 116 passed, 0 failed, 1 without an expected value
+*** /testunixify
+Testing .plan
+unixified: /plan
+                                                            unixify FAIL (expected fail)
+riscosified back again $.plan : DIFFERS
+
+
+Testing ..cunningplan
+unixified: //cunningplan
+                                                            unixify FAIL (expected fail)
+riscosified back again $.cunningplan : DIFFERS
+
+
+Testing config/arm/rname.c
+unixified: config/arm/rname.c
+                                                            unixify pass 
+riscosified back again config.arm.c.rname : DIFFERS
+
+
+Testing funky.cold.medina.c
+unixified: funky/cold/medina.c
+                                                            unixify FAIL (expected fail)
+riscosified back again funky.cold.c.medina : DIFFERS
+
+
+Testing .
+unixified: .
+                                                            unixify pass 
+riscosified back again @ : DIFFERS
+
+
+Testing ..
+unixified: ..
+                                                            unixify pass 
+riscosified back again ^ : DIFFERS
+
+
+Testing ../cc.cool
+unixified: ../cool.cc
+                                                            unixify FAIL (expected fail)
+riscosified back again ^.cc.cool : DIFFERS
+
+
+Testing ./././c.cool
+unixified: ./././cool.c
+                                                            unixify FAIL (expected fail)
+riscosified back again @.c.cool : DIFFERS
+
+
+Testing ../../../c.smart
+unixified: ../../../smart.c
+                                                            unixify FAIL (expected fail)
+riscosified back again ^.^.^.c.smart : DIFFERS
+
+
+Testing ./.plan
+unixified: .//plan
+                                                            unixify FAIL (expected fail)
+riscosified back again @.plan : DIFFERS
+
+
+Testing ./..cunningplan
+unixified: .///cunningplan
+                                                            unixify FAIL (expected fail)
+riscosified back again @.cunningplan : DIFFERS
+
+
+Testing ./foo/fred.php
+unixified: ./foo.fred/php
+                                                            unixify FAIL (expected fail)
+riscosified back again @.foo/fred.php : DIFFERS
+
+
+Testing ./config/arm/rname.c
+unixified: ./config/arm/rname.c
+                                                            unixify pass 
+riscosified back again @.config.arm.c.rname : DIFFERS
+
+
+Testing ./funky.cold.medina.c
+unixified: ./funky/cold/medina.c
+                                                            unixify FAIL (expected fail)
+riscosified back again @.funky.cold.c.medina : DIFFERS
+
+
+Testing ../../arm-riscos-aof/libiberty/libiberty
+unixified: ../../arm-riscos-aof/libiberty/libiberty
+                                                            unixify pass 
+riscosified back again ^.^.arm-riscos-aof.libiberty.libiberty : DIFFERS
+
+
+Testing c.fred
+unixified: fred.c
+                                                            unixify pass 
+riscosified back again c.fred : same
+
+
+Testing foo.c.fred
+unixified: foo/fred.c
+                                                            unixify pass 
+riscosified back again foo.c.fred : same
+
+
+Testing foo.bar.o.getopt
+unixified: foo/bar/getopt.o
+                                                            unixify pass 
+riscosified back again foo.bar.o.getopt : same
+
+
+Testing cc.smart
+unixified: smart.cc
+                                                            unixify pass 
+riscosified back again cc.smart : same
+
+
+Testing foo.fred/c/text-base
+unixified: foo/fred.c.text-base
+                                                            unixify pass 
+riscosified back again foo.fred/c/text-base : same
+
+
+Testing dir.file/h
+unixified: dir/file.h
+                                                            unixify pass 
+riscosified back again dir.h.file : DIFFERS
+
+
+Testing file/h
+unixified: file/h
+                                                            unixify FAIL (expected fail)
+riscosified back again file/h : same
+
+
+Testing cc.c++.c.for.lots.of.prefixes.cc.cool
+unixified: cc/c++/c/for/lots/of/prefixes/cool.cc
+                                                            unixify pass 
+riscosified back again cc.c++.c.for.lots.of.prefixes.cc.cool : same
+
+
+Testing file/php
+unixified: file/php
+                                                            unixify FAIL (expected fail)
+riscosified back again file.php : DIFFERS
+
+
+Testing fred/c/text-base
+unixified: fred/c/text-base
+                                                            unixify FAIL (expected fail)
+riscosified back again fred.c.text-base : DIFFERS
+
+
+Testing gcc-2/7/2/2/tar/gz
+unixified: gcc-2/7/2/2/tar/gz
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc-2.7.2.2.tar.gz : DIFFERS
+
+
+Testing foo/fred.php
+unixified: foo.fred/php
+                                                            unixify FAIL (expected fail)
+riscosified back again foo/fred.php : same
+
+
+Testing c/fred
+unixified: c/fred
+                                                            unixify pass 
+riscosified back again c.fred : DIFFERS
+
+
+Testing php/smart
+unixified: php/smart
+                                                            unixify pass 
+riscosified back again php.smart : DIFFERS
+
+
+Testing a
+unixified: a
+                                                            unixify pass 
+riscosified back again a : same
+
+
+Testing abba
+unixified: abba
+                                                            unixify pass 
+riscosified back again abba : same
+
+
+Testing a.c
+unixified: a.c
+                                                            unixify pass 
+riscosified back again c.a : DIFFERS
+
+
+Testing c.a
+unixified: a.c
+                                                            unixify FAIL 
+riscosified back again c.a : same
+
+
+Testing aa.c
+unixified: aa.c
+                                                            unixify pass 
+riscosified back again c.aa : DIFFERS
+
+
+Testing c.aa
+unixified: aa.c
+                                                            unixify pass 
+riscosified back again c.aa : same
+
+
+Testing hello.world
+unixified: hello/world
+                                                            unixify FAIL (expected fail)
+riscosified back again hello.world : same
+
+
+Testing objects/EltNode-h
+unixified: objects/EltNode-h
+                                                            unixify pass 
+riscosified back again objects.EltNode-h : DIFFERS
+
+
+Testing objects.EltNode-m
+unixified: objects/EltNode-m
+                                                            unixify FAIL (expected fail)
+riscosified back again objects.EltNode-m : same
+
+
+Testing /plan
+unixified: /plan
+                                                            unixify pass 
+riscosified back again $.plan : DIFFERS
+
+
+Testing //cunningplan
+unixified: //cunningplan
+                                                            unixify pass 
+riscosified back again $.cunningplan : DIFFERS
+
+
+Testing /arm/rname.c
+unixified: /arm/rname.c
+                                                            unixify pass 
+riscosified back again $.arm.c.rname : DIFFERS
+
+
+Testing /arm/c.rname
+unixified: /arm/c.rname
+                                                            unixify pass 
+riscosified back again $.arm.c/rname : DIFFERS
+
+
+Testing /arm/c/rname
+unixified: /arm/c/rname
+                                                            unixify pass 
+riscosified back again $.arm.c.rname : DIFFERS
+
+
+Testing /arm/rname/c
+unixified: /arm/rname/c
+                                                            unixify pass 
+riscosified back again $.arm.rname.c : DIFFERS
+
+
+Testing /idefs::hd/$/fred/preset.s
+unixified: /idefs::hd/$/fred/preset.s
+                                                            unixify pass 
+riscosified back again idefs::hd.$.fred.s.preset : DIFFERS
+
+
+Testing /idefs::hd.$/fred/preset.s
+unixified: /idefs::hd.$/fred/preset.s
+                                                            unixify pass 
+riscosified back again idefs::hd.$.fred.s.preset : DIFFERS
+
+
+Testing /idefs::hd.$/fred/preset/s
+unixified: /idefs::hd.$/fred/preset/s
+                                                            unixify pass 
+riscosified back again idefs::hd.$.fred.preset.s : DIFFERS
+
+
+Testing /idefs::hd.$/fred/s/preset
+unixified: /idefs::hd.$/fred/s/preset
+                                                            unixify pass 
+riscosified back again idefs::hd.$.fred.s.preset : DIFFERS
+
+
+Testing /idefs::hd.$/fred/s.preset
+unixified: /idefs::hd.$/fred/s.preset
+                                                            unixify pass 
+riscosified back again idefs::hd.$.fred.s/preset : DIFFERS
+
+
+Testing :4.$.something
+unixified: /:4.$/something
+                                                            unixify pass 
+riscosified back again :4/_.something : DIFFERS
+
+
+Testing $.work.!unixlib
+unixified: /work/!unixlib
+                                                            unixify pass 
+riscosified back again $.work.!unixlib : same
+
+
+Testing idefs::4.$.fred.preset.s
+unixified: /idefs::4.$/fred/preset.s
+                                                            unixify FAIL (expected fail)
+riscosified back again idefs::4.$.fred.s.preset : DIFFERS
+
+
+Testing idefs::4.$.fred.s.preset
+unixified: /idefs::4.$/fred/preset.s
+                                                            unixify pass 
+riscosified back again idefs::4.$.fred.s.preset : same
+
+
+Testing idefs::4.$.fred
+unixified: /idefs::4.$/fred
+                                                            unixify pass 
+riscosified back again idefs::4.$.fred : same
+
+
+Testing $.c.rname
+unixified: /rname.c
+                                                            unixify pass 
+riscosified back again $.c.rname : same
+
+
+Testing $.arm.c.rname
+unixified: /arm/rname.c
+                                                            unixify pass 
+riscosified back again $.arm.c.rname : same
+
+
+Testing Devices#baud9600:serial
+unixified: /Devices#baud9600:serial
+                                                            unixify pass 
+riscosified back again Devices#baud9600:serial : same
+
+
+Testing LanMan98#notypes::mint.$.index/php
+unixified: /LanMan98#notypes::mint.$/index.php
+                                                            unixify pass 
+riscosified back again LanMan98#notypes::mint.$.index/php : same
+
+
+Testing LanMan98#no.types::mint.$.index/php
+unixified: /LanMan98#no.types::mint.$/index.php
+                                                            unixify pass 
+riscosified back again LanMan98#no.types::mint.$.index/php : same
+
+
+Testing LanMan98#no/types::mint.$.index/php
+unixified: /LanMan98#no/types::mint.$/index.php
+                                                            unixify pass 
+riscosified back again LanMan98#no/types::mint.$.index/php : same
+
+
+Testing $.home.riscos.env
+unixified: /home/riscos/env
+                                                            unixify pass 
+riscosified back again $.home.riscos.env : same
+
+
+Testing $.a.long.path.name.that.is.going.to.end.in.a/
+unixified: /a/long/path/name/that/is/going/to/end/in/a.
+                                                            unixify pass 
+riscosified back again $.a.long.path.name.that.is.going.to.end.in.a/ : same
+
+
+Testing $.a.long.path.name.that.is.not.going.to.end.in.a
+unixified: /a/long/path/name/that/is/not/going/to/end/in/a
+                                                            unixify pass (expected fail)
+riscosified back again $.a.long.path.name.that.is.not.going.to.end.in.a : same
+
+
+Testing $.a.long.path.name.that.has.aaaa/.in.the.middle
+unixified: /a/long/path/name/that/has/aaaa./in/the/middle
+                                                            unixify pass 
+riscosified back again $.a.long.path.name.that.has.aaaa/.in.the.middle : same
+
+
+Testing $
+unixified: $
+                                                            unixify FAIL (expected fail)
+riscosified back again $ : same
+
+
+Testing $./a
+unixified: /.a
+                                                            unixify pass 
+riscosified back again $./a : same
+
+
+Testing $.//a
+unixified: /..a
+                                                            unixify pass 
+riscosified back again $.//a : same
+
+
+Testing $./a/
+unixified: /.a.
+                                                            unixify pass 
+riscosified back again $./a/ : same
+
+
+Testing $./a//
+unixified: /.a..
+                                                            unixify pass 
+riscosified back again $./a// : same
+
+
+Testing $.a.b.c.d.e//
+unixified: /a/b/c/d/e..
+                                                            unixify pass 
+riscosified back again $.a.b.c.d.e// : same
+
+
+Testing $.a.b.c.d.e/
+unixified: /a/b/c/d/e.
+                                                            unixify pass 
+riscosified back again $.a.b.c.d.e/ : same
+
+
+Testing ADFS::4.$.foo.h.info/php
+unixified: /ADFS::4.$/foo/h/info.php
+                                                            unixify pass 
+riscosified back again ADFS::4.$.foo.h.info/php : same
+
+
+Testing IDEFS::HD.$.Work.gcc.gcc-272.config.arm.c.rname
+unixified: /IDEFS::HD.$/Work/gcc/gcc-272/config/arm/rname.c
+                                                            unixify pass 
+riscosified back again IDEFS::HD.$.Work.gcc.gcc-272.config.arm.c.rname : same
+
+
+Testing IDEFS::HD.$.Work.gcc.gcc-272.config.arm.for.rname
+unixified: /IDEFS::HD.$/Work/gcc/gcc-272/config/arm/for/rname
+                                                            unixify pass 
+riscosified back again IDEFS::HD.$.Work.gcc.gcc-272.config.arm.for.rname : same
+
+
+Testing /gcc:/../getopt.c
+unixified: /gcc:/../getopt.c
+                                                            unixify pass 
+riscosified back again gcc:^.c.getopt : DIFFERS
+
+
+Testing DeskLib:foobar.h
+unixified: /DeskLib:foobar.h
+                                                            unixify pass 
+riscosified back again DeskLib:h.foobar : DIFFERS
+
+
+Testing GCC:objc/list.h
+unixified: /GCC:objc/list.h
+                                                            unixify pass 
+riscosified back again GCC:objc.h.list : DIFFERS
+
+
+Testing gcc:/../getopt.c
+unixified: /gcc:././getopt.c
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc:/.c.getopt : DIFFERS
+
+
+Testing gcc:/getopt.c
+unixified: /gcc:/getopt.c
+                                                            unixify pass 
+riscosified back again gcc:c.getopt : DIFFERS
+
+
+Testing /gcc:o.libgcc
+unixified: /gcc:o.libgcc
+                                                            unixify pass 
+riscosified back again gcc:o/libgcc : DIFFERS
+
+
+Testing /gcc:foo.c.getopt
+unixified: /gcc:foo.c.getopt
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc:foo/c/getopt : DIFFERS
+
+
+Testing /foo:bar.baz
+unixified: /foo:bar.baz
+                                                            unixify pass 
+riscosified back again foo:bar/baz : DIFFERS
+
+
+Testing /gcc:o/libgcc
+unixified: /gcc:o/libgcc
+                                                            unixify pass 
+riscosified back again gcc:o.libgcc : DIFFERS
+
+
+Testing /gcc:foo.getopt/php
+unixified: /gcc:foo.getopt/php
+                                                            unixify pass 
+riscosified back again gcc:foo/getopt.php : DIFFERS
+
+
+Testing /gcc:getopt.php
+unixified: /gcc:getopt.php
+                                                            unixify pass 
+riscosified back again gcc:getopt/php : DIFFERS
+
+
+Testing /gcc:getopt/php
+unixified: /gcc:getopt/php
+                                                            unixify pass 
+riscosified back again gcc:getopt.php : DIFFERS
+
+
+Testing foo:
+unixified: /foo:
+                                                            unixify pass 
+riscosified back again foo: : same
+
+
+Testing gcc:o.libgcc
+unixified: /gcc:o/libgcc
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc:o.libgcc : same
+
+
+Testing gcc:foo.c.getopt
+unixified: /gcc:foo/getopt.c
+                                                            unixify pass 
+riscosified back again gcc:foo.c.getopt : same
+
+
+Testing gccpkg:lib.gcc-lib.arm-riscos-aof.2_95_4.include.h.time
+unixified: /gccpkg:lib/gcc-lib/arm-riscos-aof/2_95_4/include/time.h
+                                                            unixify pass 
+riscosified back again gccpkg:lib.gcc-lib.arm-riscos-aof.2_95_4.include.h.time : same
+
+
+Testing gccpkg:include.unixlib.h.stddef
+unixified: /gccpkg:include/unixlib/stddef.h
+                                                            unixify pass 
+riscosified back again gccpkg:include.unixlib.h.stddef : same
+
+
+Testing gcc:^.o/libgcc
+unixified: /gcc:/../o.libgcc
+                                                            unixify pass 
+riscosified back again gcc:^.o/libgcc : same
+
+
+Testing gcc:^.o.libgcc
+unixified: /gcc:/../libgcc.o
+                                                            unixify pass 
+riscosified back again gcc:^.o.libgcc : same
+
+
+Testing gcc:^.getopt.c
+unixified: /gcc:/../getopt.c
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc:^.c.getopt : DIFFERS
+
+
+Testing foo:bar.baz
+unixified: /foo:bar/baz
+                                                            unixify pass 
+riscosified back again foo:bar.baz : same
+
+
+Testing gcc:o/libgcc
+unixified: /gcc:o/libgcc
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc:o.libgcc : DIFFERS
+
+
+Testing gcc:foo.getopt/php
+unixified: /gcc:foo/getopt.php
+                                                            unixify pass 
+riscosified back again gcc:foo.getopt/php : same
+
+
+Testing gcc:getopt.php
+unixified: /gcc:getopt/php
+                                                            unixify pass 
+riscosified back again gcc:getopt.php : same
+
+
+Testing gcc:getopt/php
+unixified: /gcc:getopt/php
+                                                            unixify FAIL (expected fail)
+riscosified back again gcc:getopt.php : DIFFERS
+
+
+Testing /<GCC$dir>/cc.smart
+unixified: /<GCC$dir>/cc.smart
+                                                            unixify pass 
+riscosified back again <GCC$dir>.cc/smart : DIFFERS
+
+
+Testing /<GCC$Dir>/cc/smart
+unixified: /<GCC$Dir>/cc/smart
+                                                            unixify pass 
+riscosified back again <GCC$Dir>.cc.smart : DIFFERS
+
+
+Testing /<GCC$Dir>/smart.cc
+unixified: /<GCC$Dir>/smart.cc
+                                                            unixify pass 
+riscosified back again <GCC$Dir>.cc.smart : DIFFERS
+
+
+Testing /<GCC$Dir>/smart/cc
+unixified: /<GCC$Dir>/smart/cc
+                                                            unixify pass 
+riscosified back again <GCC$Dir>.smart.cc : DIFFERS
+
+
+Testing /<GCC$Dir>/config
+unixified: /<GCC$Dir>/config
+                                                            unixify pass 
+riscosified back again <GCC$Dir>.config : DIFFERS
+
+
+Testing /<GCC$Dir>/../config
+unixified: /<GCC$Dir>/../config
+                                                            unixify pass 
+riscosified back again <GCC$Dir>.^.config : DIFFERS
+
+
+Testing /<Wimp$ScrapDir>/foo/bar/c.file
+unixified: /<Wimp$ScrapDir>/foo/bar/c.file
+                                                            unixify pass 
+riscosified back again <Wimp$ScrapDir>.foo.bar.c/file : DIFFERS
+
+
+Testing /<Wimp$ScrapDir>/foo/bar/c/file
+unixified: /<Wimp$ScrapDir>/foo/bar/c/file
+                                                            unixify pass 
+riscosified back again <Wimp$ScrapDir>.foo.bar.c.file : DIFFERS
+
+
+Testing /<Wimp$ScrapDir>/foo/bar/file.c
+unixified: /<Wimp$ScrapDir>/foo/bar/file.c
+                                                            unixify pass 
+riscosified back again <Wimp$ScrapDir>.foo.bar.c.file : DIFFERS
+
+
+Testing /<Wimp$ScrapDir>/foo/bar/file/c
+unixified: /<Wimp$ScrapDir>/foo/bar/file/c
+                                                            unixify pass 
+riscosified back again <Wimp$ScrapDir>.foo.bar.file.c : DIFFERS
+
+
+Testing <GCC$dir>.cc.smart
+unixified: <GCC$dir>/smart.cc
+                                                            unixify FAIL (expected fail)
+riscosified back again <GCC$dir>.cc.smart : same
+
+
+Testing <GCC$Dir>.cc/smart
+unixified: <GCC$Dir>/cc.smart
+                                                            unixify FAIL (expected fail)
+riscosified back again <GCC$Dir>.cc/smart : same
+
+
+Testing <GCC$Dir>.smart.cc
+unixified: <GCC$Dir>/smart.cc
+                                                            unixify FAIL (expected fail)
+riscosified back again <GCC$Dir>.cc.smart : DIFFERS
+
+
+Testing <GCC$Dir>.smart/cc
+unixified: <GCC$Dir>/smart.cc
+                                                            unixify FAIL (expected fail)
+riscosified back again <GCC$Dir>.cc.smart : DIFFERS
+
+
+Testing <GCC$Dir>.config
+unixified: <GCC$Dir>/config
+                                                            unixify FAIL (expected fail)
+riscosified back again <GCC$Dir>.config : same
+
+
+Testing <GCC$Dir>.^.config
+unixified: <GCC$Dir>/../config
+                                                            unixify FAIL (expected fail)
+riscosified back again <GCC$Dir>.^.config : same
+
+
+Testing <Wimp$ScrapDir>.foo.bar.c.file
+unixified: <Wimp$ScrapDir>/foo/bar/file.c
+                                                            unixify FAIL (expected fail)
+riscosified back again <Wimp$ScrapDir>.foo.bar.c.file : same
+
+
+Testing <Wimp$ScrapDir>.foo.bar.c/file
+unixified: <Wimp$ScrapDir>/foo/bar/c.file
+                                                            unixify FAIL (expected fail)
+riscosified back again <Wimp$ScrapDir>.foo.bar.c/file : same
+
+
+Testing <Wimp$ScrapDir>.foo.bar.file.c
+unixified: <Wimp$ScrapDir>/foo/bar/file.c
+                                                            unixify FAIL (expected fail)
+riscosified back again <Wimp$ScrapDir>.foo.bar.c.file : DIFFERS
+
+
+Testing <Wimp$ScrapDir>.foo.bar.file/c
+unixified: <Wimp$ScrapDir>/foo/bar/file.c
+                                                            unixify FAIL (expected fail)
+riscosified back again <Wimp$ScrapDir>.foo.bar.c.file : DIFFERS
+
+
+Testing %
+unixified: /lib
+                                                            unixify pass (expected fail)
+riscosified back again $.lib : DIFFERS
+
+
+Testing %.cc1
+unixified: /lib/cc1
+                                                            unixify pass 
+riscosified back again $.lib.cc1 : DIFFERS
+
+
+Testing %.o.cc1
+unixified: /lib/cc1.o
+                                                            unixify pass 
+riscosified back again $.lib.o.cc1 : DIFFERS
+
+
+Testing %.o/cc1
+unixified: /lib/o.cc1
+                                                            unixify pass 
+riscosified back again $.lib.o/cc1 : DIFFERS
+
+
+Testing %.cc1.o
+unixified: /lib/cc1.o
+                                                            unixify FAIL (expected fail)
+riscosified back again $.lib.o.cc1 : DIFFERS
+
+
+Testing %.cc1/o
+unixified: /lib/cc1.o
+                                                            unixify pass 
+riscosified back again $.lib.o.cc1 : DIFFERS
+
+
+Testing %.cool/php
+unixified: /lib/cool.php
+                                                            unixify pass 
+riscosified back again $.lib.cool/php : DIFFERS
+
+
+Testing %.something.in.the.library
+unixified: /lib/something/in/the/library
+                                                            unixify pass 
+riscosified back again $.lib.something.in.the.library : DIFFERS
+
+
+Testing ^
+unixified: ..
+                                                            unixify pass (expected fail)
+riscosified back again ^ : same
+
+
+Testing ^.cc1
+unixified: ../cc1
+                                                            unixify pass 
+riscosified back again ^.cc1 : same
+
+
+Testing ^.o.cc1
+unixified: ../cc1.o
+                                                            unixify pass 
+riscosified back again ^.o.cc1 : same
+
+
+Testing ^.o/cc1
+unixified: ../o.cc1
+                                                            unixify pass 
+riscosified back again ^.o/cc1 : same
+
+
+Testing ^.cc1.o
+unixified: ../cc1.o
+                                                            unixify FAIL (expected fail)
+riscosified back again ^.o.cc1 : DIFFERS
+
+
+Testing ^.cc1/o
+unixified: ../cc1.o
+                                                            unixify pass 
+riscosified back again ^.o.cc1 : DIFFERS
+
+
+Testing ^.cool/php
+unixified: ../cool.php
+                                                            unixify pass 
+riscosified back again ^.cool/php : same
+
+
+Testing ^.something.in.the.library
+unixified: ../something/in/the/library
+                                                            unixify pass 
+riscosified back again ^.something.in.the.library : same
+
+
+Testing wibble.wobble.^.o.cc1
+unixified: wibble/wobble/../cc1.o
+                                                            unixify pass 
+riscosified back again wibble.wobble.^.o.cc1 : same
+
+
+Testing wibble.wobble.^.o/cc1
+unixified: wibble/wobble/../o.cc1
+                                                            unixify pass 
+riscosified back again wibble.wobble.^.o/cc1 : same
+
+
+Testing wibble.wobble.^.cc1.o
+unixified: wibble/wobble/../cc1.o
+                                                            unixify FAIL (expected fail)
+riscosified back again wibble.wobble.^.o.cc1 : DIFFERS
+
+
+Testing wibble.wobble.^.cc1/o
+unixified: wibble/wobble/../cc1.o
+                                                            unixify pass 
+riscosified back again wibble.wobble.^.o.cc1 : DIFFERS
+
+
+Testing wibble.wobble.^.something.in.the.library
+unixified: wibble/wobble/../something/in/the/library
+                                                            unixify pass 
+riscosified back again wibble.wobble.^.something.in.the.library : same
+
+
+Testing wibble/wobble.^.something.in/the.library
+unixified: wibble.wobble/../something/in.the/library
+                                                            unixify pass 
+riscosified back again wibble/wobble.^.something.in/the.library : same
+
+
+Testing ^.^.^.c.cool
+unixified: ../../../cool.c
+                                                            unixify pass 
+riscosified back again ^.^.^.c.cool : same
+
+
+Testing ^.^.^.hot.c.cool
+unixified: ../../../hot/cool.c
+                                                            unixify pass 
+riscosified back again ^.^.^.hot.c.cool : same
+
+
+Testing @
+unixified: .
+                                                            unixify pass (expected fail)
+riscosified back again @ : same
+
+
+Testing @.cc1
+unixified: cc1
+                                                            unixify FAIL 
+riscosified back again cc1 : DIFFERS
+
+
+Testing @.o.cc1
+unixified: cc1.o
+                                                            unixify FAIL 
+riscosified back again o.cc1 : DIFFERS
+
+
+Testing @.o/cc1
+unixified: o/cc1
+                                                            unixify FAIL 
+riscosified back again o.cc1 : DIFFERS
+
+
+Testing @.cc1.o
+unixified: cc1.o
+                                                            unixify FAIL (expected fail)
+riscosified back again o.cc1 : DIFFERS
+
+
+Testing @.cc1/o
+unixified: cc1/o
+                                                            unixify FAIL 
+riscosified back again cc1/o : DIFFERS
+
+
+Testing @.cool/php
+unixified: cool/php
+                                                            unixify FAIL 
+riscosified back again cool.php : DIFFERS
+
+
+Testing @.something.in.the.library
+unixified: something/in/the/library
+                                                            unixify FAIL 
+riscosified back again something.in.the.library : DIFFERS
+
+
+Testing 
+unixified: 
+                                                            unixify pass 
+riscosified back again @ : DIFFERS
+
+
+Passes 106
+Fails 7
+Expected fails 39
+SUMMARY unixify: 106 passed, 7 failed, 39 expected failures
+

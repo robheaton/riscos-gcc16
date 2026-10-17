@@ -14,9 +14,11 @@ changes: names are used as they are given.
 | `src/dirent.c` | `opendir`, `readdir`, `rewinddir`, `closedir` over `OS_GBPB 12` |
 | `src/cwd.c` | `chdir`, `getcwd`, `rmdir` |
 | `src/statvfs.c` | `statvfs` (`OS_FSControl 55`) |
+| `../sdk/crt/posix/` | the small process and memory calls, in the SDK's `libriscosstub.a` (so every program has them, with or without `-munixlib`; they use the translation when it is linked in): the environment (`getenv` looks in `environ` before the system variables, `clearenv`), `getuid` and the other ids, `uname`, `gethostname`, `umask`, `usleep`, `nanosleep`, `sched_yield`, `getrusage`, `getrlimit`/`setrlimit`, anonymous and private-file `mmap`/`munmap`, `fcntl`, `ioctl`, `fsync`, `ftruncate`, `truncate`, `chmod`, `utime`/`utimes`, `realpath`; `dup`, `pipe`, `link`, `symlink` fail with `ENOSYS` |
 | `include/unixlib/local.h` | the flags and declarations of the translation (from UnixLib) |
 | `build.sh` | builds `out/libunixlib64.a` |
 | `tests/t_riscosify.c`, `tests/expected-riscosify.pyromaniac.txt` | the translation of 40 names in both directions |
+| `tests/t_posix.c` | the environment, ids, `uname`, sleeping, `mmap`, limits, `ftruncate`, `chmod`, `utime`, `realpath` ... |
 | `tests/t_files.c` | creating, reading, renaming and removing files and directories by Unix names, the current directory, `statvfs` (22 checks) |
 
 How it fits in: the SDK's system calls (`sdk/crt/riscos_syscalls.c`: `open`, `unlink`, `rename`, `mkdir`, `stat`) call `__riscosify_std` if the library is linked in (a weak reference) and set the file type of a new

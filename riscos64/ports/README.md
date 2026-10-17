@@ -7,7 +7,6 @@ test programs of each library are run on RISC OS Pyromaniac (through the hosted 
 |---|---|
 | `build-gmp-mpfr-mpc.sh SOURCES WORKDIR` | configures, builds and installs GMP, MPFR and MPC as static libraries, then builds their test programs |
 | `run-tests.sh gmp\|mpfr\|mpc WORKDIR` | runs the test programs of one library on Pyromaniac; the ones that time out are run again with fewer repetitions |
-| `rofile.h` | a header that the test programs are compiled with (`-include`): it maps the file names, see below |
 
 `SOURCES` is a folder with `gmp-6.1.0`, `mpfr-3.1.4` and `mpc-1.0.3` (the versions that GCC's `contrib/download_prerequisites` fetches; other versions were not tried). The SDK has to be built first (`sdk/build-sdk.sh`) and
 the cross compiler of `tools/build-a64-toolchain.sh` has to be in `A64` (default `/var/tmp/a64/prefix/bin`).
@@ -17,7 +16,7 @@ the cross compiler of `tools/build-a64-toolchain.sh` has to be in `A64` (default
 * **The compiler** is the SDK driver in a wrapper (`cc64`, written by the script into `WORKDIR`) that adds `RISCOS64_RAW=1` (the file name as asked for: a configure script wants `a.out`, not `a,ff8`) and the C dialect of the
   year the packages were written (`-std=gnu99 -fpermissive` and the warnings off that GCC 16 makes errors: C23 is its default, and these packages use K&R declarations and implicit `int`).
 * **`--disable-assembly`** for GMP (its AArch64 assembler is not used; the generic C code is). The libraries are static; the `.la` files of the installed libraries are removed so that libtool does not pick up a `libgmp.la` of the host.
-* **The tests** are built last, with a second wrapper (`cc64t`) that also includes `rofile.h`, and stand-ins for the two `.la` files that the test makefiles link with.
+* **The tests** are built last, with a second wrapper (`cc64u`) that adds `-munixlib`, and stand-ins for the two `.la` files that the test makefiles link with.
 
 ## What was needed in the SDK
 
@@ -27,9 +26,10 @@ returned `EIO` for every error.
 
 ## The file names
 
-On RISC OS the dot is the directory separator: `fopen ("io.tmp", ...)` names the file `tmp` in the directory `io`, which does not exist. The tests of these libraries use names like that, so `rofile.h` makes `fopen` and `freopen`
-map a name (`.` becomes `_`, `/` becomes `.`; the source directory the tests were built in, and `./`, are dropped; `/dev/null` is left alone), and the runner puts the data files of the tests next to the programs under the
-mapped names (`tmul_dat`). The SDK itself does not map names: that is the job of a C library that follows RISC OS conventions (see `docs/UNIXLIB64.md`).
+On RISC OS the dot is the directory separator: `fopen ("io.tmp", ...)` names the file `tmp` in the directory `io`, which does not exist. The tests of these libraries use names like that, so the test programs are built with
+**`-munixlib`** ([`../unixlib/`](../unixlib)): UnixLib 64 translates the Unix names (`io.tmp` is the file `io/tmp`, a leaf name with a `/` in it, as UnixLib has always made them), and gives new files the file type Text. The data
+files of the tests go in under the names the tests ask for (`tmul.dat`); the zip tool of the service makes the dot a `/` of the leaf name. MPFR's tests have the build directory compiled in as `SRCDIR`; the test wrapper
+`cc64u` sets it to `.`. (Before UnixLib 64 existed, a header `rofile.h` mapped the names; it is gone. The results below were taken with it.)
 
 ## Results on Pyromaniac (17 October 2026)
 
