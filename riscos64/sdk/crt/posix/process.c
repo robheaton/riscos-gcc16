@@ -28,11 +28,13 @@ static int return_code (void)				/* Sys$ReturnCode: the result of the program th
 }
 
 /* run the command; the POSIX wait status of it: (result & 255) << 8, or 127 << 8 when RISC OS could not run it */
+extern int __ul64_run_swap (const char *cmd);
 static int run (const char *cmd)
 {
   unsigned long r[10] = { (unsigned long) cmd };
   unsigned long clear[10] = { (unsigned long) "Sys$ReturnCode" , 0, (unsigned long) -1, 0, 0 };
   swi_x (0x24, clear);					/* OS_SetVarVal with a length of -1: remove the variable, so that an old result is not taken for this one */
+  if (__ul64_run_swap (cmd) == 0) return (return_code () & 255) << 8;	/* UnixEnv$swap=1: the parent is saved and comes back (runswap.c) */
   if (swi_x (OS_CLI, r)) return 127 << 8;
   return (return_code () & 255) << 8;
 }
