@@ -1,0 +1,37 @@
+#!/bin/bash
+# run-tests.sh SUITE WORKDIR: runs the test programs of GMP, MPFR or MPC (built by build-gmp-mpfr-mpc.sh in WORKDIR) on RISC OS Pyromaniac, through the hosted RISC OS Build service.   SUITE = gmp | mpfr | mpc
+# The programs are AIF64 absolutes; the runner (tools/run_tests_on_service.py) sends them in batches of 8, an end of the job at the first program that fails or times out (300 s) is reported and the rest is run again.
+# Run only ONE of these at a time: the service drops the connections (rc=255) when two jobs overlap.
+# The result is WORKDIR/results-SUITE.txt (the failures, with their output) and WORKDIR/results-SUITE.log (the PASS and FAIL lines).  A program that exits with 77 is a test that skips itself (it is reported FAIL by the runner).
+# After the first run the tests that timed out (rc=124) are run again, one at a time, with GMP_CHECK_REPFACTOR=0.05 (GMP's tests take it from the environment: fewer repetitions of the random tests).
+set -e
+HERE=$(cd "$(dirname "$0")" && pwd)
+RUN=$HERE/../tools/run_tests_on_service.py
+SUITE=${1:?gmp, mpfr or mpc}; W=$(cd "${2:?WORKDIR}" && pwd)
+SRC=$(cat "$W/sources.path")
+case $SUITE in
+  gmp)  DIRS="$W/gmp/b/tests/mpz $W/gmp/b/tests/mpq $W/gmp/b/tests/mpf $W/gmp/b/tests/mpn $W/gmp/b/tests/misc $W/gmp/b/tests/rand $W/gmp/b/tests"; DATA="" ;;
+  mpfr) DIRS="$W/mpfr/b/tests"; DATA="--file $(echo "$SRC"/mpfr-*/tests/tmul.dat) --file $(echo "$SRC"/mpfr-*/tests/inp_str.data)" ;;
+  mpc)  DIRS="$W/mpc/b/tests"; DATA=$(for f in "$SRC"/mpc-*/tests/*.dat; do echo "--file $f"; done) ;;
+  *) echo "SUITE must be gmp, mpfr or mpc"; exit 1 ;;
+esac
+# the test programs: files without a dot in the name that start with the AIF64 header (three NOPs)
+LIST=$W/programs-$SUITE.txt
+python3 -I - $DIRS > "$LIST" <<'PY'
+import os, sys
+for d in sys.argv[1:]:
+    if not os.path.isdir(d): continue
+    for f in sorted(os.listdir(d)):
+        p = os.path.join(d, f)
+        if "." in f or not os.path.isfile(p): continue
+        if open(p, "rb").read(12) == b"\x00\x00\xa0\xe1" * 3: print(p)
+PY
+echo "$(wc -l < "$LIST") programs"
+python3 "$RUN" --batch 8 --out "$W/results-$SUITE.txt" $DATA $(cat "$LIST") | tee "$W/results-$SUITE.log" | tail -3
+SLOW=$(grep '^===== FAIL .* rc=124' "$W/results-$SUITE.txt" | awk '{print $3}' || true)
+if [ -n "$SLOW" ]; then
+  echo "timed out: $(echo $SLOW | tr '\n' ' '): again, one at a time, with fewer repetitions"
+  ARGS=""
+  for n in $SLOW; do p=$(grep -E "/${n%%_*}/${n#*_}\$" "$LIST" | head -1); [ -n "$p" ] && ARGS="$ARGS $p"; done
+  python3 "$RUN" --batch 1 --timeout 900 --pre "Set GMP_CHECK_REPFACTOR 0.05" --out "$W/results-$SUITE-slow.txt" $DATA $ARGS | tee "$W/results-$SUITE-slow.log" | tail -3
+fi
