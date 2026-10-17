@@ -17,6 +17,7 @@ static unsigned long monotonic (void)			/* OS_ReadMonotonicTime: centiseconds */
 
 extern void __ul64_poll_signals (void);
 extern int __ul64_take_signalled (void);
+extern void __ul64_thread_yield (void);
 int nanosleep (const struct timespec *req, struct timespec *rem)
 {
   unsigned long cs, start;
@@ -27,6 +28,7 @@ int nanosleep (const struct timespec *req, struct timespec *rem)
   while (((monotonic () - start) & 0xFFFFFFFFUL) < cs)
     {
       __ul64_poll_signals ();					/* Escape or an alarm ends the sleep early (the handler may leave by longjmp) */
+      __ul64_thread_yield ();					/* other threads run while this one sleeps */
       if (__ul64_take_signalled ())
 	{
 	  unsigned long done = (monotonic () - start) & 0xFFFFFFFFUL;
@@ -46,7 +48,6 @@ int usleep (useconds_t us)
   return nanosleep (&t, 0);
 }
 
-int sched_yield (void) { return 0; }
 
 int getrusage (int who, struct rusage *ru)
 {

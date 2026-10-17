@@ -13,6 +13,7 @@
 static int fails, once_count;
 #define CHECK(c) do { if (c) printf ("ok   %s\n", #c); else { printf ("FAIL %s\n", #c); fails++; } } while (0)
 static void once_fn (void) { once_count++; }
+static void *once_thread (void *a) { (void) a; return 0; }
 
 int main (void)
 {
@@ -29,7 +30,7 @@ int main (void)
   CHECK (pthread_mutex_lock (&m) == 0 && pthread_mutex_trylock (&m) == EBUSY && pthread_mutex_unlock (&m) == 0);
   CHECK (pthread_once (&o, once_fn) == 0 && pthread_once (&o, once_fn) == 0 && once_count == 1);
   CHECK (pthread_key_create (&k, 0) == 0 && pthread_setspecific (k, "x") == 0 && strcmp ((const char *) pthread_getspecific (k), "x") == 0);
-  CHECK (pthread_create (&th, 0, 0, 0) == EAGAIN);
+  CHECK (pthread_create (&th, 0, once_thread, 0) == 0 && pthread_join (th, 0) == 0);				/* the cooperative threads of pthread.c: t_thread tests them */
   CHECK (dlopen ("libx.so", RTLD_NOW) == 0 && dlerror () != 0);
   CHECK (confstr (_CS_PATH, buf, sizeof buf) == 1);
   CHECK (getentropy (rnd, sizeof rnd) == 0);

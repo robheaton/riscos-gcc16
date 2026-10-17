@@ -15,26 +15,30 @@ mkdir -p "$W" "$PREFIX" && W=$(cd "$W" && pwd) && PREFIX=$(cd "$PREFIX" && pwd)
 PICO=${PICOLIBC:-/var/tmp/a64/picolibc}; H=${HOSTLIBS:?HOSTLIBS = prefix of the host GMP, MPFR and MPC}
 J=${JOBS:-$(nproc)}
 step () { echo "$(date +%T) $*"; }
+# mk LOG COMMAND...: run a step with its output in LOG and stop the whole script, saying where, if it fails (a "A && B" list does not stop a script with set -e)
+mk () { local log=$1; shift; "$@" > "$log" 2>&1 || { echo "FAILED: $* (log: $log)"; tail -8 "$log"; exit 1; }; }
 step "copy and patch the sources"
 cp -a "$BU" "$W/binutils-src" && cp -a "$GCC" "$W/gcc-src"
 ( cd "$W/binutils-src" && patch -p1 < "$HERE/patches/binutils-2.45.1-aarch64-riscos.patch" > "$W/patch-binutils.log" )
 ( cd "$W/gcc-src" && patch -p1 < "$HERE/patches/gcc-16.2.0-aarch64-riscos.patch" > "$W/patch-gcc.log" && cp -r "$HERE/new-files/gcc/." gcc/ )
 step "binutils"
 mkdir -p "$W/binutils-build" && cd "$W/binutils-build"
-"$W/binutils-src/configure" --target=aarch64-riscos --prefix="$PREFIX" --disable-nls --disable-werror --disable-gdb --disable-sim --disable-gprof > configure.log 2>&1
-make -j"$J" > make.log 2>&1 && make install > install.log 2>&1
+"$W/binutils-src/configure" --target=aarch64-riscos --prefix="$PREFIX" --disable-nls --disable-werror --disable-gdb --disable-sim --disable-gprof > configure.log 2>&1 || { echo "FAILED: binutils configure"; tail -8 configure.log; exit 1; }
+mk make.log make -j"$J"; mk install.log make install
 export PATH=$PREFIX/bin:$PATH
-step "GCC and libgcc"
-mkdir -p "$W/gcc-build" && cd "$W/gcc-build"
-"$W/gcc-src/configure" --target=aarch64-riscos --prefix="$PREFIX" --with-gmp="$H" --with-mpfr="$H" --with-mpc="$H" --enable-languages=c,c++ --without-headers --with-newlib --disable-nls --disable-shared \
-  --disable-threads --disable-libssp --disable-libgomp --disable-libquadmath --disable-libatomic --disable-multilib --disable-bootstrap --disable-werror \
-  --disable-libstdcxx-pch --with-default-libstdcxx-abi=new --disable-libstdcxx-threads --disable-libstdcxx-filesystem-ts --disable-libstdcxx-backtrace > configure.log 2>&1
-make -j"$J" all-gcc > make-gcc.log 2>&1 && make install-gcc > install-gcc.log 2>&1
-make -j"$J" all-target-libgcc > make-libgcc.log 2>&1 && make install-target-libgcc > install-libgcc.log 2>&1
-step "the SDK files and picolibc into $PREFIX/aarch64-riscos (before libstdc++: its configure links test programs)"
+step "the C headers (libgcc and libstdc++ are built with POSIX threads: they need <pthread.h> and the rest)"
 T=$PREFIX/aarch64-riscos
 mkdir -p "$T/lib" "$T/include"
 cp -a "$PICO/include/." "$T/include/" && cp -a "$SDK/include/." "$T/include/" && python3 "$SDK/fix-picolibc-headers.py" "$T/include" && cp "$PICO/lib/libc.a" "$PICO/lib/libm.a" "$T/lib/"
+step "GCC and libgcc"
+mkdir -p "$W/gcc-build" && cd "$W/gcc-build"
+"$W/gcc-src/configure" --target=aarch64-riscos --prefix="$PREFIX" --with-gmp="$H" --with-mpfr="$H" --with-mpc="$H" --enable-languages=c,c++ --without-headers --with-newlib --disable-nls --disable-shared \
+  --enable-threads=posix --disable-libssp --disable-libgomp --disable-libquadmath --disable-libatomic --disable-multilib --disable-bootstrap --disable-werror \
+  --disable-libstdcxx-pch --with-default-libstdcxx-abi=new --disable-libstdcxx-filesystem-ts --disable-libstdcxx-backtrace > configure.log 2>&1 || { echo "FAILED: gcc configure"; tail -8 configure.log; exit 1; }
+mk make-gcc.log make -j"$J" all-gcc; mk install-gcc.log make install-gcc
+mk make-libgcc.log make -j"$J" all-target-libgcc; mk install-libgcc.log make install-target-libgcc
+step "the SDK files into $PREFIX/aarch64-riscos (before libstdc++: its configure links test programs)"
+T=$PREFIX/aarch64-riscos
 # the start-up files and the system calls of the SDK (sdk/crt), compiled with the new compiler
 CC=$PREFIX/bin/aarch64-riscos-gcc
 for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
@@ -50,7 +54,7 @@ UL=$SDK/../unixlib
 CC=$CC AR=$PREFIX/bin/aarch64-riscos-ar "$UL/build.sh" "$W/unixlib" > "$W/unixlib-build.log" 2>&1
 cp "$W/unixlib/libunixlib64.a" "$T/lib/" && mkdir -p "$T/include/unixlib" && cp "$UL/include/unixlib/local.h" "$T/include/unixlib/"
 step "libstdc++ (C++ for programs)"
-make -j"$J" all-target-libstdc++-v3 > make-libstdcxx.log 2>&1 && make install-target-libstdc++-v3 > install-libstdcxx.log 2>&1
+mk make-libstdcxx.log make -j"$J" all-target-libstdc++-v3; mk install-libstdcxx.log make install-target-libstdc++-v3
 step "the module kit (aarch64-riscos-gcc -mmodule): runtime and C library built with the new compiler, linker script, headers, modreloc64, cmunge64"
 KIT=$SDK/../kit; OUT=$W/kit-lib
 KITCC=$PREFIX/bin/aarch64-riscos-gcc KITAR=$PREFIX/bin/aarch64-riscos-ar KITOUT=$OUT "$KIT/build-kit.sh" > "$W/kit-build.log" 2>&1

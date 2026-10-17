@@ -10,6 +10,7 @@
 
 extern unsigned long swi_x (unsigned long swi, unsigned long regs[10]);
 extern char __heap_start[];
+extern unsigned long __ul64_main_stack_low (unsigned long cur_sp);
 extern unsigned long __riscos_ramlimit;
 #define OS_CLI 0x05
 #define OS_ChangeEnvironment 0x40
@@ -66,7 +67,7 @@ int __ul64_run_swap (const char *cmd)
   char *p;
   if (!__ul64_swap_enabled ()) { errno = ENOSYS; return -1; }
   image = (image + 15) & ~15UL;
-  sp_now = (unsigned long) __builtin_frame_address (0) - 256;			/* a little below this frame; the stack part is copied from here */
+  sp_now = __ul64_main_stack_low ((unsigned long) __builtin_frame_address (0) - 256);	/* a little below this frame (of the main thread's stack: with threads, where it was suspended); the stack part is copied from here */
   sp_now &= ~15UL;
   stack_len = (__riscos_ramlimit - sp_now + 15) & ~15UL;
   total = ((HANDLER_SIZE + DA_STACK + image + stack_len) + 4095) & ~4095UL;
