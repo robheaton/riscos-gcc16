@@ -52,7 +52,7 @@ diff -ruN a/ld/emulparams/aarch64riscos.sh b/ld/emulparams/aarch64riscos.sh
 +NO_REL_RELOCS=yes
 +
 +TEMPLATE_NAME=elf
-+EXTRA_EM_FILE=aarch64elf
++EXTRA_EM_FILE=aarch64riscos
 +
 +GENERATE_SHLIB_SCRIPT=yes
 +GENERATE_PIE_SCRIPT=yes
@@ -111,3 +111,90 @@ diff -ruN a/ld/Makefile.in b/ld/Makefile.in
  @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64fbsd.Po@am__quote@
  @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64fbsdb.Po@am__quote@
  @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/eaarch64haiku.Po@am__quote@
+diff -ruN a/ld/emultempl/aarch64riscos.em b/ld/emultempl/aarch64riscos.em
+--- a/ld/emultempl/aarch64riscos.em	1970-01-01 01:00:00.000000000 +0100
++++ b/ld/emultempl/aarch64riscos.em	2026-10-17 20:55:11.629282740 +0100
+@@ -0,0 +1,61 @@
++# This file is sourced from elf.em, after aarch64elf.em.  It adds --aif64 to the AArch64 ELF emulation of RISC OS 64: after the link, the output file (an ELF executable linked with riscos64's aif64.ld) is
++# replaced by its loadable contents, which is the AIF image that RISC OS 64 runs (the same as objcopy -O binary).
++source_em ${srcdir}/emultempl/aarch64elf.em
++
++fragment <<EOF
++
++/* --aif64: see aarch64riscos.em */
++#define OPTION_AIF64 0x7a01
++
++extern void (*ld_post_close_hook) (const char *);
++
++/* Read the finished ELF file back with BFD and write the contents of its loadable sections, from the lowest load address up, with zeros in any gap: the same file as objcopy -O binary makes.  */
++static void
++aif64_post_close (const char *file)
++{
++  bfd *b = bfd_openr (file, NULL);
++  asection *s;
++  bfd_vma lo = (bfd_vma) -1, hi = 0;
++  bfd_byte *buf;
++  FILE *f;
++
++  if (b == NULL || !bfd_check_format (b, bfd_object))
++    fatal (_("%P: --aif64: cannot read back %s: %E\n"), file);
++  for (s = b->sections; s != NULL; s = s->next)
++    if ((s->flags & SEC_LOAD) != 0 && s->size != 0)
++      {
++	if (s->lma < lo)
++	  lo = s->lma;
++	if (s->lma + s->size > hi)
++	  hi = s->lma + s->size;
++      }
++  if (hi <= lo)
++    fatal (_("%P: --aif64: %s has nothing to load\n"), file);
++  buf = (bfd_byte *) xcalloc (1, hi - lo);
++  for (s = b->sections; s != NULL; s = s->next)
++    if ((s->flags & SEC_LOAD) != 0 && s->size != 0)
++      if (!bfd_get_section_contents (b, s, buf + (s->lma - lo), 0, s->size))
++	fatal (_("%P: --aif64: cannot read section %s of %s: %E\n"), s->name, file);
++  bfd_close (b);
++  f = fopen (file, FOPEN_WB);
++  if (f == NULL || fwrite (buf, 1, hi - lo, f) != hi - lo || fclose (f) != 0)
++    fatal (_("%P: --aif64: cannot write %s: %E\n"), file);
++  free (buf);
++}
++
++EOF
++
++PARSE_AND_LIST_LONGOPTS="$PARSE_AND_LIST_LONGOPTS"'
++  { "aif64", no_argument, NULL, OPTION_AIF64},
++'
++
++PARSE_AND_LIST_OPTIONS="$PARSE_AND_LIST_OPTIONS"'
++  fprintf (file, _("  --aif64                     Write the loadable contents of the output as an AIF image\n"
++		   "                                (what objcopy -O binary makes) for RISC OS 64\n"));
++'
++
++PARSE_AND_LIST_ARGS_CASES="$PARSE_AND_LIST_ARGS_CASES"'
++    case OPTION_AIF64:
++      ld_post_close_hook = aif64_post_close;
++      break;
++'
+diff -ruN a/ld/ldmain.c b/ld/ldmain.c
+--- a/ld/ldmain.c	2026-10-17 20:55:41.019018402 +0100
++++ b/ld/ldmain.c	2026-10-17 20:55:41.029871718 +0100
+@@ -69,6 +69,9 @@
+ char *default_target;
+ const char *output_filename = "a.out";
+ 
++/* Called with the output file name once the output has been written and closed (set by --aif64 of the RISC OS 64 emulation).  */
++void (*ld_post_close_hook) (const char *) = NULL;
++
+ /* Name this program was invoked by.  */
+ char *program_name;
+ 
+@@ -953,6 +956,8 @@
+       link_info.output_bfd = NULL;
+       if (!bfd_close (obfd))
+ 	fatal (_("%P: %s: final close failed: %E\n"), output_filename);
++      if (ld_post_close_hook != NULL)
++	(*ld_post_close_hook) (output_filename);
+ 
+       link_info.output_bfd = NULL;
+ 

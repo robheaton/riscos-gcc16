@@ -46,11 +46,12 @@
    libriscosstub.a (searched before libc.a, so that its signal () and raise () replace picolibc's fallbacks) has small POSIX functions and the ones that only UnixLib 64 really provides (opendir ...), which fail with ENOSYS if UnixLib 64 is not linked in.  */
 #define LIB_SPEC "%{" RISCOS_MODULE_P ":-lmodkit64 -lmodcxx64 -lgcc;:%{munixlib:-u __ul64_init -lunixlib64} --start-group -lriscosstub -lc -lm -lgcc --end-group}"
 #undef LINK_SPEC
-#define LINK_SPEC "-maarch64riscos -static -X --no-warn-rwx-segments %{" RISCOS_MODULE_P ":-T module64.ld%s --emit-relocs;:-T aif64.ld%s}" AARCH64_ERRATA_LINK_SPEC
+#define LINK_SPEC "-maarch64riscos -static -X --no-warn-rwx-segments %{" RISCOS_MODULE_P ":-T module64.ld%s --emit-relocs;:-T aif64.ld%s %{!r:--aif64}}" AARCH64_ERRATA_LINK_SPEC
 
-/* ld cannot write a raw image itself (the AArch64 backend refuses a change of output format), so a tool turns the linked ELF file into the image, in place: objcopy -O binary for a program (the linker script
-   pads the end of the data so that the file is exactly the read-only plus the read/write size of the header), modreloc64 for a module (it lists the pointers that the module relocates itself).  */
+/* A program: the linker writes the AIF image itself (--aif64, which the AArch64 RISC OS 64 emulation of ld has: the loadable contents of the linked ELF file, what objcopy -O binary would make; the linker script
+   pads the end of the data so that the file is exactly the read-only plus the read/write size of the header).  A module: modreloc64 turns the linked ELF file into the image, in place (it lists the pointers that
+   the module relocates itself).  */
 #undef POST_LINK_SPEC
-#define POST_LINK_SPEC "%{!r:%{" RISCOS_MODULE_P ":modreloc64 -q %{o*:%*}%{!o:a.out};:objcopy -O binary %{o*:%*}%{!o:a.out}}}"
+#define POST_LINK_SPEC "%{!r:%{" RISCOS_MODULE_P ":modreloc64 -q %{o*:%*}%{!o:a.out}}}"
 
 #endif /* GCC_AARCH64_RISCOS_H */
