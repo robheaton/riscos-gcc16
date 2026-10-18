@@ -94,9 +94,16 @@ arm-riscos-gnueabihf-gcc -O2 -o hello,e1f hello.c        # ,e1f gives the file t
 Copy `hello,e1f` to the RISC OS machine and run it there; it needs the `SharedLibs-C-armeabihf` package (step 2 above), and C++ and Fortran programs need `SharedLibs-C++-armeabihf` and
 `SharedLibs-Fortran-armeabihf` as well, unless you link those libraries statically. See [docs/CROSS-COMPILER.md](docs/CROSS-COMPILER.md). To build the tool chain from source: [docs/BUILDING.md](docs/BUILDING.md).
 
+<br>
+
+---
+
+<br>
+
 ## RISC OS 64 (AArch64): early preview
 
-Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section.**
+> [!NOTE]
+> Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section.**
 
 There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux only (there is no native compiler on RISC OS 64 yet), and it has been tested only on the RISC OS Pyromaniac emulator, **not yet on a real RISC OS 64 machine**, so please treat it as a first look. What you can do with it today:
 
