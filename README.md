@@ -17,7 +17,7 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 
 The file names below are download links (they always give the file from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest); older versions are on the [releases page](https://github.com/robheaton/riscos-gcc16/releases)). Check the downloads against [`SHA256SUMS`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SHA256SUMS).
 
-| File | Description | Needed for |
+| File | Description | Required for |
 |---|---|---|
 | [`SharedLibs-C-armeabihf_16.2.0-15_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-C-armeabihf_16.2.0-15_arm.zip) (2 MB) | the C runtime: UnixLib 5.0 rebuilt with GCC 16 and fixed, loader, libgcc_s | running **any** program from this tool chain |
 | [`Gcc16_16.2.0-24_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/Gcc16_16.2.0-24_arm.zip) (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
