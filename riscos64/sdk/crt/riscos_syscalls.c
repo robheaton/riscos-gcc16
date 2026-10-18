@@ -292,6 +292,7 @@ off_t lseek (int fd, off_t off, int whence)
   return (off_t) pos;
 }
 
+static unsigned long name_ino (const char *name);
 int fstat (int fd, struct stat *st)
 {
   unsigned long r[10] = { 0 };
@@ -304,6 +305,12 @@ int fstat (int fd, struct stat *st)
   if (swi_x (OS_Args, r)) { errno = EIO; return -1; }
   st->st_mode = S_IFREG | 0644;
   st->st_size = (off_t) r[2];
+  st->st_dev = 1;
+  {
+    char nm[ROSPATH];
+    unsigned long n[10] = { 7, (unsigned long) fdhandle (fd), (unsigned long) nm, 0, 0, sizeof nm };	/* OS_Args 7: the name of the file of a handle */
+    if (!swi_x (OS_Args, n)) st->st_ino = (ino_t) name_ino (nm);
+  }
   return 0;
 }
 
@@ -437,6 +444,19 @@ int mkdir (const char *path, mode_t mode)
   return 0;
 }
 
+/* An inode number does not exist on RISC OS: a hash of the full name of the file stands for it (so that two names of one file are one inode, and two files are two: programs such as sed -i and mv
+   compare inodes to see whether a rename would be of a file onto itself). */
+static unsigned long name_ino (const char *name)
+{
+  char full[ROSPATH];
+  unsigned long r[10] = { 37, (unsigned long) name, (unsigned long) full, 0, 0, sizeof full };	/* OS_FSControl 37: the canonical name */
+  unsigned long long h = 1469598103934665603ULL;
+  const unsigned char *p = (const unsigned char *) name;
+  if (!swi_x (OS_FSControl, r)) p = (const unsigned char *) full;
+  for (; *p; p++) { h ^= (*p >= 'A' && *p <= 'Z') ? (unsigned char) (*p + 32) : *p; h *= 1099511628211ULL; }	/* (the names are not case sensitive) */
+  return (unsigned long) (h & 0x7FFFFFFFFFFFFFFFULL) | 1;
+}
+
 int stat (const char *path, struct stat *st)
 {
   char b[ROSPATH];
@@ -452,6 +472,8 @@ int stat (const char *path, struct stat *st)
   else st->st_mode = S_IFREG | ((r[5] & 1) ? 0444 : 0) | ((r[5] & 2) ? 0222 : 0);
   st->st_size = (off_t) (r[4] & 0xFFFFFFFF);
   st->st_nlink = 1;
+  st->st_dev = 1;
+  st->st_ino = (ino_t) name_ino (path);
   if ((r[2] & 0xFFF00000UL) == 0xFFF00000UL)					/* a date stamp: the load address top 12 bits are &FFF, then 40 bits of centiseconds since 1900 */
     {
       unsigned long long cs = ((unsigned long long) (r[2] & 0xFF) << 32) | (r[3] & 0xFFFFFFFFUL);

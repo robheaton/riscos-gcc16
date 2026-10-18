@@ -68,6 +68,8 @@ long syscall (long n, ...) { (void) n; __ul64_nosys ("syscall"); return -1; }
 
 int fputc_unlocked (int c, FILE *f) { return fputc (c, f); }
 int fputs_unlocked (const char *s, FILE *f) { return fputs (s, f); }
+int fflush_unlocked (FILE *f) { return fflush (f); }
+char *fgets_unlocked (char *s, int n, FILE *f) { return fgets (s, n, f); }
 size_t fread_unlocked (void *p, size_t s, size_t n, FILE *f) { return fread (p, s, n, f); }
 size_t fwrite_unlocked (const void *p, size_t s, size_t n, FILE *f) { return fwrite (p, s, n, f); }
 int fileno_unlocked (FILE *f) { return fileno (f); }

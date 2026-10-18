@@ -35,6 +35,7 @@ static void init_tls (void)
 
 unsigned long __riscos_ramlimit;
 char *__riscos_heap_end;				/* sbrk may not go beyond it */
+char *program_invocation_name, *program_invocation_short_name;	/* glibc's names for argv[0] and its last part (gnulib's getprogname and error () use them) */
 static char argbuf[4096];
 static char *argvec[256];
 static char *envvec[1];
@@ -73,5 +74,8 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
   init_tls ();
   run_init_arrays ();
   if (__ul64_init) __ul64_init (argc, argvec);				/* UnixLib 64, if it is linked in (riscos64/unixlib) */
+  program_invocation_name = argc > 0 ? argvec[0] : (char *) "";
+  program_invocation_short_name = program_invocation_name;
+  { char *q; for (q = program_invocation_name; *q; q++) if (*q == '/' || *q == '.' || *q == ':') program_invocation_short_name = q + 1; }
   exit (main (argc, argvec, envvec));
 }

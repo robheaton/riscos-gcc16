@@ -19,7 +19,7 @@ if "fputc_unlocked" not in t:
     marker = "int putc_unlocked(int, FILE *) __nonnull((2)) __picolibc_export;"
     assert marker in t, "unexpected stdio.h"
     t = t.replace(marker, marker + "\nint fputc_unlocked(int, FILE *) __picolibc_export;\nint fputs_unlocked(const char *, FILE *) __picolibc_export;\nsize_t fread_unlocked(void *, size_t, size_t, FILE *) __picolibc_export;\n"
-                  "size_t fwrite_unlocked(const void *, size_t, size_t, FILE *) __picolibc_export;\nint fflush_unlocked(FILE *) __picolibc_export;\nint fileno_unlocked(FILE *) __picolibc_export;", 1)
+                  "size_t fwrite_unlocked(const void *, size_t, size_t, FILE *) __picolibc_export;\nint fflush_unlocked(FILE *) __picolibc_export;\nint fileno_unlocked(FILE *) __picolibc_export;\nchar *fgets_unlocked(char *, int, FILE *) __picolibc_export;", 1)
 open(p, "w").write(t)
 
 def add_before_last_endif(path, marker, text):
@@ -83,3 +83,31 @@ t = open(rs).read()
 t2 = t.replace("#if __XSI_VISIBLE\nint getpriority", "#if __XSI_VISIBLE || __BSD_VISIBLE\nint getpriority").replace("#if __XSI_VISIBLE\nint getrusage", "#if __XSI_VISIBLE || __BSD_VISIBLE\nint getrusage")
 if t2 != t:
     open(rs, "w").write(t2)
+
+# O_BINARY: text and binary files are the same here; a non-zero value makes gnulib believe it is on Windows (_setmode)
+fc = inc + "/sys/fcntl.h"
+t = open(fc).read()
+if "#define O_BINARY _FBINARY" in t:
+    open(fc, "w").write(t.replace("#define O_BINARY _FBINARY", "#define O_BINARY 0\t/* (picolibc: _FBINARY) */"))
+
+# program_invocation_name and program_invocation_short_name (glibc): set by the start-up code
+er = inc + "/errno.h"
+t2 = open(er).read()
+if "program_invocation_name" not in t2:
+    i = t2.rindex("#endif")
+    open(er, "w").write(t2[:i] + "#ifdef __cplusplus\nextern \"C\" {\n#endif\nextern char *program_invocation_name, *program_invocation_short_name;\n#ifdef __cplusplus\n}\n#endif\n" + t2[i:])
+
+# ioctl's third parameter is called "param" in picolibc's header; gawk (and others) have a macro of that name
+io2 = inc + "/sys/ioctl.h"
+t = open(io2).read()
+if "void *param" in t:
+    open(io2, "w").write(t.replace("void *param", "void *__argp"))
+
+# picolibc's C23 const-preserving strchr, strpbrk and strrchr return "const void *" for a const argument; pointer arithmetic (strchr (s, c) - s) and assignments to const char * need "const char *"
+st = inc + "/string.h"
+t = open(st).read()
+for fn, args in (("strchr", "(_s, _c)"), ("strpbrk", "(_s, _a)"), ("strrchr", "(_s, _c)")):
+    old = "__preserve_const(%s, _s, %s)" % (fn, args)
+    new = "_Generic(1 ? (_s) : (void *)1, const void *: (const char *)(%s)%s, default: (%s)%s)" % (fn, args, fn, args)
+    t = t.replace(old, new)
+open(st, "w").write(t)

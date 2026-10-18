@@ -1,0 +1,43 @@
+--- gawk-5.3.1/io.c	2026-10-18 10:05:01.878488641 +0100
++++ gawk-5.3.1/io.c
+@@ -4610,7 +4610,7 @@
+ static FILE *
+ gawk_popen_write(const char *cmd)
+ {
+-#if defined(VMS) || defined(__MINGW32__)
++#if defined(VMS) || defined(__MINGW32__) || defined(__riscos__)
+ 	return popen(cmd, binmode("w"));
+ #else
+ 	pid_t childpid;
+@@ -4664,7 +4664,7 @@
+ static int
+ gawk_popen_write_close(FILE *fp)
+ {
+-#if defined(VMS) || defined(__MINGW32__)
++#if defined(VMS) || defined(__MINGW32__) || defined(__riscos__)
+ 	return pclose(fp);
+ #else
+ 	int status, index;
+--- gawk-5.3.1/builtin.c	2026-10-18 10:05:01.880027844 +0100
++++ gawk-5.3.1/builtin.c
+@@ -3304,9 +3304,9 @@
+ int
+ gawk_system(const char *command)
+ {
+-#if defined(VMS) || defined(__MINGW32__)
++#if defined(VMS) || defined(__MINGW32__) || defined(__riscos__)
+ 	return system(command);
+-#else /* ! (defined(VMS) || defined(__MINGW32__)) */
++#else /* ! (defined(VMS) || defined(__MINGW32__) || defined(__riscos__)) */
+ 	pid_t childpid;
+ 	int status;
+ 
+@@ -3321,7 +3321,7 @@
+ 
+ 		return status;
+ 	}
+-#endif /* defined(VMS) || defined(__MINGW32__) */
++#endif /* defined(VMS) || defined(__MINGW32__) || defined(__riscos__) */
+ }
+ 
+ #if 0

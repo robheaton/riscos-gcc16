@@ -148,10 +148,77 @@ static int run_translated (const char *cmd)
   return (return_code () & 255) << 8;
 }
 
+/* system () and popen () run a command with  sh -c  when there is an sh ($SHELL, else a file called sh in $PATH, or ./sh): the Unix way, so that  system ("rm -f x; cp a b")  and  popen ("cat", "w")  mean what they mean on
+   Unix.  The exceptions are commands that are plainly for the operating system: one that starts with * or with a command that only RISC OS has (Set, Spool, RMLoad ...), or that has a <System$Variable> in it.
+   Without an sh, a command is a command of the operating system, as it always was. */
+static int wants_shell (const char *cmd)
+{
+  static const char *const ros_cmds[] = { "set", "seteval", "setmacro", "unset", "spool", "spoolon", "exec", "fx", "run", "obey", "rmload", "rmkill", "rmensure", "rmreinit", "wimpslot", "settype", "dir", "lib", "back",
+    "access", "wipe", "filer_run", "filer_opendir", "desktop", "ifthere", "unalias", "alias", "x", "cdir", "stamp", "info", "ex", "shut", "shutdown", "screensave", "time", "ok", "iconsprites", "pointer", "configure", 0 };
+  const char *p = cmd;
+  char first[32];
+  size_t n = 0;
+  int i;
+  while (*p == ' ') p++;
+  if (*p == '*') return 0;
+  while (p[n] && p[n] != ' ' && n < sizeof first - 1) { first[n] = (char) (p[n] >= 'A' && p[n] <= 'Z' ? p[n] + 32 : p[n]); n++; }
+  first[n] = 0;
+  for (i = 0; ros_cmds[i]; i++) if (!strcmp (first, ros_cmds[i]) && !strchr (first, '/')) return 0;
+  for (p = cmd; *p; p++) if (*p == '<') { const char *q = p + 1; while (*q && *q != '>' && *q != ' ') q++; if (*q == '>' && memchr (p, '$', (size_t) (q - p))) return 0; }
+  return 1;
+}
+static char *find_shell (void)
+{
+  const char *s = getenv ("SHELL"), *path = getenv ("PATH");
+  struct stat st;
+  char buf[1024];
+  if (s && *s && stat (s, &st) == 0) return strdup (s);
+  if (!path) path = ".:/bin:/usr/bin";
+  while (*path)
+    {
+      const char *e = strchr (path, ':');
+      size_t n = e ? (size_t) (e - path) : strlen (path);
+      if (n == 0) snprintf (buf, sizeof buf, "./sh"); else snprintf (buf, sizeof buf, "%.*s/sh", (int) n, path);
+      if (stat (buf, &st) == 0 && S_ISREG (st.st_mode)) return strdup (buf);
+      if (!e) break;
+      path = e + 1;
+    }
+  return 0;
+}
+static int shell_will_run (const char *cmd)
+{
+  char *sh;
+  if (!wants_shell (cmd)) return 0;
+  sh = find_shell ();
+  free (sh);
+  return sh != 0;
+}
+static int run_user (const char *cmd)
+{
+  char *sh;
+  if (wants_shell (cmd) && (sh = find_shell ()) != 0)
+    {
+      size_t n = strlen (sh) + 2 * strlen (cmd) + 16;
+      char *line = malloc (n), *q;
+      int st;
+      if (line)
+	{
+	  q = line + sprintf (line, "%s -c \"", sh);
+	  for (; *cmd; cmd++) { if (*cmd == '"') *q++ = '"'; *q++ = *cmd; }
+	  *q++ = '"'; *q = 0;
+	  st = run (line);
+	  free (line); free (sh);
+	  return st;
+	}
+      free (sh);
+    }
+  return run (cmd);
+}
+
 int system (const char *cmd)
 {
   if (!cmd) return 1;					/* a command processor is there */
-  return run (cmd);
+  return run_user (cmd);
 }
 
 /* the command line of an argv: the arguments with a space or a quote are put in double quotes (a double quote inside is doubled? no: RISC OS has \" in GSTrans strings, which OS_CLI does not read; a quote in an argument is left) */
@@ -380,7 +447,7 @@ FILE *popen (const char *cmd, const char *type)
   if (getenv ("Wimp$ScrapDir")) snprintf (pipes[i].file, sizeof pipes[i].file, "<Wimp$ScrapDir>.pipe%u", ++seq);
   else snprintf (pipes[i].file, sizeof pipes[i].file, "pipe%u", ++seq);
   pipes[i].write = write;
-  pipes[i].sdk = is_program (cmd);
+  pipes[i].sdk = is_program (cmd) || shell_will_run (cmd);
   if (!write && pipes[i].sdk)
     {
       char ros[1100], tr[1100];
@@ -388,7 +455,7 @@ FILE *popen (const char *cmd, const char *type)
       snprintf (ros, sizeof ros, "%s", rp ? rp : pipes[i].file);
       { FILE *t = fopen (pipes[i].file, "w"); if (t) fclose (t); }
       setenv ("Sh$Stdout", ros, 1);
-      pipes[i].status = run (cmd);
+      pipes[i].status = run_user (cmd);
       unsetenv ("Sh$Stdout");
     }
   else if (!write)
@@ -396,13 +463,13 @@ FILE *popen (const char *cmd, const char *type)
       if (can_redirect ())						/* the operating system redirects the output of the command itself: a Spool file that the program that runs this one has open is left alone */
 	{
 	  snprintf (line, sizeof line, "%s { > %s }", cmd, pipes[i].file);
-	  pipes[i].status = run (line);
+	  pipes[i].status = run_user (line);
 	}
       else
 	{
 	  snprintf (line, sizeof line, "Spool %s", pipes[i].file);
 	  run (line);
-	  pipes[i].status = run (cmd);
+	  pipes[i].status = run_user (cmd);
 	  run ("Spool");						/* (this ends any Spool file that was open: there is only one) */
 	}
     }
@@ -427,14 +494,14 @@ int pclose (FILE *f)
 	  const char *rp = __riscos_path (pipes[i].file, tr, 0);
 	  snprintf (ros, sizeof ros, "%s", rp ? rp : pipes[i].file);
 	  setenv ("Sh$Stdin", ros, 1);
-	  status = run (pipes[i].cmd);
+	  status = run_user (pipes[i].cmd);
 	  unsetenv ("Sh$Stdin");
 	}
       else
 	{
 	  snprintf (line, sizeof line, "Exec %s", pipes[i].file);
 	  run (line);
-	  status = run (pipes[i].cmd);
+	  status = run_user (pipes[i].cmd);
 	  run ("Exec");
 	}
     }
