@@ -27,6 +27,8 @@ static int fill_pw (int i, struct passwd *pw, char *buf, size_t size)
   memcpy (buf + a + b, "/bin/sh", c); pw->pw_shell = buf + a + b;
   pw->pw_uid = i == 0 ? 1 : 0;
   pw->pw_gid = i == 0 ? 1 : 0;
+  pw->pw_passwd = (char *) "x";
+  pw->pw_gecos = pw->pw_name;
   return 0;
 }
 static int find_pw (const char *name, int has_uid, uid_t uid)

@@ -84,6 +84,25 @@ static void export_environ (void)
       setsysvar (exported[nexported].name, eq + 1);
       nexported++;
     }
+  /* the names of the exported variables, for the program to make its environ from (riscos_start.c): Unix$Environ is "NAME NAME ..." */
+  {
+    size_t total = 1;
+    int i;
+    char *list;
+    for (i = 0; i < nexported; i++) total += strlen (exported[i].name) + 1;
+    list = malloc (total);
+    if (list && nexported < MAXEXPORT)
+      {
+	char *q = list;
+	for (i = 0; i < nexported; i++) { size_t l = strlen (exported[i].name); if (i) *q++ = ' '; memcpy (q, exported[i].name, l); q += l; }
+	*q = 0;
+	strcpy (exported[nexported].name, "Unix$Environ");
+	exported[nexported].old = sysvar ("Unix$Environ");
+	setsysvar ("Unix$Environ", list);
+	nexported++;
+      }
+    free (list);
+  }
 }
 static void unexport_environ (void)
 {
@@ -133,7 +152,25 @@ static int run (const char *cmd)
   free (t);
   return st;
 }
+/* A program that is run changes the current directory for everybody (it is the system's, not the program's): the directory of this program is put back when the command has ended, as it would be with a process of its own.  */
+static int run_cwd_kept (const char *cmd);
 static int run_translated (const char *cmd)
+{
+  char csd[1100];
+  unsigned long q[10] = { 37, (unsigned long) "@", (unsigned long) csd, 0, 0, sizeof csd };		/* OS_FSControl 37: the full name of @ */
+  int have = !swi_x (0x29, q), st;
+  st = run_cwd_kept (cmd);
+  if (have)
+    {
+      unsigned long r2[10] = { 37, (unsigned long) "@", (unsigned long) csd + 0, 0, 0, 0 };
+      char now[1100];
+      unsigned long n[10] = { 37, (unsigned long) "@", (unsigned long) now, 0, 0, sizeof now };
+      (void) r2;
+      if (!swi_x (0x29, n) && strcmp (now, csd) != 0) { unsigned long s[10] = { 0, (unsigned long) csd }; swi_x (0x29, s); }		/* OS_FSControl 0: set the current directory */
+    }
+  return st;
+}
+static int run_cwd_kept (const char *cmd)
 {
   unsigned long r[10] = { (unsigned long) cmd };
   export_environ ();
@@ -237,12 +274,17 @@ static char *command_line (const char *prog, char *const argv[])
   for (i = 1; argv && argv[i]; i++)
     {
       const char *a = argv[i];
-      int quote = a[0] == 0 || strpbrk (a, " \t\"") != 0;
+      int quote = a[0] == 0 || strpbrk (a, " \t\"\n\r\177") != 0;
       *p++ = ' ';
       if (quote)							/* the program's start-up reads "" inside quotes as one quote */
 	{
 	  *p++ = '"';
-	  for (; *a; a++) { if (*a == '"') *p++ = '"'; *p++ = *a; }
+	  for (; *a; a++)
+	    {
+	      if (*a == '"') *p++ = '"';
+	      if (*a == '\n' || *a == '\r' || *a == 127) { *p++ = 127; *p++ = *a == '\n' ? 'n' : *a == '\r' ? 'r' : 127; continue; }
+	      *p++ = *a;
+	    }
 	  *p++ = '"';
 	}
       else p += sprintf (p, "%s", a);
@@ -275,9 +317,36 @@ int posix_spawn (pid_t *pid, const char *path, const posix_spawn_file_actions_t 
   return 0;
 }
 
+/* execvp, execlp and posix_spawnp look for a name without a / along $PATH (default .:/bin:/usr/bin, and the folder that CoreUtils$Dir names if there is one); a name that is not found is given to the operating system as it is (its own commands, aliases) */
+static const char *search_path (const char *file, char *buf, size_t size)
+{
+  const char *path = getenv ("PATH");
+  char dflt[256];
+  struct stat st;
+  if (strchr (file, '/')) return file;
+  if (!path)
+    {
+      char probe[256];
+      unsigned long r[10] = { (unsigned long) "CoreUtils$Dir", (unsigned long) probe, sizeof probe - 1, 0, 0 };
+      snprintf (dflt, sizeof dflt, ".:/bin:/usr/bin%s", swi_x (OS_ReadVarVal, r) ? "" : ":/<CoreUtils$Dir>");
+      path = dflt;
+    }
+  while (*path)
+    {
+      const char *e = strchr (path, ':');
+      size_t n = e ? (size_t) (e - path) : strlen (path);
+      if (n == 0) snprintf (buf, size, "./%s", file); else snprintf (buf, size, "%.*s/%s", (int) n, path, file);
+      if (stat (buf, &st) == 0 && S_ISREG (st.st_mode)) return buf;
+      if (!e) break;
+      path = e + 1;
+    }
+  return file;
+}
+
 int posix_spawnp (pid_t *pid, const char *file, const posix_spawn_file_actions_t *fa, const posix_spawnattr_t *attr, char *const argv[], char *const envp[])
 {
-  return posix_spawn (pid, file, fa, attr, argv, envp);			/* (RISC OS looks along Run$Path itself) */
+  char found[1024];
+  return posix_spawn (pid, search_path (file, found, sizeof found), fa, attr, argv, envp);		/* (a name that is not found: RISC OS looks along Run$Path itself) */
 }
 
 pid_t waitpid (pid_t pid, int *status, int options)
@@ -330,7 +399,7 @@ int execv (const char *path, char *const argv[])
   if (vfork_depth > 0) { free (cmd); vfork_finish (status); }	/* the parent goes on after its vfork */
   _exit (status >> 8);						/* exec does not return: the program that was started has run, and this one ends with its result */
 }
-int execvp (const char *file, char *const argv[]) { return execv (file, argv); }
+int execvp (const char *file, char *const argv[]) { char found[1024]; return execv (search_path (file, found, sizeof found), argv); }
 int execve (const char *path, char *const argv[], char *const envp[]) { (void) envp; return execv (path, argv); }
 int execl (const char *path, const char *arg0, ...)
 {
@@ -354,7 +423,7 @@ int execlp (const char *file, const char *arg0, ...)
   while (n < 63 && (argv[n] = va_arg (ap, char *)) != 0) n++;
   va_end (ap);
   argv[n] = 0;
-  return execv (file, argv);
+  { char found[1024]; return execv (search_path (file, found, sizeof found), argv); }
 }
 
 extern void __ul64_nosys (const char *);

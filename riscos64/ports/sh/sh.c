@@ -686,13 +686,20 @@ static char *find_in_path (const char *cmd)
   return 0;
 }
 
+static int program_exists (const char *name) { char *p = find_in_path (name); int r = p != 0; free (p); return r; }
+
 static void quote_arg (str *b, const char *a)
 {
-  int need = *a == 0 || strpbrk (a, " \t\"") != 0;
+  int need = *a == 0 || strpbrk (a, " \t\"\n\r\177") != 0;
   sb_addc (b, ' ');
   if (!need) { sb_adds (b, a); return; }
   sb_addc (b, '"');
-  for (; *a; a++) { if (*a == '"') sb_addc (b, '"'); sb_addc (b, *a == '\n' ? ' ' : *a); }
+  for (; *a; a++)
+    {
+      if (*a == '"') sb_addc (b, '"');
+      if (*a == '\n' || *a == '\r' || *a == 127) { sb_addc (b, 127); sb_addc (b, *a == '\n' ? 'n' : *a == '\r' ? 'r' : 127); continue; }
+      sb_addc (b, *a);
+    }
   sb_addc (b, '"');
 }
 
@@ -1915,8 +1922,8 @@ static const struct builtin builtins[] = {
   { ":", bi_colon, 1 }, { ".", bi_dot, 1 }, { "source", bi_dot, 1 }, { "break", bi_break, 1 }, { "continue", bi_continue, 1 }, { "eval", bi_eval, 1 }, { "exit", bi_exit, 1 }, { "export", bi_export, 1 },
   { "readonly", bi_readonly, 1 }, { "return", bi_return, 1 }, { "set", bi_set, 1 }, { "shift", bi_shift, 1 }, { "trap", bi_trap, 1 }, { "unset", bi_unset, 1 }, { "exec", bi_exec_dummy, 1 },
   { "echo", bi_echo, 0 }, { "printf", bi_printf, 0 }, { "cd", bi_cd, 0 }, { "pwd", bi_pwd, 0 }, { "test", bi_test, 0 }, { "[", bi_test, 0 }, { "read", bi_read, 0 }, { "true", bi_true0, 0 }, { "false", bi_false, 0 },
-  { "local", bi_local, 0 }, { "wait", bi_wait, 0 }, { "umask", bi_umask, 0 }, { "ulimit", bi_true0, 0 }, { "sleep", bi_sleep, 0 }, { "basename", bi_basename, 0 }, { "dirname", bi_dirname, 0 }, { "expr", bi_expr, 0 },
-  { "rm", bi_rm, 0 }, { "mkdir", bi_mkdir, 0 }, { "rmdir", bi_rmdir, 0 }, { "cp", bi_cp, 0 }, { "mv", bi_mv, 0 }, { "cat", bi_cat, 0 }, { "touch", bi_touch, 0 }, { "chmod", bi_true0, 0 },
+  { "local", bi_local, 0 }, { "wait", bi_wait, 0 }, { "umask", bi_umask, 0 }, { "ulimit", bi_true0, 0 }, { "sleep", bi_sleep, 2 }, { "basename", bi_basename, 2 }, { "dirname", bi_dirname, 2 }, { "expr", bi_expr, 2 },
+  { "rm", bi_rm, 2 }, { "mkdir", bi_mkdir, 2 }, { "rmdir", bi_rmdir, 2 }, { "cp", bi_cp, 2 }, { "mv", bi_mv, 2 }, { "cat", bi_cat, 2 }, { "touch", bi_touch, 2 }, { "chmod", bi_true0, 2 },
   { "type", bi_type, 0 }, { "command", 0, 0 }, { "hash", bi_true0, 0 }, { "alias", bi_true0, 0 }, { "unalias", bi_true0, 0 }, { 0, 0, 0 } };
 static const struct builtin *find_builtin (const char *name)
 {
@@ -2088,6 +2095,7 @@ static int exec_simple (struct node *n)
     fn = find_func (argv.v[0]);
     if (fn) { r = call_function (fn, argv.n, argv.v); goto restore; }
     b = find_builtin (argv.v[0]);
+    if (b && b->special == 2 && program_exists (argv.v[0])) b = 0;	/* the real utility (GNU coreutils) is there */
     if (b && b->fn)
       {
 	sink_open (&cur_out);
@@ -2408,7 +2416,21 @@ int main (int argc, char **argv)
       if (eq) { char *name = strndup (*env, (size_t) (eq - *env)); struct var *v; set_var (name, eq + 1); v = find_var (name); if (v) v->exported = 1; free (name); }
     }
   if (!get_var ("IFS")) set_var ("IFS", " \t\n");
-  if (!get_var ("PATH")) set_var ("PATH", ".:/bin:/usr/bin");
+  if (!get_var ("PATH"))
+    {
+      /* the programs of GNU coreutils and the like live in an application folder that its !Boot names in a system variable: CoreUtils$Dir */
+      static const char *const dirs[] = { "CoreUtils$Dir", "GNU$Dir", 0 };
+      str p; int k;
+      char probe[256];
+      sb_init (&p); sb_adds (&p, ".:/bin:/usr/bin");
+      for (k = 0; dirs[k]; k++)
+	{
+	  unsigned long r[10] = { (unsigned long) dirs[k], (unsigned long) probe, sizeof probe - 1, 0, 0 };
+	  if (!swi_x (0x23, r)) { sb_adds (&p, ":/<"); sb_adds (&p, dirs[k]); sb_addc (&p, '>'); }
+	}
+      set_var ("PATH", p.s);
+      sb_free (&p);
+    }
   if (!get_var ("HOME")) set_var ("HOME", "/");
   if (getcwd (cwd, sizeof cwd)) set_var ("PWD", cwd);
   for (; i < argc && argv[i][0] == '-' && argv[i][1]; i++)

@@ -202,6 +202,36 @@ static const char *ros_path (const char *name, char *buf, int create_dir, int *f
 /* the RISC OS name of a (Unix or RISC OS) file name: the name itself without UnixLib 64, else its translation in buf (NULL with errno set if it does not fit) */
 const char *__riscos_path (const char *name, char *buf, int create_dir) { return ros_path (name, buf, create_dir, NULL); }
 
+/* the name of each open file, for fchdir () (and programs that open a folder to come back to it): the full Unix name at the time of the open */
+extern char *getcwd (char *, size_t) __attribute__ ((weak));
+extern int chdir (const char *) __attribute__ ((weak));
+static char *fd_names[256];
+static void remember_name (int handle, const char *unixpath)
+{
+  char cwd[512];
+  size_t n;
+  char *full;
+  free (fd_names[handle & 255]);
+  fd_names[handle & 255] = 0;
+  if (!unixpath) return;
+  if (unixpath[0] == '/' || !getcwd || !getcwd (cwd, sizeof cwd)) { fd_names[handle & 255] = strdup (unixpath); return; }
+  while (unixpath[0] == '.' && unixpath[1] == '/') unixpath += 2;
+  n = strlen (cwd) + strlen (unixpath) + 2;
+  full = malloc (n);
+  if (!full) return;
+  if (!strcmp (unixpath, ".")) snprintf (full, n, "%s", cwd);
+  else snprintf (full, n, "%s/%s", cwd, unixpath);
+  fd_names[handle & 255] = full;
+}
+const char *__riscos_fd_name (int fd) { return isfile (fd) ? fd_names[fdhandle (fd) & 255] : 0; }	/* the Unix name an open file had (a folder opened for fchdir, fdopendir, the *at calls) */
+
+int fchdir (int fd)
+{
+  const char *name = isfile (fd) ? fd_names[fdhandle (fd) & 255] : 0;
+  if (!name || !chdir) { errno = EBADF; return -1; }
+  return chdir (name);
+}
+
 int open (const char *path, int flags, ...)
 {
   unsigned long r[10] = { 0 };
@@ -209,6 +239,7 @@ int open (const char *path, int flags, ...)
   char rosbuf[ROSPATH];
   int filetype = -1, isnew = 0, exists = 0;
   const char *rospath = ros_path (path, rosbuf, (flags & O_CREAT) != 0, &filetype);
+  const char *unixpath = path;
   if (!rospath) return -1;
   if (acc != O_RDONLY)								/* does it exist?  (OPENUP of a missing file fails on some filing systems and makes it on others, so do not rely on it) */
     {
@@ -218,6 +249,11 @@ int open (const char *path, int flags, ...)
       if (exists && q[0] == 2) { errno = EISDIR; return -1; }
       if (!exists && !(flags & O_CREAT)) { errno = ENOENT; return -1; }
       isnew = !exists;
+    }
+  if (flags & O_DIRECTORY)
+    {
+      unsigned long q[10] = { 17, (unsigned long) rospath };
+      if (!swi_x (OS_File, q) && q[0] == 1) { errno = ENOTDIR; return -1; }
     }
   path = rospath;
   r[1] = (unsigned long) path;
@@ -239,6 +275,7 @@ int open (const char *path, int flags, ...)
       swi_x (OS_Args, q);				/* OS_Args 1: set the pointer */
     }
   refs[r[0] & 255] = 1;
+  remember_name ((int) r[0], unixpath);
   return (int) r[0] + 3;
 }
 
@@ -253,6 +290,7 @@ int close (int fd)
   if (fd >= ALIAS_BASE) alias_to[fd - ALIAS_BASE] = 0;
   if (refs[h & 255] > 1) { refs[h & 255]--; return 0; }	/* another descriptor still has the handle */
   refs[h & 255] = 0;
+  remember_name (h, 0);
   r[0] = 0; r[1] = (unsigned long) h;
   if (swi_x (OS_Find, r)) { errno = EIO; return -1; }
   return 0;
@@ -301,6 +339,11 @@ int fstat (int fd, struct stat *st)
   size_t i;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;
   if (!isfile (fd)) { st->st_mode = S_IFCHR | 0600; return 0; }
+  {
+    const char *nm = fd_names[fdhandle (fd) & 255];		/* the name it was opened with: the type of the object (a folder), the date ... */
+    struct stat s2;
+    if (nm && stat (nm, &s2) == 0) { *st = s2; return 0; }
+  }
   r[0] = 2; r[1] = (unsigned long) fdhandle (fd);
   if (swi_x (OS_Args, r)) { errno = EIO; return -1; }
   st->st_mode = S_IFREG | 0644;

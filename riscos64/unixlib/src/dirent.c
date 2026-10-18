@@ -3,6 +3,8 @@
    The suffix directories are listed as UnixLib does (a directory "c" holding "main" is listed as "main.c" in the parent).  Not done yet: "." and "..".  telldir counts the entries returned; seekdir reads forward (or rewinds first).  */
 #include "ul64.h"
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define OS_GBPB 0x0C
 #define BUFSIZE 2048
@@ -18,6 +20,8 @@ struct ul_dir
   long pos;				/* how many entries readdir has returned (telldir) */
   struct ul_dir *suffix;		/* the suffix directory that is being listed as name.suffix (see below), or NULL */
   char suffix_name[32];			/* its name: "c" */
+  char *upath;				/* the Unix name it was opened with, made full (dirfd opens it) */
+  int owns_fd;				/* fdopendir: closedir closes the descriptor */
 };
 
 static struct ul_dir *state (DIR *d) { struct ul_dir *u; memcpy (&u, d->buf, sizeof u); return u; }
@@ -34,7 +38,7 @@ static void free_stream (struct ul_dir *u)
 {
   if (!u) return;
   free_stream (u->suffix);
-  free (u->path); free (u->buf); free (u);
+  free (u->path); free (u->buf); free (u->upath); free (u);
 }
 
 DIR *opendir (const char *name)
@@ -58,6 +62,17 @@ DIR *opendir (const char *name)
   u = new_stream (path);
   if (!d || !u) { free_stream (u); free (d); errno = ENOMEM; return NULL; }
   d->fd = -1;
+  {						/* the Unix name, full, for dirfd */
+    char cwd[MAXPATHLEN];
+    if (name[0] == '/' || !getcwd (cwd, sizeof cwd)) u->upath = strdup (name);
+    else
+      {
+	const char *n = name;
+	while (n[0] == '.' && n[1] == '/') n += 2;
+	u->upath = malloc (strlen (cwd) + strlen (n) + 2);
+	if (u->upath) { if (!strcmp (n, ".")) strcpy (u->upath, cwd); else sprintf (u->upath, "%s/%s", cwd, n); }
+      }
+  }
   memcpy (d->buf, &u, sizeof u);
   return d;
 }
@@ -151,11 +166,33 @@ void seekdir (DIR *d, long loc)
   while (state (d)->pos < loc && readdir (d)) ;
 }
 
-int dirfd (DIR *d) { (void) d; errno = ENOTSUP; return -1; }
+/* a descriptor for the folder (the *at calls of the SDK take it): opened on the first call */
+int dirfd (DIR *d)
+{
+  struct ul_dir *u;
+  if (!d) { errno = EBADF; return -1; }
+  if (d->fd >= 0) return d->fd;
+  u = state (d);
+  if (!u->upath) { errno = ENOTSUP; return -1; }
+  d->fd = open (u->upath, O_RDONLY);
+  return d->fd;
+}
+
+extern const char *__riscos_fd_name (int fd);
+DIR *fdopendir (int fd)
+{
+  const char *name = __riscos_fd_name (fd);
+  DIR *d;
+  if (!name) { errno = EBADF; return NULL; }
+  d = opendir (name);
+  if (d) { d->fd = fd; state (d)->owns_fd = 1; }
+  return d;
+}
 
 int closedir (DIR *d)
 {
   if (!d) { errno = EBADF; return -1; }
+  if (d->fd >= 0) close (d->fd);
   free_stream (state (d));
   free (d);
   return 0;

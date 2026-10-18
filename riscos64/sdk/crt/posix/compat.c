@@ -20,6 +20,8 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/statvfs.h>
+#include <sys/statfs.h>
 
 #ifndef AT_FDCWD
 #define AT_FDCWD (-100)
@@ -30,31 +32,49 @@
 
 /* ---- the *at calls: a descriptor other than AT_FDCWD is not supported unless the name is a full one ---- */
 
-static int at_ok (int fd, const char *path)
+extern const char *__riscos_fd_name (int fd);
+/* the name for a call with a directory descriptor: the folder's name and the path; AT_FDCWD and full names are as they are */
+static char at_buf[4][1100];
+static int at_slot;
+static const char *at_name (int fd, const char *path)
 {
-  if (fd == AT_FDCWD || (path && (path[0] == '/' || path[0] == '$'))) return 1;
-  errno = ENOSYS;
-  return 0;
+  const char *dir;
+  char *b;
+  if (!path) { errno = EFAULT; return 0; }
+  if (fd == AT_FDCWD || path[0] == '/' || path[0] == '$') return path;
+  dir = __riscos_fd_name (fd);
+  if (!dir) { errno = EBADF; return 0; }
+  b = at_buf[at_slot++ & 3];
+  snprintf (b, 1100, "%s/%s", dir, path);
+  return b;
 }
 int openat (int fd, const char *path, int flags, ...)
 {
   va_list ap;
   int mode = 0;
-  if (!at_ok (fd, path)) return -1;
+  if (!(path = at_name (fd, path))) return -1;
   va_start (ap, flags);
   mode = va_arg (ap, int);
   va_end (ap);
   return open (path, flags, mode);
 }
-int fstatat (int fd, const char *path, struct stat *st, int flags) { (void) flags; return at_ok (fd, path) ? stat (path, st) : -1; }
-int faccessat (int fd, const char *path, int mode, int flags) { (void) flags; return at_ok (fd, path) ? access (path, mode) : -1; }
+int fstatat (int fd, const char *path, struct stat *st, int flags) { (void) flags; return (path = at_name (fd, path)) ? stat (path, st) : -1; }
+int faccessat (int fd, const char *path, int mode, int flags) { (void) flags; return (path = at_name (fd, path)) ? access (path, mode) : -1; }
 int unlinkat (int fd, const char *path, int flags)
 {
-  if (!at_ok (fd, path)) return -1;
+  if (!(path = at_name (fd, path))) return -1;
   return (flags & AT_REMOVEDIR) ? rmdir (path) : unlink (path);
 }
-int mkdirat (int fd, const char *path, mode_t mode) { return at_ok (fd, path) ? mkdir (path, mode) : -1; }
-int renameat (int ofd, const char *o, int nfd, const char *n) { return at_ok (ofd, o) && at_ok (nfd, n) ? rename (o, n) : -1; }
+int mkdirat (int fd, const char *path, mode_t mode) { return (path = at_name (fd, path)) ? mkdir (path, mode) : -1; }
+int renameat (int ofd, const char *o, int nfd, const char *n) { return (o = at_name (ofd, o)) && (n = at_name (nfd, n)) ? rename (o, n) : -1; }
+
+int fchownat (int fd, const char *path, uid_t u, gid_t g, int flags) { (void) flags; return (path = at_name (fd, path)) ? chown (path, u, g) : -1; }
+int fchmodat (int fd, const char *path, mode_t mode, int flags) { (void) flags; return (path = at_name (fd, path)) ? chmod (path, mode) : -1; }
+int linkat (int ofd, const char *o, int nfd, const char *n, int flags) { (void) ofd; (void) o; (void) nfd; (void) n; (void) flags; errno = ENOSYS; return -1; }
+int symlinkat (const char *target, int fd, const char *path) { (void) target; (void) fd; (void) path; errno = ENOSYS; return -1; }
+ssize_t readlinkat (int fd, const char *path, char *buf, size_t n) { (void) fd; (void) path; (void) buf; (void) n; errno = EINVAL; return -1; }
+int mkfifoat (int fd, const char *path, mode_t mode) { (void) fd; (void) path; (void) mode; errno = ENOSYS; return -1; }
+int mknodat (int fd, const char *path, mode_t mode, dev_t dev) { (void) fd; (void) path; (void) mode; (void) dev; errno = ENOSYS; return -1; }
 
 /* ---- times of files ---- */
 
@@ -64,7 +84,7 @@ int utimensat (int fd, const char *path, const struct timespec ts[2], int flags)
 {
   struct timeval tv[2];
   (void) flags;
-  if (!at_ok (fd, path)) return -1;
+  if (!(path = at_name (fd, path))) return -1;
   if (!ts) return utimes (path, 0);
   tv[0].tv_sec = ts[0].tv_sec; tv[0].tv_usec = ts[0].tv_nsec / 1000;
   tv[1].tv_sec = ts[1].tv_sec; tv[1].tv_usec = ts[1].tv_nsec / 1000;
@@ -344,3 +364,17 @@ char *inet_ntoa (struct in_addr a)
   inet_ntop (2, &a, buf, sizeof buf);
   return buf;
 }
+
+/* ---- the host name and the groups cannot be changed; statfs is statvfs ---- */
+int sethostname (const char *name, size_t len) { (void) name; (void) len; errno = EPERM; return -1; }
+int setgroups (size_t n, const gid_t *list) { (void) n; (void) list; errno = EPERM; return -1; }
+int statfs (const char *path, struct statfs *s)
+{
+  struct statvfs v;
+  if (statvfs (path, &v) != 0) return -1;
+  memset (s, 0, sizeof *s);
+  s->f_bsize = (long) v.f_bsize; s->f_blocks = v.f_blocks; s->f_bfree = v.f_bfree; s->f_bavail = v.f_bavail;
+  s->f_files = v.f_files; s->f_ffree = v.f_ffree; s->f_namelen = (long) v.f_namemax; s->f_frsize = (long) v.f_frsize;
+  return 0;
+}
+int fstatfs (int fd, struct statfs *s) { (void) fd; (void) s; errno = ENOSYS; return -1; }

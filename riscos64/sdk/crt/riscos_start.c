@@ -1,6 +1,9 @@
 /* riscos_start.c - the C start-up of a hosted program: copy the command line into argv[], set the limits of the heap (sbrk) and of the stack, run the constructors, call main and exit.
-   The command line from OS_GetEnv is the whole line, the program first ("RAM::RamDisc0.$.hello a "b c" d"): words are separated by spaces, a word in double quotes may hold spaces, and a doubled quote inside is one quote. */
+   The command line from OS_GetEnv is the whole line, the program first ("RAM::RamDisc0.$.hello a "b c" d"): words are separated by spaces, a word in double quotes may hold spaces, and a doubled quote inside is one quote, and DEL n / DEL r are a line feed / carriage return. */
+typedef unsigned long size_t;
 extern int main (int, char **, char **);
+extern unsigned long swi_x (unsigned long swi, unsigned long regs[10]);
+extern void *memcpy (void *, const void *, size_t);
 extern void __ul64_init (int, char **) __attribute__ ((weak));
 extern void exit (int);
 
@@ -38,7 +41,39 @@ char *__riscos_heap_end;				/* sbrk may not go beyond it */
 char *program_invocation_name, *program_invocation_short_name;	/* glibc's names for argv[0] and its last part (gnulib's getprogname and error () use them) */
 static char argbuf[4096];
 static char *argvec[256];
-static char *envvec[1];
+static char *envvec[130];
+extern char **environ;
+/* The environment: the variables that the program which started this one exported (process.c sets the system variables, and Unix$Environ with their names). */
+static void init_environ (void)
+{
+  static char names[2048], vals[8192];
+  unsigned long r[10] = { (unsigned long) "Unix$Environ", (unsigned long) names, sizeof names - 1, 0, 3 };
+  size_t used = 0;
+  int n = 0;
+  char *p;
+  envvec[0] = 0;
+  environ = envvec;
+  if (swi_x (0x23, r) || r[2] >= sizeof names) return;
+  names[r[2]] = 0;
+  for (p = names; *p && n < 127; )
+    {
+      char *e = p, *v;
+      unsigned long q[10];
+      size_t nl;
+      while (*e && *e != ' ') e++;
+      nl = (size_t) (e - p);
+      if (*e) *e++ = 0;
+      v = vals + used;
+      if (used + nl + 2 < sizeof vals)
+	{
+	  memcpy (v, p, nl); v[nl] = '=';
+	  q[0] = (unsigned long) p; q[1] = (unsigned long) (v + nl + 1); q[2] = sizeof vals - used - nl - 2; q[3] = 0; q[4] = 3;
+	  if (!swi_x (0x23, q) && q[2] < sizeof vals - used - nl - 2) { v[nl + 1 + q[2]] = 0; envvec[n++] = v; used += nl + 1 + q[2] + 1; }
+	}
+      p = e;
+    }
+  envvec[n] = 0;
+}
 #define STACK_RESERVE (128 * 1024)			/* the stack grows down from the RAM limit; the heap leaves this much for it */
 
 void __riscos_start (const char *cmd, unsigned long ramlimit)
@@ -61,6 +96,12 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 		{
 		  if ((unsigned char) cmd[0] < 32) break;
 		  if (cmd[0] == '"') { if (cmd[1] == '"') { if (i < sizeof argbuf - 1) argbuf[i++] = '"'; cmd += 2; continue; } cmd++; break; }
+		  if (cmd[0] == 127 && cmd[1])				/* a line feed or a carriage return cannot be in a command line: DEL n, DEL r (and DEL DEL for a DEL) stand for them */
+		    {
+		      if (i < sizeof argbuf - 1) argbuf[i++] = cmd[1] == 'n' ? '\n' : cmd[1] == 'r' ? '\r' : cmd[1];
+		      cmd += 2;
+		      continue;
+		    }
 		  if (i < sizeof argbuf - 1) argbuf[i++] = *cmd;
 		  cmd++;
 		}
@@ -72,6 +113,7 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
     }
   argvec[argc] = 0;
   init_tls ();
+  init_environ ();
   run_init_arrays ();
   if (__ul64_init) __ul64_init (argc, argvec);				/* UnixLib 64, if it is linked in (riscos64/unixlib) */
   program_invocation_name = argc > 0 ? argvec[0] : (char *) "";

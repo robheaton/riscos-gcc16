@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-gnu.sh PREFIX WORKDIR: GNU sed 4.9, grep 3.11 and gawk 5.3.1 for RISC OS 64 (UnixLib 64) with the aarch64-riscos tool chain in PREFIX: WORKDIR/sed,ff8 grep,ff8 gawk,ff8.
+# build-gnu.sh PREFIX WORKDIR: GNU sed 4.9, grep 3.11, gawk 5.3.1 and coreutils 9.5 for RISC OS 64 (UnixLib 64) with the aarch64-riscos tool chain in PREFIX: WORKDIR/sed,ff8 grep,ff8 gawk,ff8, and WORKDIR/coreutils-pkg/coreutils_9.5-1_aarch64.zip (the application !CoreUtils: one program per utility and a !Boot that sets an Alias$ for each, like the 32-bit package coreutils_8.30-2_arm.zip; see package-coreutils.sh).
 # Tested on RISC OS Pyromaniac on 18 October 2026 (jobs port_sed, port_grep, port_gawk of tools/run_on_service.py; the programs need the shell, ports/sh, for the pipes and system () of awk).
 #   sed: s, y, addresses, -n, -E, -f, -i (in place; this needed inode numbers from stat), l, =, N/P/D, labels and branches.   grep: the usual options (-E -F -i -v -c -n -o -w -x -l -L -H -f -A -q, back references).
 #   gawk: fields, arrays, functions, printf, sub/gsub/match/split, getline from files and pipes, output to files and pipes, system (), strftime.   No extensions (shared libraries), no readline, no MPFR.
@@ -24,4 +24,11 @@ cp grep-build/src/grep "grep,ff8"
 (cd gawk-build && ../gawk-5.3.1/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS=-O2 --disable-nls --disable-extensions --without-readline --without-mpfr --disable-pma > conf.log 2>&1 \
   && make -j"$(nproc)" CFLAGS="-O2 -std=gnu17 -include stdbool.h -DPIPES_SIMULATED" > make.log 2>&1)	# (gawk's own getopt.c is K&R; C23 refuses it; dfa.h needs bool)
 cp gawk-build/gawk "gawk,ff8"
+# coreutils: one program per utility (no --enable-single-binary), then the application
+fetch coreutils coreutils-9.5.tar.xz cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a
+[ -d coreutils-9.5 ] || tar xf coreutils-9.5.tar.xz
+[ -f .coreutils-patched ] || { patch -p0 < "$HERE/patches/coreutils-9.5-riscos64.patch" && touch .coreutils-patched; }
+mkdir -p cu-build
+(cd cu-build && ../coreutils-9.5/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS=-O2 --disable-nls --disable-acl --disable-xattr --without-selinux --without-openssl > conf.log 2>&1 && make -k -j"$(nproc)" > make.log 2>&1 || true)	# (stdbuf's shared library and the tests of gnulib do not build; the programs do)
+"$HERE/package-coreutils.sh" cu-build coreutils-9.5 coreutils-pkg 9.5-1
 ls -l "$W"/*,ff8

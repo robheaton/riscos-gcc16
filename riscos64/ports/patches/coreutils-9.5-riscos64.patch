@@ -1,0 +1,45 @@
+--- coreutils-9.5/lib/freadahead.c	2026-10-18 10:31:43.274977838 +0100
++++ coreutils-9.5/lib/freadahead.c
+@@ -94,6 +94,8 @@
+   if (fp->state == 4 /* WR */ || fp->rp >= fp->wp)
+     return 0;
+   return fp->wp - fp->rp;
++#elif defined __riscos__            /* RISC OS 64 (picolibc): nothing is known about the buffer */
++  return 0;
+ #elif defined SLOW_BUT_NO_HACKS     /* users can define this */
+   abort ();
+   return 0;
+--- coreutils-9.5/lib/freadptr.c	2026-10-18 10:31:43.275010116 +0100
++++ coreutils-9.5/lib/freadptr.c
+@@ -115,6 +115,8 @@
+     return NULL;
+   *sizep = fp->wp - fp->rp;
+   return fp->rp;
++#elif defined __riscos__            /* RISC OS 64 (picolibc) */
++  return NULL;
+ #elif defined SLOW_BUT_NO_HACKS     /* users can define this */
+   /* This implementation is correct on any ANSI C platform.  It is just
+      awfully slow.  */
+--- coreutils-9.5/lib/freadseek.c	2026-10-18 10:31:43.275028038 +0100
++++ coreutils-9.5/lib/freadseek.c
+@@ -64,6 +64,8 @@
+   fp->__bufp += increment;
+ #elif defined EPLAN9                /* Plan9 */
+   fp->rp += increment;
++#elif defined __riscos__            /* RISC OS 64 (picolibc): freadptr never gives a pointer */
++  abort ();
+ #elif defined SLOW_BUT_NO_HACKS     /* users can define this */
+ #else
+  #error "Please port gnulib freadseek.c to your platform! Look at the definition of getc, getc_unlocked on your system, then report this to bug-gnulib."
+--- coreutils-9.5/src/pinky.c	2026-10-18 10:34:08.704608458 +0100
++++ coreutils-9.5/src/pinky.c
+@@ -42,6 +42,9 @@
+    by a 'd' if not within the last day. */
+ static bool include_idle = true;
+ 
++/* Print the host name too (this declaration is missing from coreutils 9.5 when ut_host is not used). */
++static bool include_where = true;
++
+ /* If true, display a line at the top describing each field. */
+ static bool include_heading = true;
+ 

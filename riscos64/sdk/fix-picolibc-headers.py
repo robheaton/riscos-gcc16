@@ -88,7 +88,7 @@ if t2 != t:
 fc = inc + "/sys/fcntl.h"
 t = open(fc).read()
 if "#define O_BINARY _FBINARY" in t:
-    open(fc, "w").write(t.replace("#define O_BINARY _FBINARY", "#define O_BINARY 0\t/* (picolibc: _FBINARY) */"))
+    open(fc, "w").write(t.replace("#define O_BINARY _FBINARY", "#define O_BINARY 0\t/* (picolibc: _FBINARY) */\n#define O_TEXT 0"))
 
 # program_invocation_name and program_invocation_short_name (glibc): set by the start-up code
 er = inc + "/errno.h"
@@ -111,3 +111,49 @@ for fn, args in (("strchr", "(_s, _c)"), ("strpbrk", "(_s, _a)"), ("strrchr", "(
     new = "_Generic(1 ? (_s) : (void *)1, const void *: (const char *)(%s)%s, default: (%s)%s)" % (fn, args, fn, args)
     t = t.replace(old, new)
 open(st, "w").write(t)
+
+# posix_fadvise and posix_fallocate belong in <fcntl.h> (crt/posix/compat.c has them)
+fc2 = inc + "/sys/fcntl.h"
+t = open(fc2).read()
+if "POSIX_FADV_NORMAL" not in t:
+    i = t.rindex("#endif")
+    open(fc2, "w").write(t[:i] + """#define POSIX_FADV_NORMAL 0
+#define POSIX_FADV_RANDOM 1
+#define POSIX_FADV_SEQUENTIAL 2
+#define POSIX_FADV_WILLNEED 3
+#define POSIX_FADV_DONTNEED 4
+#define POSIX_FADV_NOREUSE 5
+#include <sys/types.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+int posix_fadvise (int, off_t, off_t, int);
+int posix_fallocate (int, off_t, off_t);
+#ifdef __cplusplus
+}
+#endif
+""" + t[i:])
+
+# the *at calls (crt/posix/compat.c)
+def add_protos(path, marker, text):
+    h = open(inc + "/" + path).read()
+    if marker in h:
+        return
+    i = h.rindex("#endif")
+    open(inc + "/" + path, "w").write(h[:i] + "#ifdef __cplusplus\nextern \"C\" {\n#endif\n" + text + "#ifdef __cplusplus\n}\n#endif\n" + h[i:])
+add_protos("sys/fcntl.h", "openat", "int openat (int, const char *, int, ...);\n")
+add_protos("stdio.h", "renameat", "int renameat (int, const char *, int, const char *);\n")
+add_protos("unistd.h", "faccessat", "int faccessat (int, const char *, int, int);\nint unlinkat (int, const char *, int);\nint fchownat (int, const char *, uid_t, gid_t, int);\nint linkat (int, const char *, int, const char *, int);\nint symlinkat (const char *, int, const char *);\nssize_t readlinkat (int, const char *, char *, size_t);\n")
+add_protos("sys/stat.h", "fstatat", "int fstatat (int, const char *, struct stat *, int);\nint mkdirat (int, const char *, mode_t);\nint fchmodat (int, const char *, mode_t, int);\nint utimensat (int, const char *, const struct timespec[2], int);\nint futimens (int, const struct timespec[2]);\nint mkfifoat (int, const char *, mode_t);\nint mknodat (int, const char *, mode_t, dev_t);\n")
+
+# setgroups takes a size_t (glibc, coreutils); pw_passwd and pw_gecos at the end of struct passwd (crt/posix/passwd.c fills them)
+su = inc + "/sys/unistd.h"
+h = open(su).read()
+h2 = h.replace("int setgroups(int ngroups, const gid_t *grouplist)", "int setgroups(size_t ngroups, const gid_t *grouplist)")
+if h2 != h:
+    open(su, "w").write(h2)
+pw = inc + "/pwd.h"
+h = open(pw).read()
+if "pw_gecos" not in h:
+    h = h.replace("    char *pw_shell; /* default shell */\n};", "    char *pw_shell; /* default shell */\n    char *pw_passwd; /* (the end of the structure: added by the SDK) */\n    char *pw_gecos;\n};")
+    open(pw, "w").write(h)
