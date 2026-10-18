@@ -96,9 +96,9 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 		{
 		  if ((unsigned char) cmd[0] < 32) break;
 		  if (cmd[0] == '"') { if (cmd[1] == '"') { if (i < sizeof argbuf - 1) argbuf[i++] = '"'; cmd += 2; continue; } cmd++; break; }
-		  if (cmd[0] == 127 && cmd[1])				/* a line feed or a carriage return cannot be in a command line: DEL n, DEL r (and DEL DEL for a DEL) stand for them */
+		  if (cmd[0] == 127 && cmd[1])				/* a line feed or a carriage return cannot be in a command line: DEL n, DEL r (and DEL DEL for a DEL) stand for them; DEL q is a quote in an argument that has a { (the operating system looks for { > file } in the line and loses its way with "" there) */
 		    {
-		      if (i < sizeof argbuf - 1) argbuf[i++] = cmd[1] == 'n' ? '\n' : cmd[1] == 'r' ? '\r' : cmd[1];
+		      if (i < sizeof argbuf - 1) argbuf[i++] = cmd[1] == 'n' ? '\n' : cmd[1] == 'r' ? '\r' : cmd[1] == 'q' ? '"' : cmd[1];
 		      cmd += 2;
 		      continue;
 		    }

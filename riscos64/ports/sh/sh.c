@@ -888,10 +888,11 @@ static void quote_arg (str *b, const char *a)
   int need = *a == 0 || strpbrk (a, " \t\"\n\r\177") != 0;
   sb_addc (b, ' ');
   if (!need) { sb_adds (b, a); return; }
+  int brace = strchr (a, '{') != 0;
   sb_addc (b, '"');
   for (; *a; a++)
     {
-      if (*a == '"') sb_addc (b, '"');
+      if (*a == '"') { if (brace) { sb_addc (b, 127); sb_addc (b, 'q'); continue; } sb_addc (b, '"'); }
       if (*a == '\n' || *a == '\r' || *a == 127) { sb_addc (b, 127); sb_addc (b, *a == '\n' ? 'n' : *a == '\r' ? 'r' : 127); continue; }
       sb_addc (b, *a);
     }

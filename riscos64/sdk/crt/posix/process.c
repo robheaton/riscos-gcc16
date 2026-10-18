@@ -142,6 +142,8 @@ static char *translate_command (const char *cmd)
   return r;
 }
 
+extern void __ul64_stdio_suspend (void) __attribute__ ((weak));
+extern void __ul64_stdio_resume (void) __attribute__ ((weak));
 static int run_translated (const char *cmd);
 static int run (const char *cmd)
 {
@@ -159,7 +161,9 @@ static int run_translated (const char *cmd)
   char csd[1100];
   unsigned long q[10] = { 37, (unsigned long) "@", (unsigned long) csd, 0, 0, sizeof csd };		/* OS_FSControl 37: the full name of @ */
   int have = !swi_x (0x29, q), st;
+  if (__ul64_stdio_suspend) __ul64_stdio_suspend ();
   st = run_cwd_kept (cmd);
+  if (__ul64_stdio_resume) __ul64_stdio_resume ();
   if (have)
     {
       unsigned long r2[10] = { 37, (unsigned long) "@", (unsigned long) csd + 0, 0, 0, 0 };
@@ -240,8 +244,14 @@ static int run_user (const char *cmd)
       int st;
       if (line)
 	{
+	  int brace = strchr (cmd, '{') != 0;
 	  q = line + sprintf (line, "%s -c \"", sh);
-	  for (; *cmd; cmd++) { if (*cmd == '"') *q++ = '"'; *q++ = *cmd; }
+	  for (; *cmd; cmd++)
+	    {
+	      if (*cmd == '"') { if (brace) { *q++ = 127; *q++ = 'q'; continue; } *q++ = '"'; }
+	      if (*cmd == '\n' || *cmd == '\r' || *cmd == 127) { *q++ = 127; *q++ = *cmd == '\n' ? 'n' : *cmd == '\r' ? 'r' : 127; continue; }	/* as command_line: the start-up turns it back */
+	      *q++ = *cmd;
+	    }
 	  *q++ = '"'; *q = 0;
 	  st = run (line);
 	  free (line); free (sh);
@@ -278,10 +288,11 @@ static char *command_line (const char *prog, char *const argv[])
       *p++ = ' ';
       if (quote)							/* the program's start-up reads "" inside quotes as one quote */
 	{
+	  int brace = strchr (a, '{') != 0;
 	  *p++ = '"';
 	  for (; *a; a++)
 	    {
-	      if (*a == '"') *p++ = '"';
+	      if (*a == '"') { if (brace) { *p++ = 127; *p++ = 'q'; continue; } *p++ = '"'; }
 	      if (*a == '\n' || *a == '\r' || *a == 127) { *p++ = 127; *p++ = *a == '\n' ? 'n' : *a == '\r' ? 'r' : 127; continue; }
 	      *p++ = *a;
 	    }

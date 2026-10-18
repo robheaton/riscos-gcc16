@@ -1,0 +1,11 @@
+--- gawk-5.3.1/io.c
++++ gawk-5.3.1/io.c
+@@ -2811,7 +2811,7 @@
+ 	rp->iop = NULL;
+ 	aval = pclose(rp->ifp);
+ 	rp->ifp = NULL;
+-	return (rval < 0 ? rval : aval);
++	return (rval < 0 ? rval : sanitize_exit_status(aval));
+ }
+ 
+ #endif	/* PIPES_SIMULATED */

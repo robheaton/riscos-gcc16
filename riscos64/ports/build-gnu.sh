@@ -15,7 +15,7 @@ fetch sed sed-4.9.tar.xz 6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631
 fetch grep grep-3.11.tar.xz 1db2aedde89d0dea42b16d9528f894c8d15dae4e190b59aecc78f5a951276eab
 fetch gawk gawk-5.3.1.tar.xz 694db764812a6236423d4ff40ceb7b6c4c441301b72ad502bb5c27e00cd56f78
 for t in sed-4.9 grep-3.11 gawk-5.3.1; do [ -d $t ] || tar xf $t.tar.xz; done
-[ -f .gawk-patched ] || { patch -p0 < "$HERE/patches/gawk-5.3.1-riscos64.patch" && touch .gawk-patched; }
+[ -f .gawk-patched ] || { patch -p0 < "$HERE/patches/gawk-5.3.1-riscos64.patch" && patch -p0 < "$HERE/patches/gawk-5.3.1-riscos64-2.patch" && touch .gawk-patched; }
 mkdir -p sed-build grep-build gawk-build
 (cd sed-build && ../sed-4.9/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS=-O2 --disable-nls --without-selinux --disable-acl --disable-i18n > conf.log 2>&1 && make -j"$(nproc)" -C . > make.log 2>&1 || true)	# (the tests of gnulib do not build; the programs do)
 cp sed-build/sed/sed "sed,ff8"

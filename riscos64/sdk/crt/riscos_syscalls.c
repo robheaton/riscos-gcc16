@@ -112,7 +112,8 @@ extern int __ul64_pipe_fstat (int, struct stat *) __attribute__ ((weak));
    Sh$Stderr hold the name of a file, or "null" (output thrown away, input empty), or, for Sh$Stderr, "stdout" (with the output).  Each is read once, at the first use of the descriptor; output is appended to
    the file.  The variables are inherited by the programs that a program starts (they are exported with the rest of the environment), as a redirection is. */
 static long rfd_lines = -1, rfd_written;		/* Sh$StdoutLines: the shell says the program after the pipe wants only this many lines of standard output */
-static struct { int state; int handle; } rfd[3];		/* state: 0 not looked at, 1 the console, 2 nowhere, 3 a file (handle), 4 (stderr) with standard output */
+static struct { int state; int handle; int owned; } rfd[3];		/* owned: the handle was opened here for Sh$Stdout and the like (else it is a file of the program that dup2 put on the descriptor) */		/* state: 0 not looked at, 1 the console, 2 nowhere, 3 a file (handle), 4 (stderr) with standard output */
+static char rfd_saved[3][512];					/* the file names that Sh$Stdout and Sh$Stderr had when they were read (the variables may be changed afterwards, for a child) */
 static void rfd_init (int fd)
 {
   static const char *const names[3] = { "Sh$Stdin", "Sh$Stdout", "Sh$Stderr" };
@@ -127,6 +128,7 @@ static void rfd_init (int fd)
     }
   if (swi_x (0x23, r) || r[2] >= sizeof buf) return;		/* OS_ReadVarVal */
   buf[r[2]] = 0;
+  memcpy (rfd_saved[fd], buf, r[2] + 1);
   if (!strcmp (buf, "null")) { rfd[fd].state = 2; return; }
   if (fd == 2 && !strcmp (buf, "stdout")) { rfd[fd].state = 4; return; }
   {
@@ -137,7 +139,7 @@ static void rfd_init (int fd)
 	o[0] = 0x80; o[1] = (unsigned long) buf;
 	if (swi_x (OS_Find, o) || !o[0]) return;
       }
-    rfd[fd].handle = (int) o[0];
+    rfd[fd].handle = (int) o[0]; rfd[fd].owned = 1;
     if (fd != 0)
       {
 	unsigned long e[10] = { 2, o[0] };			/* the extent, and the pointer to the end of the file */
@@ -147,10 +149,47 @@ static void rfd_init (int fd)
   }
 }
 static int rfd_state (int fd) { if (!rfd[fd].state) rfd_init (fd); return rfd[fd].state; }
+/* a standard descriptor stops being a file (close, or dup2 onto it): the handle goes if this was its last user */
+static void rfd_drop (int fd)
+{
+  int h;
+  if (rfd[fd].state != 3) return;
+  h = rfd[fd].handle;
+  if (!rfd[fd].owned && refs[h & 255] > 1) refs[h & 255]--;
+  else { unsigned long c[10] = { 0, (unsigned long) h }; swi_x (OS_Find, c); if (!rfd[fd].owned) { refs[h & 255] = 0; } }
+  rfd[fd].state = 1; rfd[fd].handle = 0; rfd[fd].owned = 0;
+}
 static void rfd_close (void)
 {
   int fd;
   for (fd = 0; fd < 3; fd++) if (rfd[fd].state == 3) { unsigned long c[10] = { 0, (unsigned long) rfd[fd].handle }; swi_x (OS_Find, c); rfd[fd].state = 1; }
+}
+
+/* A program that starts another program: the output files that Sh$Stdout and Sh$Stderr named are open here, and the program started will open them too (its Sh$Stdout is the same): RISC OS lets a file be open for
+   writing once, so the child would find it busy and write to the screen.  So the handles are closed (the data goes to the file) while the child runs and opened again, at the end of the file, afterwards. */
+void __ul64_stdio_suspend (void)
+{
+  int fd;
+  for (fd = 1; fd < 3; fd++)
+    {
+      if (rfd[fd].state != 3 || !rfd[fd].owned) continue;
+      { unsigned long c[10] = { 0, (unsigned long) rfd[fd].handle }; swi_x (OS_Find, c); }
+      rfd[fd].state = 6;							/* closed for the time being */
+    }
+}
+void __ul64_stdio_resume (void)
+{
+  int fd;
+  for (fd = 1; fd < 3; fd++)
+    {
+      unsigned long o[10];
+      if (rfd[fd].state != 6) continue;
+      rfd[fd].state = 1;
+      o[0] = 0xC0; o[1] = (unsigned long) rfd_saved[fd];
+      if (swi_x (OS_Find, o) || !o[0]) { o[0] = 0x80; o[1] = (unsigned long) rfd_saved[fd]; if (swi_x (OS_Find, o) || !o[0]) continue; }
+      rfd[fd].handle = (int) o[0]; rfd[fd].owned = 1; rfd[fd].state = 3;
+      { unsigned long e[10] = { 2, o[0] }; if (!swi_x (OS_Args, e)) { unsigned long q[10] = { 1, o[0], e[2] }; swi_x (OS_Args, q); } }	/* to the end of the file */
+    }
 }
 
 ssize_t write (int fd, const void *buf, size_t n)
@@ -361,6 +400,7 @@ int close (int fd)
   if (__ul64_pipe_defer_close && __ul64_pipe_defer_close (fd)) return 0;
   if (SOCK (fd)) return __ul64_sock_close (fd);
   if (PIPE_R (fd)) return __ul64_pipe_close (fd);
+  if (fd >= 0 && fd < 3) { rfd_drop (fd); return 0; }
   if (!isfile (fd)) return 0;
   rf = realfd (fd);
   h = rf - 3;
@@ -379,6 +419,14 @@ int __riscos_dup (int fd, int want)			/* want < 0: any free number; else that on
   int i, rf = realfd (fd), h = rf - 3;
   if (rf < 3 || h < 0 || h > 255) { errno = rf >= 0 && rf < 3 ? ENOSYS : EBADF; return -1; }
   if (want >= 0 && want == fd) return want;
+  if (want >= 0 && want < 3)			/* dup2 (file, 0|1|2): the standard stream is now that file (shared handle, shared position) */
+    {
+      rfd_drop (want);
+      rfd[want].state = 3; rfd[want].handle = h; rfd[want].owned = 0;
+      if (refs[h & 255] == 0) refs[h & 255] = 1;
+      refs[h & 255]++;
+      return want;
+    }
   if (want >= 0)
     {
       if (want < ALIAS_BASE || want >= ALIAS_BASE + NALIAS) { errno = ENOSYS; return -1; }	/* (only the numbers the SDK hands out for copies) */
@@ -416,6 +464,13 @@ int fstat (int fd, struct stat *st)
   char *p = (char *) st;
   size_t i;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;
+  if (fd >= 0 && fd < 3 && rfd_state (fd) == 3)		/* standard stream redirected to a file: a regular file, so stdio buffers it (not a line at a time as for a terminal) */
+    {
+      r[0] = 2; r[1] = (unsigned long) rfd[fd].handle;
+      st->st_mode = S_IFREG | 0644; st->st_dev = 1;
+      if (!swi_x (OS_Args, r)) st->st_size = (off_t) r[2];
+      return 0;
+    }
   if (!isfile (fd)) { st->st_mode = S_IFCHR | 0600; return 0; }
   {
     const char *nm = fd_names[fdhandle (fd) & 255];		/* the name it was opened with: the type of the object (a folder), the date ... */
@@ -436,6 +491,12 @@ int fstat (int fd, struct stat *st)
 }
 
 int isatty (int fd) { return fd >= 0 && fd < 3 && rfd_state (fd) == 1; }
+
+/* standard output redirected to a file is buffered in full, as on Unix (picolibc's stdout is line buffered: one OS_GBPB per line, which is slow, most of all under an emulator) */
+__attribute__ ((constructor (102))) static void stdout_buffering (void)
+{
+  if (rfd_state (1) == 3) setvbuf (stdout, NULL, _IOFBF, BUFSIZ);
+}
 
 /* The heap is a dynamic area (OS_DynamicArea), created on the first sbrk with room to grow to 1 GB (or the largest of 256 MB and 64 MB that the system allows) and grown a page at a time by OS_ChangeDynamicArea:
    the application space that a program starts with is small (12 MB on Pyromaniac).  If no dynamic area can be made, sbrk uses the application space, from the end of the program to the RAM limit minus the stack.

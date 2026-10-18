@@ -29,3 +29,10 @@ Not run: PCRE2's locale, 16-bit, 32-bit, JIT and POSIX-interface tests (3, 10 to
 - **Emulator limit:** two runs of `bzip2 -N` in one job once ran the emulator out of memory ("No memory available") while one run per job was fine; the scripts here run each tool in its own job when a long list of commands is involved.
 
 The scripts are in [`riscos64/ports/userland-tests/b1`](../riscos64/ports/userland-tests/b1).
+
+## gawk 5.3.1 test directory (in progress, 18 October 2026)
+
+The 274 tests of gawk's `test/` directory that need no locale (20 more need `en_US` and are skipped) are turned from the Makefile recipes into shell scripts that the port's own `sh` runs, with `cmp`, `diff`, `sed`, `grep` and the coreutils from the packages. A first pass gave 251 of 274. After the library fixes below, the first 72 tests run again as short jobs (the build service ends a job after about 60 seconds): 71 pass; the one miss is an unexpanded Makefile variable in the generated script (`awkpath`), not a fault of the port. The rest is not run yet. Known not to work: `sigpipe1` (`yes | true`: a program that never reads stops only when its reader says so; planned), `poundbang` (the shell does not run `#!` scripts), `clobber` (opens a file for reading and for writing at once; RISC OS allows one writer).
+
+Found by these tests and fixed in the SDK and UnixLib 64 (not yet in a published tool chain): `dup2` onto descriptors 0 to 2; a child program's output into a file the parent has redirected to; standard output redirected to a file is a regular file and fully buffered (one write per line made gawk about six times slower); a newline or a quote in the command of `system ()` or `popen ()` was lost on its way to `sh -c`; the exit status of `pclose` through gawk's simulated pipes.
+
