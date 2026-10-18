@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -106,7 +107,33 @@ static void unexport_environ (void)
 /* run the command; the POSIX wait status of it: (result & 255) << 8, or 127 << 8 when RISC OS could not run it */
 extern int __ul64_run_swap (const char *cmd);
 extern char __ul64_run_error[];
+/* A command that starts with a Unix path (./sh, /bin/tool, ../x) has the path made a RISC OS one, as UnixLib does for system (); a command of the operating system (Spool, Copy ...) is left alone. */
+static char *translate_command (const char *cmd)
+{
+  const char *e = cmd;
+  char b[1024], *r;
+  const char *t;
+  size_t n;
+  if (*cmd == '"' || *cmd == '*') return 0;
+  while (*e && *e != ' ') e++;
+  n = (size_t) (e - cmd);
+  if (!memchr (cmd, '/', n) || n >= sizeof b - 1) return 0;
+  memcpy (b, cmd, n); b[n] = 0;
+  { char tr[1024]; t = __riscos_path (b, tr, 0); if (!t) return 0; r = malloc (strlen (t) + strlen (e) + 1); if (!r) return 0; strcpy (r, t); strcat (r, e); }
+  return r;
+}
+
+static int run_translated (const char *cmd);
 static int run (const char *cmd)
+{
+  char *t = translate_command (cmd);
+  int st;
+  if (!t) return run_translated (cmd);
+  st = run_translated (t);
+  free (t);
+  return st;
+}
+static int run_translated (const char *cmd)
 {
   unsigned long r[10] = { (unsigned long) cmd };
   export_environ ();
@@ -133,15 +160,24 @@ static char *command_line (const char *prog, char *const argv[])
   size_t n = strlen (prog) + 2;
   size_t i;
   char *cmd, *p;
-  for (i = 1; argv && argv[i]; i++) n += strlen (argv[i]) + 3;
+  for (i = 1; argv && argv[i]; i++) n += 2 * strlen (argv[i]) + 3;
   cmd = (char *) malloc (n);
   if (!cmd) return 0;
   p = cmd + sprintf (cmd, "%s", prog);
   for (i = 1; argv && argv[i]; i++)
     {
-      int quote = argv[i][0] == 0 || strpbrk (argv[i], " \t") != 0;
-      p += sprintf (p, quote ? " \"%s\"" : " %s", argv[i]);
+      const char *a = argv[i];
+      int quote = a[0] == 0 || strpbrk (a, " \t\"") != 0;
+      *p++ = ' ';
+      if (quote)							/* the program's start-up reads "" inside quotes as one quote */
+	{
+	  *p++ = '"';
+	  for (; *a; a++) { if (*a == '"') *p++ = '"'; *p++ = *a; }
+	  *p++ = '"';
+	}
+      else p += sprintf (p, "%s", a);
     }
+  *p = 0;
   return cmd;
 }
 
@@ -159,7 +195,7 @@ int posix_spawn (pid_t *pid, const char *path, const posix_spawn_file_actions_t 
   if (!p) return errno;
   cmd = command_line (p, argv);
   if (!cmd) return ENOMEM;
-  status = run (cmd);
+  status = run_translated (cmd);
   free (cmd);
   if (status == (127 << 8)) return ENOENT;
   for (i = 0; i < NCHILD; i++) if (!children[i].pid) break;
@@ -292,7 +328,7 @@ int __ul64_vfork_depth_get (void) { return vfork_depth; }
    a scrap file, and pclose runs the command with the file as its keyboard input (*Exec).  A program that the command starts replaces this one (see the comment at the top), so this works for the commands of the
    operating system.  */
 #define NPOPEN 16
-static struct { FILE *f; char *cmd; char file[64]; int write; int status; } pipes[NPOPEN];
+static struct { FILE *f; char *cmd; char file[64]; int write; int status; int sdk; } pipes[NPOPEN];
 
 /* Does OS_CLI take "command { > file }" (output redirection)?  RISC OS 5 does, RISC OS Pyromaniac does not: tried once, with a command whose output is known. */
 static int can_redirect (void)
@@ -300,23 +336,36 @@ static int can_redirect (void)
   static int known = -1;
   if (known < 0)
     {
-      char name[64], buf[16];
-      FILE *f;
+      char name[64];
       unsigned long r[10];
       char cmd[128];
       known = 0;
       if (getenv ("Wimp$ScrapDir")) snprintf (name, sizeof name, "<Wimp$ScrapDir>.redir%u", (unsigned) getpid ());
       else snprintf (name, sizeof name, "redir%u", (unsigned) getpid ());
-      snprintf (cmd, sizeof cmd, "Echo redirected { > %s }", name);
+      snprintf (cmd, sizeof cmd, "Set Sh$Probe 1 { > %s }", name);	/* with the redirection the (empty) file is made; without it nothing is written or shown */
       r[0] = (unsigned long) cmd; r[1] = r[2] = r[3] = r[4] = 0;
-      if (!swi_x (OS_CLI, r) && (f = fopen (name, "r")) != 0)
+      if (!swi_x (OS_CLI, r))
 	{
-	  if (fgets (buf, sizeof buf, f) && strncmp (buf, "redirected", 10) == 0) known = 1;
-	  fclose (f);
+	  unsigned long f[10] = { 0x40, (unsigned long) name };		/* OS_Find: does the file exist? */
+	  if (!swi_x (0x0D, f) && f[0]) { unsigned long c[10] = { 0, f[0] }; swi_x (0x0D, c); known = 1; }
+	  { unsigned long d[10] = { 6, (unsigned long) name }; swi_x (0x08, d); }	/* OS_File 6: delete */
 	}
-      remove (name);
     }
   return known;
+}
+
+/* Is the first word of the command a program file (one of the SDK, which reads Sh$Stdin and Sh$Stdout)?  Then the scrap file is given that way and nothing is shown on the screen. */
+static int is_program (const char *cmd)
+{
+  char first[512];
+  const char *e = cmd;
+  struct stat st;
+  size_t n;
+  while (*e && *e != ' ') e++;
+  n = (size_t) (e - cmd);
+  if (n == 0 || n >= sizeof first || cmd[0] == '"') return 0;
+  memcpy (first, cmd, n); first[n] = 0;
+  return stat (first, &st) == 0 && S_ISREG (st.st_mode);
 }
 
 FILE *popen (const char *cmd, const char *type)
@@ -331,7 +380,18 @@ FILE *popen (const char *cmd, const char *type)
   if (getenv ("Wimp$ScrapDir")) snprintf (pipes[i].file, sizeof pipes[i].file, "<Wimp$ScrapDir>.pipe%u", ++seq);
   else snprintf (pipes[i].file, sizeof pipes[i].file, "pipe%u", ++seq);
   pipes[i].write = write;
-  if (!write)
+  pipes[i].sdk = is_program (cmd);
+  if (!write && pipes[i].sdk)
+    {
+      char ros[1100], tr[1100];
+      const char *rp = __riscos_path (pipes[i].file, tr, 0);
+      snprintf (ros, sizeof ros, "%s", rp ? rp : pipes[i].file);
+      { FILE *t = fopen (pipes[i].file, "w"); if (t) fclose (t); }
+      setenv ("Sh$Stdout", ros, 1);
+      pipes[i].status = run (cmd);
+      unsetenv ("Sh$Stdout");
+    }
+  else if (!write)
     {
       if (can_redirect ())						/* the operating system redirects the output of the command itself: a Spool file that the program that runs this one has open is left alone */
 	{
@@ -361,10 +421,22 @@ int pclose (FILE *f)
   fclose (f);
   if (pipes[i].write)
     {
-      snprintf (line, sizeof line, "Exec %s", pipes[i].file);
-      run (line);
-      status = run (pipes[i].cmd);
-      run ("Exec");
+      if (pipes[i].sdk)
+	{
+	  char ros[1100], tr[1100];
+	  const char *rp = __riscos_path (pipes[i].file, tr, 0);
+	  snprintf (ros, sizeof ros, "%s", rp ? rp : pipes[i].file);
+	  setenv ("Sh$Stdin", ros, 1);
+	  status = run (pipes[i].cmd);
+	  unsetenv ("Sh$Stdin");
+	}
+      else
+	{
+	  snprintf (line, sizeof line, "Exec %s", pipes[i].file);
+	  run (line);
+	  status = run (pipes[i].cmd);
+	  run ("Exec");
+	}
     }
   else status = pipes[i].status;
   remove (pipes[i].file);

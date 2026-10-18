@@ -1,0 +1,42 @@
+echo "== basic"
+x=5; echo $x ${x}y "$x z" '$x'
+echo $((x * 3 + 1))
+y=$(echo hi there); echo "[$y]"
+echo `echo back`
+set -- a b c; echo $# $1 $3 "$@"
+for i in 1 2 3; do echo i=$i; done
+i=0; while [ $i -lt 3 ]; do i=$((i+1)); done; echo i=$i
+case foo in f*) echo matched;; *) echo no;; esac
+f() { echo "in f $1"; return 3; }; f arg; echo rc=$?
+if [ -f sh_t1 ]; then echo exists; else echo missing; fi
+echo ${undefined:-default} ${x:+set} ${#x}
+s=hello.world.txt; echo ${s%.txt} ${s##*.} ${s%%.*} ${s#*.}
+echo a > t1_out; echo b >> t1_out; cat t1_out
+echo "== external"
+./tprog one "two words" three
+./tprog -x 7; echo rc=$?
+TPROG_VAR=hello ./tprog
+out=$(./tprog captured); echo "got: $out"
+echo "== pipe"
+./tprog p1 | ./tprog -i
+echo line1 | ./tprog -i
+echo "== redirect"
+./tprog toFile > t1_f; cat t1_f
+./tprog -e oops 2>/dev/null; echo after
+./tprog -e shown 2>&1 | ./tprog -i
+./tprog <t1_out -i
+echo "== heredoc"
+cat <<EOF
+heredoc $x
+EOF
+cat <<'EOF'
+no $x here
+EOF
+echo "== logic"
+true && echo and-ok; false || echo or-ok; ! false && echo not-ok
+[ 3 -gt 2 ] && [ -n abc ] && echo tests-ok
+test -d . && echo dir-ok
+(x=changed; echo in-sub $x); echo out-sub $x
+{ echo group1; echo group2; } > t1_g; cat t1_g
+echo "== done"
+rm -f t1_out t1_f t1_g

@@ -1,0 +1,57 @@
+--- make-4.4.1/src/function.c	2026-10-18 09:36:34.010445720 +0100
++++ make-4.4.1/src/function.c
+@@ -1838,6 +1838,46 @@
+ char *
+ func_shell_base (char *o, char **argv, int trim_newlines)
+ {
++#ifdef __riscos__
++  /* RISC OS 64 (UnixLib 64): no pipe () and no fork: the shell runs through popen (the output goes through a scrap file) */
++  {
++    char *shell = allocated_variable_expand ("$(SHELL)");
++    size_t n = strlen (shell) + 2 * strlen (argv[0]) + 16;
++    char *cmd = xmalloc (n), *p = cmd, *buffer = xmalloc (512), *a;
++    size_t len = 0, cap = 512;
++    FILE *f;
++    p += sprintf (p, "%s -c \"", shell);
++    for (a = argv[0]; *a; a++)
++      {
++        if (*a == '"')
++          *p++ = '"';
++        *p++ = (*a == '\n') ? ' ' : *a;
++      }
++    *p++ = '"';
++    *p = '\0';
++    f = popen (cmd, "r");
++    if (f)
++      {
++        size_t got;
++        while ((got = fread (buffer + len, 1, cap - len, f)) > 0)
++          {
++            len += got;
++            if (len == cap)
++              {
++                cap *= 2;
++                buffer = xrealloc (buffer, cap);
++              }
++          }
++        pclose (f);
++      }
++    fold_newlines (buffer, &len, trim_newlines);
++    o = variable_buffer_output (o, buffer, len);
++    free (buffer);
++    free (cmd);
++    free (shell);
++    return o;
++  }
++#else
+   struct childbase child = {0};
+   char *batch_filename = NULL;
+   int errfd;
+@@ -2006,6 +2046,7 @@
+   free_childbase (&child);
+ 
+   return o;
++#endif /* __riscos__ */
+ }
+ 
+ #else   /* _AMIGA */

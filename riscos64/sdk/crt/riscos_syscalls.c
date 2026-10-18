@@ -78,10 +78,54 @@ extern int __ul64_sock_close (int) __attribute__ ((weak));
 extern int __ul64_sock_fstat (int, struct stat *) __attribute__ ((weak));
 #define SOCK(fd) (__ul64_is_sock && __ul64_is_sock (fd))
 
+/* The standard streams can be sent to a file or nowhere by the program that started this one (the shell does that for  cmd > file,  cmd < file,  cmd 2>file ...): the system variables Sh$Stdin, Sh$Stdout and
+   Sh$Stderr hold the name of a file, or "null" (output thrown away, input empty), or, for Sh$Stderr, "stdout" (with the output).  Each is read once, at the first use of the descriptor; output is appended to
+   the file.  The variables are inherited by the programs that a program starts (they are exported with the rest of the environment), as a redirection is. */
+static struct { int state; int handle; } rfd[3];		/* state: 0 not looked at, 1 the console, 2 nowhere, 3 a file (handle), 4 (stderr) with standard output */
+static void rfd_init (int fd)
+{
+  static const char *const names[3] = { "Sh$Stdin", "Sh$Stdout", "Sh$Stderr" };
+  char buf[512];
+  unsigned long r[10] = { (unsigned long) names[fd], (unsigned long) buf, sizeof buf - 1, 0, 3 };
+  rfd[fd].state = 1;
+  if (swi_x (0x23, r) || r[2] >= sizeof buf) return;		/* OS_ReadVarVal */
+  buf[r[2]] = 0;
+  if (!strcmp (buf, "null")) { rfd[fd].state = 2; return; }
+  if (fd == 2 && !strcmp (buf, "stdout")) { rfd[fd].state = 4; return; }
+  {
+    unsigned long o[10] = { fd == 0 ? 0x40UL : 0xC0UL, (unsigned long) buf };	/* OS_Find: open for reading (stdin), or for update, else create (output) */
+    if (swi_x (OS_Find, o) || !o[0])
+      {
+	if (fd == 0) return;
+	o[0] = 0x80; o[1] = (unsigned long) buf;
+	if (swi_x (OS_Find, o) || !o[0]) return;
+      }
+    rfd[fd].handle = (int) o[0];
+    if (fd != 0)
+      {
+	unsigned long e[10] = { 2, o[0] };			/* the extent, and the pointer to the end of the file */
+	if (!swi_x (OS_Args, e)) { unsigned long p[10] = { 1, o[0], e[2] }; swi_x (OS_Args, p); }
+      }
+    rfd[fd].state = 3;
+  }
+}
+static int rfd_state (int fd) { if (!rfd[fd].state) rfd_init (fd); return rfd[fd].state; }
+static void rfd_close (void)
+{
+  int fd;
+  for (fd = 0; fd < 3; fd++) if (rfd[fd].state == 3) { unsigned long c[10] = { 0, (unsigned long) rfd[fd].handle }; swi_x (OS_Find, c); rfd[fd].state = 1; }
+}
+
 ssize_t write (int fd, const void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
-  if (SOCK (fd)) return __ul64_sock_write (fd, buf, n);
+  if (fd == 1 || fd == 2)
+    {
+      int st = rfd_state (fd), h = rfd[fd].handle;
+      if (fd == 2 && st == 4) { st = rfd_state (1); h = rfd[1].handle; }
+      if (st == 2) return (ssize_t) n;
+      if (st == 3) { unsigned long w[10] = { 2, (unsigned long) h, (unsigned long) buf, n }; if (swi_x (OS_GBPB, w)) { errno = EIO; return -1; } return (ssize_t) (n - w[3]); }
+    }
   if (fd == 1 || fd == 2) { __ul64_poll_signals (); put_text ((const char *) buf, n); return (ssize_t) n; }
   if (!isfile (fd)) { errno = EBADF; return -1; }
   r[0] = 2; r[1] = (unsigned long) fdhandle (fd); r[2] = (unsigned long) buf; r[3] = n;
@@ -93,6 +137,12 @@ ssize_t read (int fd, void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
   if (SOCK (fd)) return __ul64_sock_read (fd, buf, n);
+  if (fd == 0)
+    {
+      int st = rfd_state (0);
+      if (st == 2) return 0;
+      if (st == 3) { unsigned long q[10] = { 4, (unsigned long) rfd[0].handle, (unsigned long) buf, n }; if (swi_x (OS_GBPB, q)) { errno = EIO; return -1; } return (ssize_t) (n - q[3]); }
+    }
   if (fd == 0 && !(__riscos_tty_lflag & 0x10))		/* the keyboard, termios non-canonical: no line editing, returns when VMIN characters have come (0 = whatever is waiting) */
     {
       char *p = (char *) buf;
@@ -257,7 +307,7 @@ int fstat (int fd, struct stat *st)
   return 0;
 }
 
-int isatty (int fd) { return fd >= 0 && fd < 3; }
+int isatty (int fd) { return fd >= 0 && fd < 3 && rfd_state (fd) == 1; }
 
 /* The heap is a dynamic area (OS_DynamicArea), created on the first sbrk with room to grow to 1 GB (or the largest of 256 MB and 64 MB that the system allows) and grown a page at a time by OS_ChangeDynamicArea:
    the application space that a program starts with is small (12 MB on Pyromaniac).  If no dynamic area can be made, sbrk uses the application space, from the end of the program to the RAM limit minus the stack.
@@ -322,6 +372,7 @@ void _exit (int code)
   static const struct { unsigned num; char msg[20]; } done = { 0, "Program finished" };
   unsigned long r[10] = { 0 };
   if (__ul64_vfork_exit) __ul64_vfork_exit (code);
+  rfd_close ();
   if (da_mode == 1) { unsigned long q[10] = { 1, da_number }; swi_x (OS_DynamicArea, q); }		/* remove the heap */
   r[0] = (unsigned long) &done;
   r[1] = 0x58454241UL;					/* "ABEX" */

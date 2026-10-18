@@ -1,0 +1,85 @@
+[1] quoting
+single $x|double  end|back slash
+it's tab	here q"q q'q a$b a a"b
+[2] params
+abc bc ab 3 abc no no yes set set
+unset  []
+3 one two three
+<one>
+<two three>
+<four>
+[one]
+[two]
+[three]
+[four]
+one two three four
+2 two three
+0
+0
+[3] arithmetic
+7 9 3 1 32 3 15 4 1 0 0 1 -3 1
+6
+36
+[4] control
+w1
+w3
+1a
+2a
+3a
+until3
+ABstar
+spaced
+abc-alt
+upper
+elif
+notfalse
+[5] functions
+f:x:2
+rc=4
+inner
+outer
+720
+h<a b>
+h<c>
+[6] subst
+one two three four nested
+[a
+b]
+[7] heredoc, read
+got:line one
+got:line two
+1|2|3 4 5
+tab	and $escaped and 2
+[8] IFS and globbing
+4
+*_nomatch_*
+[9] logic and status
+0
+1
+3
+ok1
+ok2
+grp
+grp2
+[10] eval, test
+ev5
+evaled
+z
+n
+eq
+ne
+lt
+nofile
+space-eq
+dir
+[11] printf, misc
+str-42-ff-x|   ab|cd   |
+a
+b
+c
+no newline
+nn
+a	b
+sub2
+main1
+[12] special

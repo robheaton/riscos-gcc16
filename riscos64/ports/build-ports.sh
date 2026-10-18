@@ -9,9 +9,9 @@ P=$(cd "${1:?PREFIX}" && pwd); W=${2:?WORKDIR}
 mkdir -p "$W"; W=$(cd "$W" && pwd); cd "$W"
 CC="$P/bin/aarch64-riscos-gcc -munixlib"
 fetch () { [ -f "$2" ] || curl -sSLO "$1/$2"; echo "$3  $2" | sha256sum -c -; }
-# GNU make
+# GNU make (the patch makes $(shell ...) use popen: there is no pipe ())
 fetch https://ftp.gnu.org/gnu/make make-4.4.1.tar.gz dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3
-[ -d make-4.4.1 ] || tar xf make-4.4.1.tar.gz
+[ -d make-4.4.1 ] || { tar xf make-4.4.1.tar.gz && patch -p0 -d . < "$(dirname "$0")/patches/make-4.4.1-riscos64.patch"; }
 mkdir -p make-build && (cd make-build && ../make-4.4.1/configure --host=aarch64-riscos --build="$(uname -m)-pc-linux-gnu" CC="$CC" CFLAGS=-O2 --disable-nls --without-guile --disable-load --disable-job-server > conf.log 2>&1 \
   && make -j"$(nproc)" CFLAGS="-O2 -std=gnu17 -include stdbool.h" > make.log 2>&1)	# (gnulib's fnmatch.c declares getenv () in the old way, which C23 refuses; findprog.h then needs stdbool.h)
 cp make-build/make "make,ff8"
@@ -23,4 +23,6 @@ fetch https://sourceware.org/pub/bzip2 bzip2-1.0.8.tar.gz ab5a03176ee106d3f0fa90
 [ -f sqlite-amalgamation-3470200.zip ] || curl -sSLO https://www.sqlite.org/2024/sqlite-amalgamation-3470200.zip
 [ -d sqlite-amalgamation-3470200 ] || unzip -q sqlite-amalgamation-3470200.zip
 (cd sqlite-amalgamation-3470200 && $CC -O2 -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_WAL -DSQLITE_MAX_MMAP_SIZE=0 -DSQLITE_DEFAULT_MEMSTATUS=0 shell.c sqlite3.c -o "$W/sqlite3,ff8" -lm)
+# the shell
+$CC -O2 -o "$W/sh,ff8" "$(dirname "$(readlink -f "$0")")/sh/sh.c"
 ls -l "$W"/*,ff8

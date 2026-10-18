@@ -1,5 +1,5 @@
 /* riscos_start.c - the C start-up of a hosted program: copy the command line into argv[], set the limits of the heap (sbrk) and of the stack, run the constructors, call main and exit.
-   The command line from OS_GetEnv is the whole line, the program first ("RAM::RamDisc0.$.hello a "b c" d"): words are separated by spaces, a word in double quotes may hold spaces. */
+   The command line from OS_GetEnv is the whole line, the program first ("RAM::RamDisc0.$.hello a "b c" d"): words are separated by spaces, a word in double quotes may hold spaces, and a doubled quote inside is one quote. */
 extern int main (int, char **, char **);
 extern void __ul64_init (int, char **) __attribute__ ((weak));
 extern void exit (int);
@@ -35,8 +35,8 @@ static void init_tls (void)
 
 unsigned long __riscos_ramlimit;
 char *__riscos_heap_end;				/* sbrk may not go beyond it */
-static char argbuf[1024];
-static char *argvec[64];
+static char argbuf[4096];
+static char *argvec[256];
 static char *envvec[1];
 #define STACK_RESERVE (128 * 1024)			/* the stack grows down from the RAM limit; the heap leaves this much for it */
 
@@ -52,12 +52,17 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 	{
 	  while (cmd[0] == ' ') cmd++;
 	  if ((unsigned char) cmd[0] < 32) break;
-	  if (argc < 63) argvec[argc++] = &argbuf[i];
+	  if (argc < 255) argvec[argc++] = &argbuf[i];
 	  if (cmd[0] == '"')
 	    {
 	      cmd++;
-	      while ((unsigned char) cmd[0] >= 32 && cmd[0] != '"') { if (i < sizeof argbuf - 1) argbuf[i++] = *cmd; cmd++; }
-	      if (cmd[0] == '"') cmd++;
+	      for (;;)								/* up to the closing quote; "" inside is a quote (how system (), posix_spawn and the shell write an argument that has a quote in it) */
+		{
+		  if ((unsigned char) cmd[0] < 32) break;
+		  if (cmd[0] == '"') { if (cmd[1] == '"') { if (i < sizeof argbuf - 1) argbuf[i++] = '"'; cmd += 2; continue; } cmd++; break; }
+		  if (i < sizeof argbuf - 1) argbuf[i++] = *cmd;
+		  cmd++;
+		}
 	    }
 	  else
 	    while ((unsigned char) cmd[0] > 32) { if (i < sizeof argbuf - 1) argbuf[i++] = *cmd; cmd++; }

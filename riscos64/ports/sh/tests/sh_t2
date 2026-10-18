@@ -1,0 +1,66 @@
+# builtins-only checks, compared with the host's sh
+echo "[1] quoting"
+a='single $x'; b="double $HOME_NOT_SET end"; c=back\ slash; echo "$a|$b|$c"
+echo 'it'"'"'s' "tab	here" 'q"q' "q'q" "a\$b" "a\\b" "a\"b"
+echo "[2] params"
+x=abc; echo ${x} ${x#a} ${x%c} ${#x} ${x:-no} ${y:-no} ${y-no} ${x:+yes} ${y:+yes} ${y:=set} $y
+unset y; echo "${y-unset}" "${y:-}" "[${z}]"
+set -- one "two three" four; echo $# "$1" "$2"; for p in "$@"; do echo "<$p>"; done; for p in $@; do echo "[$p]"; done; echo "$*"
+shift; echo $# $1; shift 2; echo $#
+set --; echo $#
+echo "[3] arithmetic"
+echo $((1+2*3)) $(((1+2)*3)) $((10/3)) $((10%3)) $((2<<4)) $((7&3)) $((7|8)) $((5^1)) $((1<2)) $((3>4)) $((1&&0)) $((1||0)) $((-5+2)) $((!0))
+n=5; n=$((n+1)); echo $n; echo $((n*n))
+echo "[4] control"
+i=0; while [ "$i" -lt 5 ]; do i=$((i+1)); [ $i -eq 2 ] && continue; [ $i -eq 4 ] && break; echo w$i; done
+for i in 1 2 3; do for j in a b; do [ $j = b ] && continue 2; echo $i$j; done; done
+until [ $i -ge 3 ]; do i=$((i+1)); done; echo until$i
+case abc in a) echo A;; ab*) echo ABstar;; *) echo other;; esac
+case "x y" in "x y") echo spaced;; esac
+case b in a|b|c) echo abc-alt;; esac
+case Z in [a-z]) echo lower;; [A-Z]) echo upper;; esac
+if false; then echo no; elif true; then echo elif; else echo else; fi
+if ! false; then echo notfalse; fi
+echo "[5] functions"
+f() { echo "f:$1:$#"; return 4; }
+f x y; echo rc=$?
+g() { local v=inner; echo $v; }; v=outer; g; echo $v
+fact() { if [ $1 -le 1 ]; then echo 1; else echo $(( $1 * $(fact $(($1 - 1))) )); fi; }
+fact 6
+h() { for a in "$@"; do echo "h<$a>"; done; }; h "a b" c
+echo "[6] subst"
+echo `echo one` $(echo two) "$(echo three four)" $(echo $(echo nested))
+r=$(printf 'a\nb\n\n'); echo "[$r]"
+echo "[7] heredoc, read"
+while read -r l; do echo "got:$l"; done <<EOF
+line one
+  line two
+EOF
+read a b c <<EOF
+1 2 3 4 5
+EOF
+echo "$a|$b|$c"
+cat <<EOT
+tab	and \$escaped and $((1+1))
+EOT
+echo "[8] IFS and globbing"
+IFS=:; x="a:b::c"; set -- $x; echo $#; IFS=" 	
+"
+set -- *_nomatch_*; echo "$1"
+echo "[9] logic and status"
+true; echo $?; false; echo $?; (exit 3); echo $?
+true && false || echo ok1; false && true || echo ok2; true || echo skipped
+{ echo grp; echo grp2; } | cat
+echo "[10] eval, test"
+eval 'ev=5; echo ev$ev'
+cmd='echo evaled'; eval $cmd
+[ -z "" ] && echo z; [ -n "x" ] && echo n; [ a = a ] && echo eq; [ a != b ] && echo ne; [ 3 -lt 10 ] && echo lt; [ ! -f /no/such/file ] && echo nofile
+test "a b" = "a b" && echo space-eq
+[ -d . ] && [ -e . ] && echo dir
+echo "[11] printf, misc"
+printf '%s-%d-%x-%c|%5s|%-5s|\n' str 42 255 xyz ab cd
+printf '%s\n' a b c
+printf 'no newline'; echo
+echo -n "nn"; echo; echo "a\tb"
+x=1; (x=2; echo sub$x); echo main$x
+echo "[12] special"
