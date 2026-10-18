@@ -13,6 +13,8 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 >
 > There is also an early preview for **64-bit RISC OS** (AArch64), described [further down](#risc-os-64-aarch64-early-preview); everything else on this page is for 32-bit machines.
 
+**Release lists:** [all 32-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=v16.2.0&expanded=true) · [all 64-bit (AArch64) preview releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true). (GitHub shows both kinds on its [releases page](https://github.com/robheaton/riscos-gcc16/releases); these links show them separately.)
+
 ## Downloads (32-bit)
 
 The file names below are download links (they always give the file from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest); older versions are on the [releases page](https://github.com/robheaton/riscos-gcc16/releases)). Check the downloads against [`SHA256SUMS`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SHA256SUMS).
@@ -137,7 +139,7 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the [RIS
 | [`riscos64-coreutils-9.5-3`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-3) | 22 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |
 
-These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-` on the [releases page](https://github.com/robheaton/riscos-gcc16/releases).
+These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).
 
 Start with [docs/AARCH64.md](docs/AARCH64.md) (the compiler) and [docs/USERLAND64.md](docs/USERLAND64.md) (the shell and tools); [docs/RISCOS64.md](docs/RISCOS64.md) says what was tested.
 
