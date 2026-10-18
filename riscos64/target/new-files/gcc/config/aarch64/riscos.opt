@@ -29,3 +29,7 @@ As -mmodule, with the floating point and vector registers allowed in the module.
 munixlib
 Target Var(riscos_unixlib) Init(0)
 Link UnixLib 64: Unix file names are translated to RISC OS file names, with directories, the current directory and the system variables UnixEnv$... of UnixLib.
+
+pthread
+Driver
+Accepted and ignored: the thread library is always linked (threads are cooperative, see sdk/include/pthread.h).

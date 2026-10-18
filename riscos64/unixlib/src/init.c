@@ -46,6 +46,20 @@ static void unixify_argv0 (char **argv)
   if (u) argv[0] = u;
 }
 
+/* /tmp is <Wimp$ScrapDir>, which the desktop sets: without it (a command line session, the build service) the folder $.tmp is made and used, so that mkstemp, tmpnam and tmpfile work */
+static void scrap_init (void)
+{
+  char buf[256];
+  static const char dir[] = "$.tmp", name[] = "Wimp$ScrapDir";
+  if (os_var (name, buf, sizeof buf)) return;
+  {
+    long c[10] = { 8, (long) dir, 0, 0, 0 };				/* OS_File 8: create a folder (an error if it is there already is fine) */
+    long s[10] = { (long) name, (long) dir, (long) sizeof dir - 1, 0, 0 };	/* OS_SetVarVal, type string */
+    __os_swi (0x08, c);
+    __os_swi (0x24, s);
+  }
+}
+
 void __ul64_init (int argc, char **argv)
 {
   char buf[256], program[128];
@@ -56,6 +70,7 @@ void __ul64_init (int argc, char **argv)
   for (p = leaf; *p; p++) if (*p == '.' || *p == ':' || *p == '/') leaf = p + 1;
   strncpy (program, leaf, sizeof program - 1); program[sizeof program - 1] = 0;
   __sdirinit ();
+  scrap_init ();
   v = feature (NULL, "nonametrans", buf, sizeof buf);
   if (!v) v = feature (program, "nonametrans", buf, sizeof buf);
   if (v) __set_riscosify_control (__RISCOSIFY_NO_PROCESS);

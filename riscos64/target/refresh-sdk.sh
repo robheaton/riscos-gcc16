@@ -12,6 +12,8 @@ for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
   $CC -O2 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -Wall -Wextra -c "$SDK/crt/$f" -o "$T/lib/${f%.*}.o"
 done
 cp "$SDK/aif64.ld" "$T/lib/"
+# picolibc's setlocale takes any name: it becomes __pico_setlocale and crt/posix/locale.c has the setlocale that the programs see (once: the rename is not done again)
+if "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q ' [TW] setlocale$'; then "$PREFIX/bin/aarch64-riscos-objcopy" --redefine-sym setlocale=__pico_setlocale "$T/lib/libc.a"; fi
 rm -f "$W"/stubs/*.o "$T/lib/libriscosstub.a"
 for f in "$SDK"/crt/stubs/*.c "$SDK"/crt/posix/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -fexceptions -Wall -Wextra -I"$SDK/include" -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
 "$PREFIX/bin/aarch64-riscos-ar" rcs "$T/lib/libriscosstub.a" "$W"/stubs/*.o

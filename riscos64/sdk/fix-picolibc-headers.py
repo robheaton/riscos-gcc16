@@ -62,3 +62,10 @@ t = open(ioc).read()
 if "FIONBIO" not in t:
     i = t.rindex("#endif")
     open(ioc, "w").write(t[:i] + "#define FIONBIO 0x8004667e\n#define FIONREAD 0x4004667f\n" + t[i:])
+
+# _setjmp and _longjmp (the versions that do not save the signal mask; Lua and others use them)
+sj = inc + "/setjmp.h"
+t = open(sj).read()
+if "_longjmp" not in t:
+    i = t.rindex("#endif")
+    open(sj, "w").write(t[:i] + "#ifndef _setjmp\n#define _setjmp(env) setjmp (env)\n#define _longjmp(env, val) longjmp (env, val)\n#endif\n" + t[i:])
