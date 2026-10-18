@@ -1,0 +1,10 @@
+cp testdata/testbtables testbtables
+for n in $*; do
+  pcre2test -q testdata/testinput$n try$n
+  echo "test $n: pcre2test rc=$?"
+  out=testdata/testoutput$n
+  [ $n = 8 ] && out=testdata/testoutput8-8-2
+  diff try$n $out > d$n
+  echo "test $n: diff rc=$? ($(wc -l < d$n) lines of difference)"
+  head -30 d$n
+done

@@ -183,6 +183,7 @@ The documents cover both the **32-bit** tool chain (the main part of this projec
 | [docs/MODULES64.md](docs/MODULES64.md) | writing modules for RISC OS 64 in C and C++: `aarch64-riscos-gcc -mmodule`, `cmunge64`, the C library, floating point, what is not supported |
 | [docs/UNIXLIB64.md](docs/UNIXLIB64.md) | a C library for programs on RISC OS 64: what UnixLib is (measured), three ways to port it, a component plan with hours, risks |
 | [docs/USERLAND64.md](docs/USERLAND64.md) | the shell and the GNU tools for RISC OS 64 (`!GNU`, `!CoreUtils`): setup, file names, the process model, the `sh` reference, tool notes, limits, a porting guide |
+| [docs/PORTS-TESTS.md](docs/PORTS-TESTS.md) | the tests that come with the ports (libpng, zlib, expat, jq, PCRE2, xz, libjpeg-turbo ...) run on the emulator: what passed and what was found |
 
 <br>
 

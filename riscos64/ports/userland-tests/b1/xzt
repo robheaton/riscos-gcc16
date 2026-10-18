@@ -1,0 +1,32 @@
+fails=0
+n=0
+for f in files/good-*.xz; do
+  n=$((n+1))
+  xz -t $f 2>/dev/null || { echo "FAIL good: $f"; fails=$((fails+1)); }
+done
+echo "good .xz: $n files"
+n=0
+for f in files/bad-*.xz; do
+  n=$((n+1))
+  if xz -t $f 2>/dev/null; then echo "FAIL bad file accepted: $f"; fails=$((fails+1)); fi
+done
+echo "bad .xz: $n files"
+n=0
+for f in files/unsupported-*.xz; do
+  n=$((n+1))
+  if xz -t $f 2>/dev/null; then echo "FAIL unsupported file accepted: $f"; fails=$((fails+1)); fi
+done
+echo "unsupported .xz: $n files"
+n=0
+for f in files/good-*.lzma; do
+  n=$((n+1))
+  xz -t --format=lzma $f 2>/dev/null || { echo "FAIL good lzma: $f"; fails=$((fails+1)); }
+done
+echo "good .lzma: $n files"
+n=0
+for f in files/bad-*.lzma; do
+  n=$((n+1))
+  if xz -t --format=lzma $f 2>/dev/null; then echo "FAIL bad lzma accepted: $f"; fails=$((fails+1)); fi
+done
+echo "bad .lzma: $n files"
+echo "xz files done: $fails failures"

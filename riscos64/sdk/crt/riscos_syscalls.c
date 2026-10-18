@@ -443,7 +443,7 @@ int isatty (int fd) { return fd >= 0 && fd < 3 && rfd_state (fd) == 1; }
 #define OS_ChangeDynamicArea 0x2A
 #define OS_DynamicArea 0x66
 static int da_mode;				/* 0 = not tried, 1 = a dynamic area, 2 = the application space */
-static unsigned long da_number, da_size;
+static unsigned long da_number, da_size, da_max;
 static char *da_base, *da_cur;
 
 static void da_create (void)
@@ -457,7 +457,7 @@ static void da_create (void)
       r[0] = 0; r[1] = (unsigned long) -1; r[2] = 4096; r[3] = (unsigned long) -1; r[4] = 0x80; r[5] = max[i]; r[8] = (unsigned long) "SDK heap";
       if (!swi_x (OS_DynamicArea, r))
 	{
-	  da_number = r[1] & 0xFFFFFFFF; da_base = da_cur = (char *) r[3]; da_size = 4096; da_mode = 1;
+	  da_number = r[1] & 0xFFFFFFFF; da_base = da_cur = (char *) r[3]; da_size = 4096; da_max = max[i]; da_mode = 1;
 	  return;
 	}
     }
@@ -478,6 +478,8 @@ void *sbrk (ptrdiff_t incr)
 	  unsigned long need = ((size_t) (new_ - da_base) - da_size + 4095) & ~4095UL, grow = need, r[10] = { 0 };
 	  if (grow < (256UL << 10)) grow = 256UL << 10;			/* in steps of at least 256 KB or an eighth of the size: a step is a new region of memory for an emulator (Pyromaniac's limit is a few thousand) */
 	  if (grow < (da_size >> 3)) grow = (da_size >> 3) & ~4095UL;
+	  if (need > da_max - da_size) { errno = ENOMEM; return (void *) -1; }		/* more than the area was made to hold: an error here, not a request that an emulator cannot map */
+	  if (grow > da_max - da_size) grow = da_max - da_size;
 	  r[0] = da_number; r[1] = grow;
 	  if (swi_x (OS_ChangeDynamicArea, r)) { r[0] = da_number; r[1] = need; r[2] = 0; if (need == grow || swi_x (OS_ChangeDynamicArea, r)) { errno = ENOMEM; return (void *) -1; } }
 	  da_size += r[1] & 0xFFFFFFFF;
