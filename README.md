@@ -17,7 +17,7 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 
 The file names below are download links (they always give the file from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest); older versions are on the [releases page](https://github.com/robheaton/riscos-gcc16/releases)). Check the downloads against [`SHA256SUMS`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SHA256SUMS).
 
-| File | What it is | Needed for |
+| File | Description | Needed for |
 |---|---|---|
 | [`SharedLibs-C-armeabihf_16.2.0-15_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-C-armeabihf_16.2.0-15_arm.zip) (2 MB) | the C runtime: UnixLib 5.0 rebuilt with GCC 16 and fixed, loader, libgcc_s | running **any** program from this tool chain |
 | [`Gcc16_16.2.0-24_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/Gcc16_16.2.0-24_arm.zip) (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
@@ -120,7 +120,7 @@ There is also a separate, early preview of the same idea for **64-bit RISC OS (A
 
 What it cannot do yet: there is no `fork`, so programs that start several processes at once, and `bash`, do not work (the included `sh` covers most scripts); sockets are written but untried; and the modules cannot yet intercept vectors or be Wimp tasks.
 
-| Download (all pre-releases) | What it is |
+| Download (all pre-releases) | Description |
 |---|---|
 | [`riscos64-toolchain-0.5`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.5) | the Linux cross compiler (x86-64) |
 | [`riscos64-gnu-tools-6`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-6) | `!GNU`: the shell and the tools |
