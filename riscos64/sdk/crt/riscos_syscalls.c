@@ -51,19 +51,43 @@ static int isfile (int fd) { return realfd (fd) >= 3; }
 int __riscos_handle (int fd) { return isfile (fd) ? fdhandle (fd) : -1; }
 
 /* the screen: OS_Write0 for runs of text (copied to a buffer with a 0 at the end), OS_WriteC for a 0 byte, OS_NewLine for each \n.  (These are the SWIs that every RISC OS has had from the start; OS_WriteN was used before.)  */
+/* The VDU drivers cannot clear to the end of a line.  The built-in termcap entry ("riscos") has ce and cd as the bytes 0xFF 0x1B 0x01 (clear to end of line) and 0xFF 0x1B 0x02 (clear to end of screen),
+   which are done here, where the cursor position is the true one (a program that buffers its output has not written the text before them yet when it makes them). */
+static void vdu (int c) { unsigned long q[10] = { (unsigned long) c & 255 }; swi_x (OS_WriteC, q); }
+static void clear_text (int to_end_of_screen)
+{
+  unsigned long r[10] = { 134 };
+  unsigned in32[3] = { 1u, 2u, 0xFFFFFFFFu }, out32[2] = { 79, 24 };
+  unsigned long v[10] = { (unsigned long) in32, (unsigned long) out32 };
+  unsigned x, y, cols, rows, c, row;
+  if (swi_x (6, r)) return;						/* OS_Byte 134: the text cursor, R1 = column, R2 = row */
+  x = (unsigned) (r[1] & 255); y = (unsigned) (r[2] & 255);
+  swi_x (0x31, v);							/* OS_ReadVduVariables: ScrRCol, ScrBRow (the last column and row) */
+  cols = out32[0] + 1; rows = out32[1] + 1;
+  for (c = x; c < cols; c++) { if (y + 1 == rows && c + 1 == cols) break; vdu (' '); }		/* (not the last cell of the screen: that would scroll it) */
+  if (to_end_of_screen)
+    for (row = y + 1; row < rows; row++)
+      {
+	vdu (31); vdu (0); vdu ((int) row);
+	for (c = 0; c < cols; c++) { if (row + 1 == rows && c + 1 == cols) break; vdu (' '); }
+      }
+  vdu (31); vdu ((int) x); vdu ((int) y);
+}
 static void put_text (const char *s, size_t n)
 {
   size_t i = 0;
   char buf[256];
   while (i < n)
     {
-      if (s[i] == '\n') { unsigned long q[10] = { 0 }; swi_x (OS_NewLine, q); i++; }
+      if ((unsigned char) s[i] == 0xFF && i + 2 < n && s[i + 1] == 0x1B && (s[i + 2] == 1 || s[i + 2] == 2)) { clear_text (s[i + 2] == 2); i += 3; }
+      else if (s[i] == '\n') { unsigned long q[10] = { 0 }; swi_x (OS_NewLine, q); i++; }
       else if (s[i] == 0) { unsigned long q[10] = { 0 }; swi_x (OS_WriteC, q); i++; }
       else
 	{
 	  size_t k = 0;
 	  unsigned long r[10] = { 0 };
-	  while (i < n && s[i] != '\n' && s[i] != 0 && k < sizeof buf - 1) buf[k++] = s[i++];
+	  while (i < n && s[i] != '\n' && s[i] != 0 && k < sizeof buf - 1 && !((unsigned char) s[i] == 0xFF && i + 2 < n && s[i + 1] == 0x1B)) buf[k++] = s[i++];
+	  if (k == 0) { buf[k++] = s[i++]; }
 	  buf[k] = 0;
 	  r[0] = (unsigned long) buf;
 	  swi_x (OS_Write0, r);

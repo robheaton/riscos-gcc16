@@ -1,6 +1,7 @@
 /* fileops.c - the calls on files that RISC OS has an equivalent for: fcntl, ioctl, fsync, ftruncate, truncate, chmod, chown, utime, utimes, realpath; and the ones it has not (dup, pipe, link ...), which fail.
    Names go through __riscos_path (the translation of UnixLib 64 if it is linked in).  The SDK of RISC OS 64. */
 #include <errno.h>
+#include <sys/termios.h>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -65,6 +66,17 @@ int fcntl (int fd, int cmd, ...)
 
 int ioctl (int fd, unsigned long request, ...)
 {
+  if (request == 0x5401UL && fd >= 0 && fd < 3)		/* the size of the text screen, from the VDU variables ScrRCol and ScrBRow */
+    {
+      va_list ap;
+      struct winsize *ws;
+      unsigned in32[3] = { 1u, 2u, 0xFFFFFFFFu }, out32[2] = { 0, 0 };
+      unsigned long r[10] = { (unsigned long) in32, (unsigned long) out32 };
+      va_start (ap, request); ws = va_arg (ap, struct winsize *); va_end (ap);
+      if (ws && !swi_x (0x31, r) && out32[0] < 1000 && out32[1] < 1000) { ws->ws_col = (unsigned short) (out32[0] + 1); ws->ws_row = (unsigned short) (out32[1] + 1); return 0; }
+      errno = ENOTTY;
+      return -1;
+    }
   if (__ul64_is_sock && __ul64_is_sock (fd))
     {
       va_list ap;

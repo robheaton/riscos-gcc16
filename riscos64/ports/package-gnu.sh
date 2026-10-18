@@ -21,7 +21,7 @@ add "$W/bc-build/bc/bc" bc
 add "$W/bc-build/dc/dc" dc
 add "$W/xxd,ff8" xxd
 add "$W/xz-build/src/xz/xz" xz
-for n in zstd lz4 tree unzip zip jq pcre2grep pcre2test cjpeg djpeg jpegtran pngfix xmlwf; do [ -f "$W/more/$n,ff8" ] && add "$W/more/$n,ff8" $n; done
+for n in less lessecho zstd lz4 tree unzip zip jq pcre2grep pcre2test cjpeg djpeg jpegtran pngfix xmlwf; do [ -f "$W/more/$n,ff8" ] && add "$W/more/$n,ff8" $n; done
 add "$( [ -f "$W/lua-run/luax,ff8" ] && echo "$W/lua-run/luax,ff8" || echo "$W/lua-5.4.7/lua,ff8" )" lua
 add "$( [ -f "$W/bzip2,ff8" ] && echo "$W/bzip2,ff8" || echo "$W/bz-o/bzip2,ff8" )" bzip2
 add "$W/sqlite3,ff8" sqlite3
@@ -62,7 +62,7 @@ GNU and other tools for RISC OS 64 (AArch64), release $V
 
 sh        a POSIX shell for a system with no fork (ports/sh of the riscos-gcc16 project); runs scripts, pipelines (stage after stage), redirections; needs !CoreUtils for most utilities
 sed       GNU sed 4.9        grep  GNU grep 3.11 (egrep, fgrep as aliases)        gawk  GNU awk 5.3.1 (awk as an alias)
-zstd lz4 tree unzip zip jq pcre2grep  (when built by build-more.sh: Zstandard 1.5.6, LZ4 1.10.0, tree 2.1.3, UnZip 6.00, Zip 3.0, jq 1.7.1, PCRE2 10.44; aliases unzstd zstdcat unlz4 lz4cat)
+less lessecho (pager over the built-in termcap entry for the VDU drivers)  zstd lz4 tree unzip zip jq pcre2grep  (when built by build-more.sh: Zstandard 1.5.6, LZ4 1.10.0, tree 2.1.3, UnZip 6.00, Zip 3.0, jq 1.7.1, PCRE2 10.44; aliases unzstd zstdcat unlz4 lz4cat)
 which     GNU which 2.21        bc dc  GNU bc/dc 1.07.1        xz  XZ Utils 5.4.7 (unxz, xzcat as aliases)   xxd  hex dump (from Vim 9.1.0000; Vim licence / GPL-2)
 m4        GNU m4 1.4.19 (esyscmd and syscmd run the command with popen / system)
 make      GNU make 4.4.1 (use  SHELL = ./sh  or the full name of sh; the jobserver is off)

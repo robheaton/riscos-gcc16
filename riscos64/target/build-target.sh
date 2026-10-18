@@ -66,6 +66,7 @@ grep -q 'SDK: syslimits' "$GCCLIM" || printf '\n/* SDK: syslimits */\n#include <
 mkdir -p "$W/stubs"
 for f in "$SDK"/crt/stubs/*.c "$SDK"/crt/posix/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -fexceptions -Wall -Wextra -I"$SDK/include" -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
 "$PREFIX/bin/aarch64-riscos-ar" rcs "$T/lib/libriscosstub.a" "$W"/stubs/*.o
+rm -f "$T/lib/libtermcap.a"; "$PREFIX/bin/aarch64-riscos-ar" rcs "$T/lib/libtermcap.a"	# (empty: the termcap functions are in libriscosstub.a; configure scripts look for -ltermcap)
 # UnixLib 64 (unixlib/): -munixlib links it
 UL=$SDK/../unixlib
 CC=$CC AR=$PREFIX/bin/aarch64-riscos-ar "$UL/build.sh" "$W/unixlib" > "$W/unixlib-build.log" 2>&1
