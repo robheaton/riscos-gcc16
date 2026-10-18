@@ -261,10 +261,10 @@ FILE *__modlib_open_gen (FILE *f, const char *name, int rd, int wr, int create, 
   if (!wr)
     {
       h = _kernel_osfind (FIND_IN, name);
-      if (h == _kernel_ERROR && create)                           /* open () with O_CREAT and no write access: the file is made empty, then opened for reading */
+      if ((h == _kernel_ERROR || h == 0) && create)               /* open () with O_CREAT and no write access: the file is made empty, then opened for reading */
         {
-          const _kernel_oserror *e = __modlib_peek_oserror ();
-          if (e && (e->errnum & 0xFF) == 0xD6)
+          const _kernel_oserror *e = h == 0 ? 0 : __modlib_peek_oserror ();      /* (a missing file is an error "File not found" on some filing systems and a handle of 0 on others) */
+          if (h == 0 || (e && (e->errnum & 0xFF) == 0xD6))
             {
               int g = _kernel_osfind (FIND_OUT, name);
               if (g > 0) { _kernel_osfind (0, (const char *) g); h = _kernel_osfind (FIND_IN, name); }
@@ -275,10 +275,10 @@ FILE *__modlib_open_gen (FILE *f, const char *name, int rd, int wr, int create, 
   else
     {
       h = _kernel_osfind (FIND_UP, name);                         /* an existing file ... */
-      if (h == _kernel_ERROR && create)
+      if ((h == _kernel_ERROR || h == 0) && create)
         {
-          const _kernel_oserror *e = __modlib_peek_oserror ();
-          if (e && (e->errnum & 0xFF) == 0xD6) h = _kernel_osfind (FIND_OUT, name);          /* ... or a new one */
+          const _kernel_oserror *e = h == 0 ? 0 : __modlib_peek_oserror ();      /* (a missing file is an error "File not found" on some filing systems and a handle of 0 on others) */
+          if (h == 0 || (e && (e->errnum & 0xFF) == 0xD6)) h = _kernel_osfind (FIND_OUT, name);          /* ... or a new one */
         }
     }
   if (h == _kernel_ERROR) { os_errno (); return 0; }

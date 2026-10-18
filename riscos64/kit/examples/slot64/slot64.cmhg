@@ -1,0 +1,5 @@
+title-string: Slot64
+help-string: Slot64 0.01
+swi-chunk-base-number: 0x59E00
+swi-decoding-table: Slot64, Report
+swi-handler-code: slot_swi

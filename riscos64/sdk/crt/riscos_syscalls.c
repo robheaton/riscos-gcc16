@@ -148,29 +148,29 @@ int open (const char *path, int flags, ...)
   unsigned long r[10] = { 0 };
   int acc = flags & O_ACCMODE;
   char rosbuf[ROSPATH];
-  int filetype = -1, isnew = 0;
+  int filetype = -1, isnew = 0, exists = 0;
   const char *rospath = ros_path (path, rosbuf, (flags & O_CREAT) != 0, &filetype);
   if (!rospath) return -1;
-  if (__riscosify_std && (flags & O_CREAT))						/* a file that is made gets the file type of its name (",xyz" or MimeMap), else Text */
+  if (acc != O_RDONLY)								/* does it exist?  (OPENUP of a missing file fails on some filing systems and makes it on others, so do not rely on it) */
     {
       unsigned long q[10] = { 17, (unsigned long) rospath };
-      isnew = !swi_x (OS_File, q) && q[0] == 0;
+      if (!swi_x (OS_File, q)) exists = q[0] != 0;
+      if (exists && (flags & O_CREAT) && (flags & O_EXCL)) { errno = EEXIST; return -1; }
+      if (exists && q[0] == 2) { errno = EISDIR; return -1; }
+      if (!exists && !(flags & O_CREAT)) { errno = ENOENT; return -1; }
+      isnew = !exists;
     }
   path = rospath;
   r[1] = (unsigned long) path;
-  r[0] = acc == O_RDONLY ? 0x40 : (acc == O_WRONLY && (flags & O_TRUNC)) ? 0x80 : 0xC0;
-  if (acc != O_RDONLY && (flags & O_CREAT) == 0 && r[0] == 0x80) r[0] = 0xC0;		/* no create without O_CREAT: open for update (the file must exist) */
+  if (acc == O_RDONLY) r[0] = 0x40;						/* OPENIN */
+  else if (isnew || (flags & O_TRUNC)) r[0] = 0x80;				/* OPENOUT: makes the file or empties it; it can be read as well */
+  else r[0] = 0xC0;								/* OPENUP: the file is there */
   if (swi_x (OS_Find, r)) { errno = os_errno_of (r); return -1; }
   if (r[0] == 0) { errno = ENOENT; return -1; }
-  if (isnew)
+  if (isnew && __riscosify_std)
     {
       unsigned long q[10] = { 18, (unsigned long) path, filetype < 0 ? 0xFFF : (unsigned long) filetype };	/* OS_File 18: set the file type */
       swi_x (OS_File, q);
-    }
-  if ((flags & O_TRUNC) && acc != O_RDONLY && r[0] != 0 && !isnew)		/* opened for update above (O_RDWR, or O_WRONLY without O_CREAT), which keeps the old contents: empty the file (OS_Args 3, extent 0) */
-    {
-      unsigned long q[10] = { 3, r[0], 0 };
-      swi_x (OS_Args, q);
     }
   if (flags & O_APPEND)
     {

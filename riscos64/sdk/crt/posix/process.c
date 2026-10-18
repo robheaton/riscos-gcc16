@@ -20,10 +20,17 @@ extern const char *__riscos_path (const char *name, char *buf, int create_dir);
 
 static int return_code (void)				/* Sys$ReturnCode: the result of the program that ended last (0 if the variable is not there) */
 {
-  char buf[32];
-  unsigned long r[10] = { (unsigned long) "Sys$ReturnCode", (unsigned long) buf, sizeof buf - 1, 0, 3 };
-  if (swi_x (OS_ReadVarVal, r) || r[2] >= sizeof buf) return 0;
-  buf[r[2]] = 0;
+  char buf[64];
+  unsigned long r[10] = { (unsigned long) "Sys$ReturnCode", (unsigned long) buf, sizeof buf - 1, 0, 0 };
+  if (swi_x (OS_ReadVarVal, r)) return 0;
+  if ((r[4] & 0xFF) == 1)				/* a number: the value is a word in the buffer (a program's OS_Exit sets it so) */
+    {
+      int v;
+      memcpy (&v, buf, sizeof v);
+      return v;
+    }
+  if (r[2] >= sizeof buf) return 0;
+  buf[r[2]] = 0;					/* a string */
   return atoi (buf);
 }
 
@@ -102,9 +109,8 @@ extern char __ul64_run_error[];
 static int run (const char *cmd)
 {
   unsigned long r[10] = { (unsigned long) cmd };
-  unsigned long clear[10] = { (unsigned long) "Sys$ReturnCode" , 0, (unsigned long) -1, 0, 0 };
   export_environ ();
-  swi_x (0x24, clear);					/* OS_SetVarVal with a length of -1: remove the variable, so that an old result is not taken for this one */
+  setsysnum ("Sys$ReturnCode", 0);			/* so that the result of an earlier program is not taken for this one's (removing the variable with a length of -1 did not always work: a command of the operating system does not set it) */
   {
     int sr = __ul64_run_swap (cmd);
     if (sr == 2) { unexport_environ (); fprintf (stderr, "%s\n", __ul64_run_error); return 127 << 8; }	/* the command could not be started */
@@ -288,6 +294,31 @@ int __ul64_vfork_depth_get (void) { return vfork_depth; }
 #define NPOPEN 16
 static struct { FILE *f; char *cmd; char file[64]; int write; int status; } pipes[NPOPEN];
 
+/* Does OS_CLI take "command { > file }" (output redirection)?  RISC OS 5 does, RISC OS Pyromaniac does not: tried once, with a command whose output is known. */
+static int can_redirect (void)
+{
+  static int known = -1;
+  if (known < 0)
+    {
+      char name[64], buf[16];
+      FILE *f;
+      unsigned long r[10];
+      char cmd[128];
+      known = 0;
+      if (getenv ("Wimp$ScrapDir")) snprintf (name, sizeof name, "<Wimp$ScrapDir>.redir%u", (unsigned) getpid ());
+      else snprintf (name, sizeof name, "redir%u", (unsigned) getpid ());
+      snprintf (cmd, sizeof cmd, "Echo redirected { > %s }", name);
+      r[0] = (unsigned long) cmd; r[1] = r[2] = r[3] = r[4] = 0;
+      if (!swi_x (OS_CLI, r) && (f = fopen (name, "r")) != 0)
+	{
+	  if (fgets (buf, sizeof buf, f) && strncmp (buf, "redirected", 10) == 0) known = 1;
+	  fclose (f);
+	}
+      remove (name);
+    }
+  return known;
+}
+
 FILE *popen (const char *cmd, const char *type)
 {
   int i, write = type && type[0] == 'w';
@@ -302,10 +333,18 @@ FILE *popen (const char *cmd, const char *type)
   pipes[i].write = write;
   if (!write)
     {
-      snprintf (line, sizeof line, "Spool %s", pipes[i].file);
-      run (line);
-      pipes[i].status = run (cmd);
-      run ("Spool");
+      if (can_redirect ())						/* the operating system redirects the output of the command itself: a Spool file that the program that runs this one has open is left alone */
+	{
+	  snprintf (line, sizeof line, "%s { > %s }", cmd, pipes[i].file);
+	  pipes[i].status = run (line);
+	}
+      else
+	{
+	  snprintf (line, sizeof line, "Spool %s", pipes[i].file);
+	  run (line);
+	  pipes[i].status = run (cmd);
+	  run ("Spool");						/* (this ends any Spool file that was open: there is only one) */
+	}
     }
   pipes[i].f = fopen (pipes[i].file, write ? "w" : "r");
   if (!pipes[i].f) return 0;

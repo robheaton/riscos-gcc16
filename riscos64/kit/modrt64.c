@@ -87,22 +87,65 @@ KEEP mk_oserr *__modrt_final (int fatal, int podule, void *pw)
   errbuf = 0;
   return 0;
 }
-/* The kernel: the size of a slot of the register block of a SWI (and of a service call): 4 bytes on RISC OS Pyromaniac, 8 on a kernel with 64-bit slots.  It is found when the module starts: OS_ValidateAddress of the
-   low addresses says "valid" (x0 = 1) on Pyromaniac and "not valid" (x0 = 0) on a kernel with 64-bit slots, which is how they differ; and a service call, which has another convention on each, corrects it (see below). */
+/* The kernel: the size of a slot of the register block of a SWI (and of a service call): 4 bytes on RISC OS Pyromaniac, 8 on a kernel with 64-bit slots.  Three ways of finding out, the later ones correct the
+   earlier: OS_ValidateAddress of a low address (a guess, found with a user program: it can be wrong in a module); a service call, which has another convention on each kernel (see below); and, before the first SWI
+   is answered, a SWI that the module sends to itself (offset 63 of its chunk, nothing else uses it): the block that arrives shows the layout, whatever the kernel says (see slot_of_probe_block).  */
 int __mod_slot = 4;
-static int slot_known;
+static int slot_known;				/* the service call convention or the probe has said */
+static int swi_probed;				/* the probe has been tried */
+unsigned long __mod_swi_block;			/* where the register block of the last SWI was: for tests */
+int __mod_probe_state;				/* 0 not tried, 1 tried but not answered, 2 answered (slot size in __mod_slot): for tests */
+static int probing;				/* a probe SWI is expected */
+static int probe_slot;
+extern char _mod_start[];
 static void find_kernel (void)
 {
   u64 r[10] = { 0x100, 0x104 };
   if (slot_known) return;
-  slot_known = 1;
   if (!mk_swi (0x3A, r) && (r[0] & 0xFFFFFFFFUL) == 0) __mod_slot = 8;		/* OS_ValidateAddress */
+}
+/* The probe SWI is called with r0 = 0x1111111122222222 and r1 = 0x3333333344444444 in x0 and x1.  With 64-bit slots word 1 of the block is the upper half of r0, 0x11111111; with 32-bit slots it is r1, 0x44444444. */
+int __modrt_slot_of_probe_block (const void *block)
+{
+  return ((const u32 *) block)[1] == 0x11111111u ? 8 : 4;
+}
+/* Does the module's SWI decoding table list fewer than 64 names?  Then offset 63 of its chunk is not one of its SWIs and the probe can use it (a module that has all 64, like the library test, or no table at all,
+   is not probed).  The table is word 24 of the header: an offset to "prefix", then the names, each ended by 0, and an empty name at the end. */
+static int offset63_is_free (void)
+{
+  u32 tab = ((const u32 *) _mod_start)[9];
+  const char *t;
+  int n = 0;
+  if (!tab) return 0;
+  t = _mod_start + tab;
+  t += strlen (t) + 1;						/* the prefix */
+  while (*t && n < 64) { t += strlen (t) + 1; n++; }
+  return n < 64;
+}
+static void probe_slot_size (void)
+{
+  u64 p[10] = { 0x1111111122222222ULL, 0x3333333344444444ULL };
+  u32 chunk = ((const u32 *) _mod_start)[7];				/* word 1C of the module header: the SWI chunk base */
+  swi_probed = 1;
+  if (slot_known || !chunk || !offset63_is_free ()) return;
+  probing = 1; probe_slot = 0;
+  __mod_probe_state = 1;
+  if (!mk_swi (chunk + 63, p) && probe_slot) { __mod_slot = probe_slot; slot_known = 1; __mod_probe_state = 2; }
+  probing = 0;
 }
 KEEP mk_oserr *__modrt_swi (int offset, void *block, void *pw)
 {
   mk_reg r[10], o[10];
   mk_oserr *e;
   int i;
+  if (probing && offset == 63) { probe_slot = __modrt_slot_of_probe_block (block); return 0; }	/* our own probe: see probe_slot_size */
+  __mod_swi_block = (unsigned long) block;
+  if (!swi_probed && !slot_known)
+    {
+      probe_slot_size ();
+      /* if the probe could not be answered, a register block at a high address is the kernel's stack: that is a kernel with 64-bit slots (Pyromaniac's is below 2 GB) */
+      if (!slot_known && (unsigned long) block >= 0x80000000UL) __mod_slot = 8;
+    }
   if (__mod_slot == 8) for (i = 0; i < 10; i++) o[i] = r[i] = ((u64 *) block)[i];
   else for (i = 0; i < 10; i++) o[i] = r[i] = ((u32 *) block)[i];
   e = module_swi (offset, r, pw);

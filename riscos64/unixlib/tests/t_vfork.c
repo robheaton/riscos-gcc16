@@ -35,14 +35,18 @@ int main (void)
   CHECK (posix_spawn (&pid, child, 0, 0, argv, environ) == 0);
   CHECK (waitpid (pid, &st, 0) == pid && WEXITSTATUS (st) == 9);
 
-  f = popen (child, "r");
-  CHECK (f != 0);
-  if (f)
+  if (getenv ("T64NOPOPEN")) printf ("skipped: popen (the pack runs it last, in t_popen)\n");
+  else
     {
-      line[0] = 0;
-      fgets (line, sizeof line, f);
-      CHECK (strstr (line, "t_child running") != 0);
-      CHECK (WEXITSTATUS (pclose (f)) == 9);
+  f = popen (child, "r");
+    CHECK (f != 0);
+    if (f)
+      {
+        line[0] = 0;
+        fgets (line, sizeof line, f);
+        CHECK (strstr (line, "t_child running") != 0);
+        CHECK (WEXITSTATUS (pclose (f)) == 9);
+      }
     }
   printf ("%s: %d failures\n", fails ? "FAILED" : "PASSED", fails);
   return fails != 0;

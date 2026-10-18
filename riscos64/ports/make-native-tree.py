@@ -14,8 +14,8 @@ ap.add_argument("dest")
 ap.add_argument("--prefix", required=True, help="the installed aarch64-riscos tool chain (target6-inst)")
 ap.add_argument("--gcc", required=True, help="the build directory of build-native-gcc.sh (natgcc/build)")
 ap.add_argument("--binutils", required=True, help="the build directory of build-native-binutils.sh (nat2/build)")
-ap.add_argument("--hello", help="a C file for c/hello")
-ap.add_argument("--asm", help="its assembly (s/hello), from the cross compiler")
+ap.add_argument("--hello", help="a C file for c/hello (default: native/hello.c next to this script)")
+ap.add_argument("--asm", help="its assembly (s/hello); default: made from the C file with the cross compiler of PREFIX")
 a = ap.parse_args()
 D = a.dest
 if os.path.exists(D):
@@ -60,10 +60,15 @@ for root, dirs, files in os.walk(os.path.join(T, "include")):
 for f in sorted(os.listdir(os.path.join(G, "include"))):
     if os.path.isfile(os.path.join(G, "include", f)):
         put(os.path.join(G, "include", f), os.path.join("include", swapped(f)))
-if a.hello:
-    put(a.hello, "c/hello")
+hello = a.hello or os.path.join(os.path.dirname(os.path.abspath(__file__)), "native", "hello.c")
+put(hello, "c/hello")
 if a.asm:
     put(a.asm, "s/hello")
+else:
+    import subprocess, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        subprocess.check_call([os.path.join(a.prefix, "bin", "aarch64-riscos-gcc"), "-O1", "-S", "-o", os.path.join(td, "hello.s"), hello])
+        put(os.path.join(td, "hello.s"), "s/hello")
 for d in ("o", "out"):
     os.makedirs(os.path.join(D, d), exist_ok=True)
     open(os.path.join(D, d, "keep"), "w").write("keep\n")

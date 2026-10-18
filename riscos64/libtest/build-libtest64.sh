@@ -42,7 +42,7 @@ EXTRAOBJ=
 $P-gcc $FL -nostdlib -static -T "$SDK/aif64.ld" -Wl,--no-warn-rwx-segments -Wl,-Map="$OUT/o/libtest64.map" \
     "$SDK/lib/aifhdr.o" "$SDK/lib/crt0.o" "$SDK/lib/riscos_start.o" "$SDK/lib/riscos_syscalls.o" "$SDK/lib/swi.o" \
     "$OUT/o/a64main.o" "$OUT/o/libtest.o" "$OUT/o/a64hooks.o" $EXTRAOBJ $LIBOBJ \
-    -L"$PICO/lib" -Wl,--start-group -lc -lm -lgcc -Wl,--end-group -o "$OUT/o/libtest64.elf"
+    -L"$PICO/lib" -Wl,--start-group "$SDK/lib/libriscosstub.a" -lc -lm -lgcc -Wl,--end-group -o "$OUT/o/libtest64.elf"
 $P-objcopy -O binary "$OUT/o/libtest64.elf" "$OUT/o/libtest64.bin"
 python3 -I "$SDK/bin/mkaif64.py" "$OUT/o/libtest64.bin" "$OUT/libtest64,ff8" "$OUT/o/libtest64.elf"
 $P-size "$OUT/o/libtest64.elf"

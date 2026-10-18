@@ -33,15 +33,18 @@ int main (void)
     CHECK (getenv ("UL64_SPAWN") && strcmp (getenv ("UL64_SPAWN"), "spawned") == 0, "the command did its work");
     CHECK (waitpid (pid, &st, 0) == -1 && errno == ECHILD, "waitpid again: ECHILD");
   }
-  p = popen ("Echo output of a command", "r");
-  CHECK (p != NULL, "popen for reading");
-  if (p)
+  if (!getenv ("T64NOPOPEN"))						/* the pack runs popen last, in t_popen: without output redirection in OS_CLI it uses *Spool, which ends the Obey file's own Spool file */
     {
-      buf[0] = 0;
-      fgets (buf, sizeof buf, p);
-      CHECK (strstr (buf, "output of a command") != NULL, "the output of the command is read");
-      st = pclose (p);
-      CHECK (st == 0, "pclose: the command ended with 0");
+    p = popen ("Echo output of a command", "r");
+    CHECK (p != NULL, "popen for reading");
+    if (p)
+      {
+        buf[0] = 0;
+        fgets (buf, sizeof buf, p);
+        CHECK (strstr (buf, "output of a command") != NULL, "the output of the command is read");
+        st = pclose (p);
+        CHECK (st == 0, "pclose: the command ended with 0");
+      }
     }
   CHECK (fork () == -1 && errno == ENOSYS, "fork: ENOSYS");
   printf ("SUMMARY %d failed\n", fails);
