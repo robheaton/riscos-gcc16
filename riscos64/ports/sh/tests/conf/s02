@@ -1,0 +1,37 @@
+echo "[getopts]"
+f() {
+  OPTIND=1
+  while getopts "ab:c" opt; do
+    case $opt in
+      a) echo "got a";;
+      b) echo "got b=$OPTARG";;
+      c) echo "got c";;
+      \?) echo "bad option";;
+    esac
+  done
+  shift $((OPTIND - 1))
+  echo "rest: $*"
+}
+f -a -b val -c file1 file2
+f -ab val x
+f -bval y
+f -z
+f -- -a
+echo "[shift and set]"
+set -- a b c d e
+shift 2
+echo "$# $*"
+set -- "x y" z
+for i in "$@"; do echo "<$i>"; done
+echo "$#"
+set --
+echo "$#"
+echo "[special params]"
+set -- one two
+echo "$1$2" "${1}x" "$#" "$*" "$@"
+IFS=,
+echo "$*"
+echo $*
+IFS=" 	
+"
+exit 0

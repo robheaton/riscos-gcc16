@@ -77,6 +77,12 @@ extern ssize_t __ul64_sock_write (int, const void *, size_t) __attribute__ ((wea
 extern int __ul64_sock_close (int) __attribute__ ((weak));
 extern int __ul64_sock_fstat (int, struct stat *) __attribute__ ((weak));
 #define SOCK(fd) (__ul64_is_sock && __ul64_is_sock (fd))
+extern int __ul64_is_pipe (int) __attribute__ ((weak));		/* posix/pipe.c: descriptors 500-515, the read ends of pipes */
+extern ssize_t __ul64_pipe_read (int, void *, size_t) __attribute__ ((weak));
+extern int __ul64_pipe_close (int) __attribute__ ((weak));
+extern int __ul64_pipe_defer_close (int) __attribute__ ((weak));
+extern int __ul64_pipe_fstat (int, struct stat *) __attribute__ ((weak));
+#define PIPE_R(fd) (__ul64_is_pipe && __ul64_is_pipe (fd))
 
 /* The standard streams can be sent to a file or nowhere by the program that started this one (the shell does that for  cmd > file,  cmd < file,  cmd 2>file ...): the system variables Sh$Stdin, Sh$Stdout and
    Sh$Stderr hold the name of a file, or "null" (output thrown away, input empty), or, for Sh$Stderr, "stdout" (with the output).  Each is read once, at the first use of the descriptor; output is appended to
@@ -137,6 +143,7 @@ ssize_t read (int fd, void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
   if (SOCK (fd)) return __ul64_sock_read (fd, buf, n);
+  if (PIPE_R (fd)) return __ul64_pipe_read (fd, buf, n);
   if (fd == 0)
     {
       int st = rfd_state (0);
@@ -183,7 +190,13 @@ ssize_t read (int fd, void *buf, size_t n)
     }
   if (!isfile (fd)) { errno = EBADF; return -1; }
   r[0] = 4; r[1] = (unsigned long) fdhandle (fd); r[2] = (unsigned long) buf; r[3] = n;
-  if (swi_x (OS_GBPB, r)) { errno = EIO; return -1; }
+  if (swi_x (OS_GBPB, r))
+    {
+      unsigned long a[10] = { 0 }, b[10] = { 0 };				/* an error at the end of the file (or of an empty one) is the end, not an I/O error */
+      a[0] = 0; a[1] = (unsigned long) fdhandle (fd); b[0] = 2; b[1] = a[1];
+      if (!swi_x (OS_Args, b)) { unsigned long c[10] = { 0 }; c[0] = 0; c[1] = a[1]; if (!swi_x (OS_Args, c) && c[2] >= b[2]) return 0; }
+      errno = EIO; return -1;
+    }
   return (ssize_t) (n - r[3]);				/* r3 = the bytes that were not transferred: 0 bytes read is the end of the file */
 }
 
@@ -235,6 +248,23 @@ int fchdir (int fd)
 int open (const char *path, int flags, ...)
 {
   unsigned long r[10] = { 0 };
+  if (path && !strcmp (path, "/dev/null"))		/* the null device: an empty scrap file; readers (any number) see the end at once, each writer has a file of its own */
+    {
+      static unsigned nullseq;
+      static char nullname[40];
+      if ((flags & O_ACCMODE) == O_RDONLY)
+	{
+	  int t = open ("/tmp/devnull", O_WRONLY | O_CREAT, 0666);		/* make it if it is not there (empty) */
+	  if (t >= 0) close (t);
+	  path = "/tmp/devnull";
+	}
+      else
+	{
+	  snprintf (nullname, sizeof nullname, "/tmp/devnull%u", ++nullseq);
+	  path = nullname;
+	  flags = (flags & ~(O_ACCMODE | O_EXCL)) | O_RDWR | O_CREAT | O_TRUNC;
+	}
+    }
   int acc = flags & O_ACCMODE;
   char rosbuf[ROSPATH];
   int filetype = -1, isnew = 0, exists = 0;
@@ -283,7 +313,9 @@ int close (int fd)
 {
   unsigned long r[10] = { 0 };
   int rf, h;
+  if (__ul64_pipe_defer_close && __ul64_pipe_defer_close (fd)) return 0;
   if (SOCK (fd)) return __ul64_sock_close (fd);
+  if (PIPE_R (fd)) return __ul64_pipe_close (fd);
   if (!isfile (fd)) return 0;
   rf = realfd (fd);
   h = rf - 3;
@@ -335,6 +367,7 @@ int fstat (int fd, struct stat *st)
 {
   unsigned long r[10] = { 0 };
   if (SOCK (fd)) return __ul64_sock_fstat (fd, st);
+  if (PIPE_R (fd)) return __ul64_pipe_fstat (fd, st);
   char *p = (char *) st;
   size_t i;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;
@@ -503,6 +536,7 @@ static unsigned long name_ino (const char *name)
 int stat (const char *path, struct stat *st)
 {
   char b[ROSPATH];
+  if (path && !strcmp (path, "/dev/null")) { memset (st, 0, sizeof *st); st->st_mode = S_IFCHR | 0666; st->st_dev = 1; st->st_ino = 3; return 0; }
   unsigned long r[10] = { 17 };
   char *p = (char *) st;
   size_t i;

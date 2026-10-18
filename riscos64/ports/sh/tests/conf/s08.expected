@@ -1,0 +1,31 @@
+[builtins]
+abc|42|ff|10|x|   hi|hi   |00042|3.14
+a
+b
+c
+1 2
+3 4
+[]
+no newline
+a
+b
+%|\|	|x
+one 
+no nl
+a
+b
+echo
+echo
+not found
+child sees: 1
+5
+evaluated args
+from-var
+b
+0
+0
+1
+5
+umask-ok
+[leading and trailing]
+a b c:d

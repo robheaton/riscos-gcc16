@@ -1,0 +1,5 @@
+echo "##### ux"
+sh uxt
+echo "##### cu"
+sh cu_t
+exit 0

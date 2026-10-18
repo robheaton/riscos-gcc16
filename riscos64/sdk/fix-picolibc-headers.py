@@ -157,3 +157,18 @@ h = open(pw).read()
 if "pw_gecos" not in h:
     h = h.replace("    char *pw_shell; /* default shell */\n};", "    char *pw_shell; /* default shell */\n    char *pw_passwd; /* (the end of the structure: added by the SDK) */\n    char *pw_gecos;\n};")
     open(pw, "w").write(h)
+
+# the conversion state uses wint_t, which only <stddef.h> defines, and not when some other header has already defined _WINT_T (gnulib's wrappers do): use the compiler's type
+ty = inc + "/sys/_types.h"
+t = open(ty).read()
+if "        wint_t        __wch;" in t:
+    open(ty, "w").write(t.replace("        wint_t        __wch;", "        __WINT_TYPE__ __wch;"))
+
+# wint_t again: the prototypes of <wchar.h> and <wctype.h> need it, and a header that defined _WINT_T hides the typedef of <stddef.h>; the same typedef twice is allowed
+for hn in ("wchar.h", "wctype.h"):
+    hp = inc + "/" + hn
+    h = open(hp).read()
+    if "SDK: wint_t" not in h:
+        j = h.index("#define", h.index("#ifndef")) if "#ifndef" in h else 0
+        j = h.index("\n", j) + 1
+        open(hp, "w").write(h[:j] + "/* SDK: wint_t */\ntypedef __WINT_TYPE__ wint_t;\n" + h[j:])

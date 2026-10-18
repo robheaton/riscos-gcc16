@@ -18,3 +18,11 @@ programs such as GNU make need as `SHELL`.
 ## What a configure script needs (zlib 1.3.1, 18 October 2026)
 `./configure` of zlib ran to its end under this shell with GNU sed, grep and gawk and a stand-in compiler (`CC=./mockcc`; the compiler is not on the machine). It called, and did not find: `uname`, `date`, `tee` (coreutils),
 `ar`, `ranlib`, `nm` (binutils) and `gcc` / `cc`. So coreutils is the next port.
+
+## Conformance tests against dash (18 October 2026)
+`tests/conf/s01`-`s08` are scripts of the shell language (descriptors above 2 with `exec`, getopts, special parameters, every form of `${...}`, control flow, functions, quoting, test and arithmetic, builtins);
+`s0N.expected` is what the host's `dash` prints for them; `cmpconf.py` compares the output of the job `port_shconf` with it. All eight are identical. `runcfgs` runs the real autoconf-generated `configure` scripts of
+GNU make and gawk with `--version`, `--help` and a bad option (job `port_shcfg2`): the 144 lines are identical to dash's.
+Found with them: descriptors 3-19 (`exec 5>file`, `>&5`, `<&6`, `N>&-`), `getopts`, `$LINENO` (without it configure runs a `sed` over itself, which took four minutes on the emulator), a `case` item with no commands,
+`"$*"` joined with the first character of `IFS`, `printf %b`, `read` trimming, one file written by two sinks (`>f 2>&1`), error messages going through `2>`, and syntax errors that name the line.
+`SH_PROFILE=1` prints the commands that take more than 0.2 s.

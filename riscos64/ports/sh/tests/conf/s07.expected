@@ -1,0 +1,27 @@
+[test and arithmetic]
+eq
+ne
+cmp
+streq
+zn
+notz
+nofile
+dir
+exists
+andgroup
+or
+unsetempty
+spaces
+undefinedempty
+numstr
+emptyfalse
+nonemptytrue
+noargs
+oneargtrue
+2 6 3 1 8 4 1 7 6 -1 1 0
+1 0 1 0 1 0 0 1
+6 25 -5
+6
+8 16
+2 3
+1

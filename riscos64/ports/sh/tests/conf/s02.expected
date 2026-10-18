@@ -1,0 +1,24 @@
+[getopts]
+got a
+got b=val
+got c
+rest: file1 file2
+got a
+got b=val
+rest: x
+got b=val
+rest: y
+Illegal option -z
+bad option
+rest: 
+rest: -a
+[shift and set]
+3 c d e
+<x y>
+<z>
+2
+0
+[special params]
+onetwo onex 2 one two one two
+one,two
+one two

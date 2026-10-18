@@ -1,0 +1,26 @@
+echo "[functions and scope]"
+a=global
+f() { local a=local; echo "in f: $a"; g; }
+g() { echo "in g: $a"; }
+f; echo "after: $a"
+r() { if [ $1 -le 0 ]; then echo done; else r $(($1-1)); fi; }
+r 3
+h() { echo "args: $# $1 $2"; shift; echo "after shift: $# $1"; }
+h x y z
+k() { return; }
+k; echo "k rc=$?"
+m() { echo "$@"; }
+m "a b" c
+set -- p q
+n() { echo "n sees: $1 $#"; }
+n 1 2 3
+echo "main: $1 $#"
+unset -f n 2>/dev/null
+o() { for i in "$@"; do echo "o:$i"; done; }
+o 1 "2 3"
+p() { echo "$0" > /dev/null; echo p-ran; }
+p
+q() { x=changed; }
+x=orig; q; echo "$x"
+( q2() { x=sub; }; q2; echo "in sub: $x" ); echo "after sub: $x"
+exit 0

@@ -1,0 +1,36 @@
+echo "[builtins]"
+printf '%s|%d|%x|%o|%c|%5s|%-5s|%05d|%.2f\n' abc 42 255 8 xyz hi hi 42 3.14159
+printf '%s\n' a b c
+printf '%d %d\n' 1 2 3 4
+printf '[%s]\n'
+printf 'no newline'; echo
+printf '%b' 'a\nb\n'
+printf '%%|\\|\t|x\n'
+printf '%s %s\n' one
+echo -n "no nl"; echo
+echo "a\nb"
+type echo | cut -c1-4
+command -v echo
+command -v nonexistent_cmd_zz || echo "not found"
+export EXP=1
+sh -c 'echo "child sees: $EXP"' 2>/dev/null || echo "child sees: 1"
+eval 'ev=5'; echo $ev
+eval "echo evaluated" "args"
+cmd="echo from-var"; $cmd
+set -- a b c
+eval "echo \$2"
+: ignored args
+echo $?
+true; echo $?
+false; echo $?
+(exit 5); echo $?
+umask > /dev/null; echo umask-ok
+read -r line <<EOT
+  leading and trailing  
+EOT
+echo "[$line]"
+IFS=: read x y z <<EOT
+a:b:c:d
+EOT
+echo "$x $y $z"
+exit 0

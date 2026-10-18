@@ -130,6 +130,7 @@ struct node
   int type;
   struct node *a, *b, *c;
   list words, assigns;
+  int line;
   struct redir *redirs;
   char *name;
   struct caseitem *items;
@@ -143,12 +144,22 @@ static struct func *funcs;
 /* ------------------------------------------------------------------------------------------------------ the lexer */
 enum { T_EOF, T_NL, T_WORD, T_IONUM, T_SEMI, T_DSEMI, T_AMP, T_AND, T_OR, T_PIPE, T_LP, T_RP, T_LESS, T_GREAT, T_DGREAT, T_DLESS, T_DLESSDASH, T_LESSAND, T_GREATAND, T_LESSGREAT };
 struct heredoc_wait { struct redir *r; char *delim; int strip; struct heredoc_wait *next; };
-struct parser { const char *s; size_t pos, len; int tok; char *word; int peeked; struct heredoc_wait *pending, **pend_tail; const char *name; };
+struct parser { size_t line, tok_line; const char *s; size_t pos, len; int tok; char *word; int peeked; struct heredoc_wait *pending, **pend_tail; const char *name; };
 
-static int p_getc (struct parser *p) { return p->pos < p->len ? (unsigned char) p->s[p->pos++] : -1; }
+static int p_getc (struct parser *p)
+{
+  int c = p->pos < p->len ? (unsigned char) p->s[p->pos++] : -1;
+  if (c == '\n') p->line++;
+  return c;
+}
 static int p_peekc (struct parser *p) { return p->pos < p->len ? (unsigned char) p->s[p->pos] : -1; }
 
-static void syntax (struct parser *p, const char *msg) { (void) p; die ("syntax error: %s", msg); }
+static void syntax (struct parser *p, const char *msg)
+{
+  size_t i, line = 1;
+  for (i = 0; i < p->pos && i < p->len; i++) if (p->s[i] == '\n') line++;
+  die ("%s: line %zu: syntax error: %s", p->name ? p->name : "?", line, msg);
+}
 
 /* read one line (for here documents) */
 static char *p_line (struct parser *p)
@@ -248,13 +259,14 @@ static int lex (struct parser *p)
     {
       c = p_peekc (p);
       if (c == ' ' || c == '\t') { p->pos++; continue; }
-      if (c == '\\' && p->pos + 1 < p->len && p->s[p->pos + 1] == '\n') { p->pos += 2; continue; }
+      if (c == '\\' && p->pos + 1 < p->len && p->s[p->pos + 1] == '\n') { p->pos += 2; p->line++; continue; }
       if (c == '#') { while ((c = p_peekc (p)) >= 0 && c != '\n') p->pos++; continue; }
       break;
     }
   c = p_peekc (p);
+  p->tok_line = p->line;
   if (c < 0) return T_EOF;
-  if (c == '\n') { p->pos++; if (p->pending) read_heredocs (p); return T_NL; }
+  if (c == '\n') { p->pos++; p->line++; if (p->pending) read_heredocs (p); return T_NL; }
   p->pos++;
   switch (c)
     {
@@ -355,6 +367,8 @@ static int assignment_word (const char *w)
 static struct node *parse_simple (struct parser *p)
 {
   struct node *n = new_node (N_SIMPLE);
+  peek (p);
+  n->line = (int) p->tok_line;
   struct redir **tail = &n->redirs;
   int seen_word = 0;
   for (;;)
@@ -483,7 +497,7 @@ static struct node *parse_command (struct parser *p)
 	      while (peek (p) == T_WORD) { l_add (&it->pats, strdup (p->word)); next (p); if (peek (p) == T_PIPE) next (p); else break; }
 	      if (peek (p) != T_RP) syntax (p, "\")\" expected in a case");
 	      next (p);
-	      it->body = parse_compound_list (p);
+	      it->body = parse_list (p, 0);					/* (may be empty: pattern) ;;) */
 	      *tail = it; tail = &it->next;
 	      if (peek (p) == T_DSEMI) { next (p); skip_nl (p); }
 	      else if (!is_kw (p, "esac")) syntax (p, "\";;\" or \"esac\" expected");
@@ -603,6 +617,12 @@ static char *cur_in_path;				/* standard input is this file, or the console */
 static FILE *cur_in_fp;
 static int err_null;					/* 2>/dev/null */
 
+#define NFD 20
+struct fdent { int kind; struct sink out; char *in_path; FILE *in_fp; };	/* kind: 0 not open, 1 output, 2 input */
+static struct fdent fdtab[NFD];
+static int cur_in_fd = -1;				/* standard input is the descriptor (3 and up) of fdtab: its FILE is kept there */
+
+
 static unsigned scrap_seq;
 static char *scrap_name (void)
 {
@@ -618,15 +638,38 @@ static const char *ros (const char *unixname, char *buf, size_t size)	/* the RIS
   return buf;
 }
 
+/* A file that two sinks write (cmd >f 2>&1) is open once: a file cannot be opened twice for writing on RISC OS. */
+static struct { char *path; FILE *fp; int refs; } open_files[16];
 static void sink_open (struct sink *s)
 {
   if (s->kind == K_PATH && !s->fp)
     {
-      s->fp = fopen (!strcmp (s->path, "/dev/null") ? "/tmp/sh_devnull" : s->path, "a");
-      if (!s->fp) { fprintf (stderr, "sh: cannot create %s: %s\n", s->path, strerror (errno)); }
+      const char *real = !strcmp (s->path, "/dev/null") ? "/tmp/sh_devnull" : s->path;
+      int i, free_slot = -1;
+      for (i = 0; i < 16; i++)
+	{
+	  if (open_files[i].fp && !strcmp (open_files[i].path, real)) { open_files[i].refs++; s->fp = open_files[i].fp; return; }
+	  if (!open_files[i].fp && free_slot < 0) free_slot = i;
+	}
+      s->fp = fopen (real, "a");
+      if (!s->fp) { fprintf (stderr, "sh: cannot create %s: %s\n", s->path, strerror (errno)); return; }
+      if (free_slot >= 0) { open_files[free_slot].path = strdup (real); open_files[free_slot].fp = s->fp; open_files[free_slot].refs = 1; }
     }
 }
-static void sink_close (struct sink *s) { if (s->fp) { fclose (s->fp); s->fp = 0; } }
+static void sink_close (struct sink *s)
+{
+  int i;
+  if (!s->fp) return;
+  for (i = 0; i < 16; i++)
+    if (open_files[i].fp == s->fp)
+      {
+	if (--open_files[i].refs > 0) { fflush (s->fp); s->fp = 0; return; }
+	free (open_files[i].path); open_files[i].fp = 0;
+	break;
+      }
+  fclose (s->fp);
+  s->fp = 0;
+}
 static void out_write (struct sink *s, const char *p, size_t n)
 {
   if (s->kind == K_BUF) sb_add (s->buf, p, n);
@@ -636,6 +679,13 @@ static void out_write (struct sink *s, const char *p, size_t n)
 }
 static void outs (const char *s) { out_write (&cur_out, s, strlen (s)); }
 static void errs (const char *s) { out_write (&cur_err, s, strlen (s)); }
+static void errf (const char *fmt, ...)
+{
+  char b[2048];
+  va_list ap;
+  va_start (ap, fmt); vsnprintf (b, sizeof b, fmt, ap); va_end (ap);
+  out_write (&cur_err, b, strlen (b));
+}
 static void out_printf (struct sink *s, const char *fmt, ...)
 {
   char b[2048];
@@ -799,7 +849,7 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
   sb_init (&c);
   if (!prog)
     {
-      if (strchr (argv->v[0], '/') || !is_ros_command (argv->v[0])) { fprintf (stderr, "sh: %s: not found\n", argv->v[0]); return 127; }
+      if (strchr (argv->v[0], '/') || !is_ros_command (argv->v[0])) { errf ("sh: %s: not found\n", argv->v[0]); return 127; }
       /* a command of the operating system: its screen output is captured with { > } or *Spool, its input is not available */
       sb_adds (&c, argv->v[0]);
       for (i = 1; i < argv->n; i++) quote_arg (&c, argv->v[i]);
@@ -853,6 +903,7 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
 }
 
 /* ------------------------------------------------------------------------------------------------------ expansion */
+static int profile;
 static int exec_node (struct node *n);
 static int exec_string (const char *text, const char *name);
 static char *capture (const char *text);
@@ -950,7 +1001,9 @@ static const char *param_value (const char *name, int *set, char *buf, size_t si
   if (!strcmp (name, "*") || !strcmp (name, "@"))
     {
       str b; int i;
-      const char *sep = " ";
+      const char *ifs_ = get_var ("IFS");
+      char sepbuf[2] = { ifs_ ? ifs_[0] : ' ', 0 };
+      const char *sep = ifs_ && !ifs_[0] ? "" : sepbuf;
       sb_init (&b);
       sb_adds (&b, "");
       for (i = 0; i < npos; i++) { if (i) sb_adds (&b, sep); sb_adds (&b, pos_params[i]); }
@@ -961,7 +1014,7 @@ static const char *param_value (const char *name, int *set, char *buf, size_t si
     }
   {
     const char *v = get_var (name);
-    if (!v) { *set = 0; if (opt_u) { fprintf (stderr, "sh: %s: parameter not set\n", name); exit (2); } }
+    if (!v) { *set = 0; if (opt_u) { errf ("sh: %s: parameter not set\n", name); exit (2); } }
     return v;
   }
 }
@@ -1062,7 +1115,7 @@ static void expand_dollar (struct xctx *x, const char **pp, int in_dq)
 	char *w = word ? expand_str (word) : 0;
 	if (op == '-' && use_default) add_expansion (x, w, strlen (w), in_dq);
 	else if (op == '=' && use_default) { set_var (name, w); add_expansion (x, w, strlen (w), in_dq); }
-	else if (op == '?' && use_default) { fprintf (stderr, "sh: %s: %s\n", name, w && *w ? w : "parameter null or not set"); exit (2); }
+	else if (op == '?' && use_default) { errf ("sh: %s: %s\n", name, w && *w ? w : "parameter null or not set"); exit (2); }
 	else if (op == '+') { if (colon ? (set && val && *val) : set) add_expansion (x, w, strlen (w), in_dq); }
 	else if (op == '#' || op == 'P' || op == '%' || op == 'S')
 	  {
@@ -1381,7 +1434,25 @@ static int bi_printf (int argc, char **argv)
 		  const char *a = ai < argc ? argv[ai++] : "";
 		  used = 1;
 		  spec[sl++] = 's'; spec[sl] = 0;
-		  if (conv == 'b') { sb_adds (&o, a); continue; }
+		  if (conv == 'b')					/* the argument with backslash escapes */
+		    {
+		      const char *q;
+		      for (q = a; *q; q++)
+			{
+			  if (*q != '\\' || !q[1]) { sb_addc (&o, *q); continue; }
+			  q++;
+			  switch (*q)
+			    {
+			    case 'n': sb_addc (&o, '\n'); break; case 't': sb_addc (&o, '\t'); break; case 'r': sb_addc (&o, '\r'); break;
+			    case 'a': sb_addc (&o, '\a'); break; case 'b': sb_addc (&o, '\b'); break; case 'f': sb_addc (&o, '\f'); break; case 'v': sb_addc (&o, '\v'); break;
+			    case '\\': sb_addc (&o, '\\'); break;
+			    case 'c': goto printf_done;
+			    case '0': { int v = 0, k; for (k = 0; k < 3 && q[1] >= '0' && q[1] <= '7'; k++) v = v * 8 + (*++q - '0'); sb_addc (&o, (char) v); break; }
+			    default: sb_addc (&o, '\\'); sb_addc (&o, *q);
+			    }
+			}
+		      continue;
+		    }
 		  { str t; sb_init (&t); sb_adds (&t, ""); { int w = snprintf (tmp, sizeof tmp, spec, a); if (w >= (int) sizeof tmp) { char *big = malloc ((size_t) w + 1); snprintf (big, (size_t) w + 1, spec, a); sb_adds (&o, big); free (big); } else sb_adds (&o, tmp); } sb_free (&t); }
 		}
 	      else if (conv == 'c') { const char *a = ai < argc ? argv[ai++] : ""; used = 1; sb_addc (&o, *a); }
@@ -1406,6 +1477,7 @@ static int bi_printf (int argc, char **argv)
 	}
       if (!used || ai >= argc) break;
     }
+printf_done:
   out_write (&cur_out, o.s, o.n);
   sb_free (&o);
   return 0;
@@ -1418,7 +1490,7 @@ static int bi_cd (int argc, char **argv)
   if (argc > 1 && !strcmp (argv[1], "-")) { dir = get_var ("OLDPWD"); if (dir) { outs (dir); outs ("\n"); } }
   if (!dir) { errs ("cd: no home folder\n"); return 1; }
   if (getcwd (cwd, sizeof cwd)) set_var ("OLDPWD", cwd);
-  if (chdir (dir) != 0) { fprintf (stderr, "sh: cd: %s: %s\n", dir, strerror (errno)); return 1; }
+  if (chdir (dir) != 0) { errf ("sh: cd: %s: %s\n", dir, strerror (errno)); return 1; }
   if (getcwd (cwd, sizeof cwd)) set_var ("PWD", cwd);
   return 0;
 }
@@ -1500,7 +1572,12 @@ static int read_line_from_input (str *line, int raw)
 {
   int c, got = 0;
   FILE *f = stdin;
-  if (cur_in_path) { if (!cur_in_fp) cur_in_fp = fopen (cur_in_path, "r"); if (!cur_in_fp) return -1; f = cur_in_fp; }
+  if (cur_in_path)
+    {
+      if (!cur_in_fp) { cur_in_fp = fopen (cur_in_path, "r"); if (cur_in_fp && cur_in_fd >= 3) fdtab[cur_in_fd].in_fp = cur_in_fp; }
+      if (!cur_in_fp) return -1;
+      f = cur_in_fp;
+    }
   fflush (stdout);
   sb_adds (line, "");
   while ((c = fgetc (f)) != EOF)
@@ -1525,7 +1602,13 @@ static int bi_read (int argc, char **argv)
       {
 	size_t n;
 	while (*p && (*p == ' ' || *p == '\t') && strchr (ifs, *p)) p++;
-	if (i == argc - 1) { set_var (argv[i], p); break; }
+	if (i == argc - 1)
+	  {
+	    size_t pl = strlen (p);
+	    while (pl > 0 && (p[pl - 1] == ' ' || p[pl - 1] == '\t' || p[pl - 1] == '\n') && strchr (ifs, p[pl - 1])) pl--;
+	    { char *w = strndup (p, pl); set_var (argv[i], w); free (w); }
+	    break;
+	  }
 	n = 0; while (p[n] && !strchr (ifs, p[n])) n++;
 	{ char *w = strndup (p, n); set_var (argv[i], w); free (w); }
 	p += n; if (*p) p++;
@@ -1533,6 +1616,72 @@ static int bi_read (int argc, char **argv)
   }
   sb_free (&line);
   return r < 0 ? 1 : 0;
+}
+
+/* getopts optstring name [arg...]: the options of the positional parameters (or the arguments) one at a time; OPTIND is the next argument, OPTARG the argument of the option */
+static int bi_getopts (int argc, char **argv)
+{
+  static int optpos;				/* the character inside a bundle (-abc) that is next, 0 at the start of an argument */
+  static int last_optind;
+  const char *spec, *name;
+  char **args;
+  int nargs, silent, optind_, opt_len;
+  const char *ov = get_var ("OPTIND");
+  char buf[32], optc[2];
+  const char *cur, *p;
+  if (argc < 3) { errs ("getopts: usage: getopts optstring name [arg ...]\n"); return 2; }
+  spec = argv[1]; name = argv[2];
+  silent = spec[0] == ':';
+  if (silent) spec++;
+  if (argc > 3) { args = argv + 3; nargs = argc - 3; } else { args = pos_params; nargs = npos; }
+  optind_ = ov ? atoi (ov) : 1;
+  if (optind_ < 1 || optind_ != last_optind) { optpos = 0; if (optind_ < 1) optind_ = 1; }	/* OPTIND was set by the script: start again */
+  unset_var ("OPTARG");
+  if (optind_ > nargs) goto done_opts;
+  cur = args[optind_ - 1];
+  if (optpos == 0)
+    {
+      if (cur[0] != '-' || cur[1] == 0) goto done_opts;		/* not an option: the end */
+      if (!strcmp (cur, "--")) { optind_++; goto done_opts; }
+      optpos = 1;
+    }
+  optc[0] = cur[optpos]; optc[1] = 0;
+  opt_len = (int) strlen (cur);
+  p = strchr (spec, cur[optpos]);
+  optpos++;
+  if (!p || cur[optpos - 1] == ':')
+    {
+      if (silent) set_var ("OPTARG", optc);
+      else { errf ("Illegal option -%c\n", optc[0]); }
+      set_var (name, "?");
+      if (optpos >= opt_len) { optpos = 0; optind_++; }
+      snprintf (buf, sizeof buf, "%d", optind_); set_var ("OPTIND", buf); last_optind = optind_;
+      return 0;
+    }
+  if (p[1] == ':')					/* the option takes an argument: the rest of this one, or the next */
+    {
+      if (optpos < opt_len) { set_var ("OPTARG", cur + optpos); optind_++; }
+      else if (optind_ < nargs) { set_var ("OPTARG", args[optind_]); optind_ += 2; }
+      else
+	{
+	  optpos = 0;
+	  if (silent) { set_var ("OPTARG", optc); set_var (name, ":"); }
+	  else { errf ("Option requires an argument -- %c\n", optc[0]); set_var (name, "?"); }
+	  optind_++;
+	  snprintf (buf, sizeof buf, "%d", optind_); set_var ("OPTIND", buf); last_optind = optind_;
+	  return 0;
+	}
+      optpos = 0;
+    }
+  else if (optpos >= opt_len) { optpos = 0; optind_++; }
+  set_var (name, optc);
+  snprintf (buf, sizeof buf, "%d", optind_); set_var ("OPTIND", buf); last_optind = optind_;
+  return 0;
+done_opts:
+  optpos = 0;
+  set_var (name, "?");
+  snprintf (buf, sizeof buf, "%d", optind_); set_var ("OPTIND", buf); last_optind = optind_;
+  return 1;
 }
 
 static int bi_export (int argc, char **argv)
@@ -1745,9 +1894,9 @@ static int copy_file (const char *from, const char *to)
 {
   FILE *a = fopen (from, "rb"), *b;
   char buf[8192]; size_t n;
-  if (!a) { fprintf (stderr, "cp: %s: %s\n", from, strerror (errno)); return 1; }
+  if (!a) { errf ("cp: %s: %s\n", from, strerror (errno)); return 1; }
   b = fopen (to, "wb");
-  if (!b) { fprintf (stderr, "cp: %s: %s\n", to, strerror (errno)); fclose (a); return 1; }
+  if (!b) { errf ("cp: %s: %s\n", to, strerror (errno)); fclose (a); return 1; }
   while ((n = fread (buf, 1, sizeof buf, a)) > 0) fwrite (buf, 1, n, b);
   fclose (a); fclose (b);
   return 0;
@@ -1784,8 +1933,8 @@ static int bi_rm (int argc, char **argv)
   for (; i < argc && argv[i][0] == '-' && argv[i][1]; i++) { const char *c; for (c = argv[i] + 1; *c; c++) { if (*c == 'f') force = 1; if (*c == 'r' || *c == 'R') rec = 1; } }
   for (; i < argc; i++)
     {
-      if (is_dir (argv[i])) { if (!rec) { fprintf (stderr, "rm: %s: is a folder\n", argv[i]); r = 1; } else if (remove_tree (argv[i], force)) r = 1; }
-      else if (remove (argv[i]) != 0 && !force) { fprintf (stderr, "rm: %s: %s\n", argv[i], strerror (errno)); r = 1; }
+      if (is_dir (argv[i])) { if (!rec) { errf ("rm: %s: is a folder\n", argv[i]); r = 1; } else if (remove_tree (argv[i], force)) r = 1; }
+      else if (remove (argv[i]) != 0 && !force) { errf ("rm: %s: %s\n", argv[i], strerror (errno)); r = 1; }
     }
   return r;
 }
@@ -1804,15 +1953,15 @@ static int bi_mkdir (int argc, char **argv)
   for (; i < argc && argv[i][0] == '-' && argv[i][1]; i++) if (strchr (argv[i], 'p')) parents = 1;
   for (; i < argc; i++)
     {
-      if (parents) { if (mkdirs (argv[i])) { fprintf (stderr, "mkdir: %s: %s\n", argv[i], strerror (errno)); r = 1; } }
-      else if (mkdir (argv[i], 0777) != 0) { fprintf (stderr, "mkdir: %s: %s\n", argv[i], strerror (errno)); r = 1; }
+      if (parents) { if (mkdirs (argv[i])) { errf ("mkdir: %s: %s\n", argv[i], strerror (errno)); r = 1; } }
+      else if (mkdir (argv[i], 0777) != 0) { errf ("mkdir: %s: %s\n", argv[i], strerror (errno)); r = 1; }
     }
   return r;
 }
 static int bi_rmdir (int argc, char **argv)
 {
   int i, r = 0;
-  for (i = 1; i < argc; i++) if (argv[i][0] != '-' && rmdir (argv[i]) != 0) { fprintf (stderr, "rmdir: %s: %s\n", argv[i], strerror (errno)); r = 1; }
+  for (i = 1; i < argc; i++) if (argv[i][0] != '-' && rmdir (argv[i]) != 0) { errf ("rmdir: %s: %s\n", argv[i], strerror (errno)); r = 1; }
   return r;
 }
 static int copy_tree (const char *from, const char *to)
@@ -1859,7 +2008,7 @@ static int bi_mv (int argc, char **argv)
     for (k = i; k < argc - 1; k++)
       {
 	char *t = (n > 2 || is_dir (argv[argc - 1])) ? join_path (argv[argc - 1], argv[k]) : strdup (argv[argc - 1]);
-	if (rename (argv[k], t) != 0) { if (copy_tree (argv[k], t) == 0) remove_tree (argv[k], 1); else { fprintf (stderr, "mv: %s: %s\n", argv[k], strerror (errno)); r = 1; } }
+	if (rename (argv[k], t) != 0) { if (copy_tree (argv[k], t) == 0) remove_tree (argv[k], 1); else { errf ("mv: %s: %s\n", argv[k], strerror (errno)); r = 1; } }
 	free (t);
       }
   }
@@ -1881,7 +2030,7 @@ static int bi_cat (int argc, char **argv)
       FILE *f;
       if (argv[i][0] == '-' && argv[i][1]) continue;
       f = fopen (argv[i], "rb");
-      if (!f) { fprintf (stderr, "cat: %s: %s\n", argv[i], strerror (errno)); r = 1; continue; }
+      if (!f) { errf ("cat: %s: %s\n", argv[i], strerror (errno)); r = 1; continue; }
       while ((n = fread (buf, 1, sizeof buf, f)) > 0) out_write (&cur_out, buf, n);
       fclose (f);
     }
@@ -1895,7 +2044,7 @@ static int bi_touch (int argc, char **argv)
       FILE *f;
       if (argv[i][0] == '-') continue;
       f = fopen (argv[i], "ab");
-      if (!f) { fprintf (stderr, "touch: %s: %s\n", argv[i], strerror (errno)); r = 1; continue; }
+      if (!f) { errf ("touch: %s: %s\n", argv[i], strerror (errno)); r = 1; continue; }
       fclose (f);
       utimes (argv[i], 0);
     }
@@ -1921,7 +2070,7 @@ struct builtin { const char *name; builtin_fn fn; int special; };
 static const struct builtin builtins[] = {
   { ":", bi_colon, 1 }, { ".", bi_dot, 1 }, { "source", bi_dot, 1 }, { "break", bi_break, 1 }, { "continue", bi_continue, 1 }, { "eval", bi_eval, 1 }, { "exit", bi_exit, 1 }, { "export", bi_export, 1 },
   { "readonly", bi_readonly, 1 }, { "return", bi_return, 1 }, { "set", bi_set, 1 }, { "shift", bi_shift, 1 }, { "trap", bi_trap, 1 }, { "unset", bi_unset, 1 }, { "exec", bi_exec_dummy, 1 },
-  { "echo", bi_echo, 0 }, { "printf", bi_printf, 0 }, { "cd", bi_cd, 0 }, { "pwd", bi_pwd, 0 }, { "test", bi_test, 0 }, { "[", bi_test, 0 }, { "read", bi_read, 0 }, { "true", bi_true0, 0 }, { "false", bi_false, 0 },
+  { "echo", bi_echo, 0 }, { "printf", bi_printf, 0 }, { "cd", bi_cd, 0 }, { "pwd", bi_pwd, 0 }, { "test", bi_test, 0 }, { "[", bi_test, 0 }, { "read", bi_read, 0 }, { "getopts", bi_getopts, 0 }, { "true", bi_true0, 0 }, { "false", bi_false, 0 },
   { "local", bi_local, 0 }, { "wait", bi_wait, 0 }, { "umask", bi_umask, 0 }, { "ulimit", bi_true0, 0 }, { "sleep", bi_sleep, 2 }, { "basename", bi_basename, 2 }, { "dirname", bi_dirname, 2 }, { "expr", bi_expr, 2 },
   { "rm", bi_rm, 2 }, { "mkdir", bi_mkdir, 2 }, { "rmdir", bi_rmdir, 2 }, { "cp", bi_cp, 2 }, { "mv", bi_mv, 2 }, { "cat", bi_cat, 2 }, { "touch", bi_touch, 2 }, { "chmod", bi_true0, 2 },
   { "type", bi_type, 0 }, { "command", 0, 0 }, { "hash", bi_true0, 0 }, { "alias", bi_true0, 0 }, { "unalias", bi_true0, 0 }, { 0, 0, 0 } };
@@ -1955,22 +2104,108 @@ static int call_function (struct func *f, int argc, char **argv)
 }
 
 /* apply redirections; the old state goes in *saved. Returns 0, or 1 when a file cannot be used. */
-struct saved_io { struct sink out, err; char *in_path; FILE *in_fp; int err_null; list tmp; };
-static void save_io (struct saved_io *s) { s->out = cur_out; s->err = cur_err; s->in_path = cur_in_path; s->in_fp = cur_in_fp; s->err_null = err_null; s->tmp.v = 0; s->tmp.n = s->tmp.cap = 0; cur_out.fp = 0; cur_err.fp = 0; }
+/* The descriptors 3 and up (exec 5>file, 3<&0, >&5 ...): each is an output (a sink) or an input (a file name, read through a FILE that stays open between commands). 0, 1 and 2 are cur_in_path, cur_out and cur_err. */
+struct saved_io { struct sink out, err; char *in_path; FILE *in_fp; int err_null; list tmp; struct fdent fds[NFD]; int in_fd; };
+static void save_io (struct saved_io *s)
+{
+  s->out = cur_out; s->err = cur_err; s->in_path = cur_in_path; s->in_fp = cur_in_fp; s->err_null = err_null; s->tmp.v = 0; s->tmp.n = s->tmp.cap = 0;
+  memcpy (s->fds, fdtab, sizeof fdtab); s->in_fd = cur_in_fd;
+  cur_out.fp = 0; cur_err.fp = 0;
+}
+static int fp_in_table (FILE *f)
+{
+  int i;
+  for (i = 3; i < NFD; i++) if (fdtab[i].kind == 2 && fdtab[i].in_fp == f) return 1;
+  return 0;
+}
+static int fp_in_saved (struct saved_io *s, FILE *f)
+{
+  int i;
+  for (i = 3; i < NFD; i++) if (s->fds[i].kind == 2 && s->fds[i].in_fp == f) return 1;
+  return 0;
+}
 static void restore_io (struct saved_io *s)
 {
   int i;
   sink_close (&cur_out); sink_close (&cur_err);
-  if (cur_in_path != s->in_path) { if (cur_in_fp) fclose (cur_in_fp); cur_in_fp = s->in_fp; }	/* a redirection of this scope ends; the same input goes on where it was */
+  if (cur_in_path != s->in_path && cur_in_fp && !fp_in_table (cur_in_fp) && !fp_in_saved (s, cur_in_fp)) fclose (cur_in_fp);
+  if (cur_in_path != s->in_path) cur_in_fp = s->in_fp;	/* a redirection of this scope ends; the same input goes on where it was */
+  {
+    struct fdent now[NFD];
+    memcpy (now, fdtab, sizeof fdtab);
+    memcpy (fdtab, s->fds, sizeof fdtab); cur_in_fd = s->in_fd;
+    for (i = 3; i < NFD; i++)
+      {
+	if (now[i].kind != 2 || !now[i].in_fp || fdtab[i].in_fp == now[i].in_fp) continue;
+	if (fdtab[i].kind == 2 && !fdtab[i].in_fp && fdtab[i].in_path && now[i].in_path && !strcmp (fdtab[i].in_path, now[i].in_path)) fdtab[i].in_fp = now[i].in_fp;	/* opened by a read in this scope: it goes on where it was */
+	else if (!fp_in_saved (s, now[i].in_fp)) fclose (now[i].in_fp);						/* a descriptor of this scope ends */
+      }
+  }
   cur_out = s->out; cur_err = s->err; cur_in_path = s->in_path; err_null = s->err_null;
   for (i = 0; i < s->tmp.n; i++) { remove (s->tmp.v[i]); free (s->tmp.v[i]); }
   free (s->tmp.v);
 }
+
+/* the sink / input that descriptor n stands for now; 0 if it is not open */
+static int fd_source (int n, struct fdent *e)
+{
+  memset (e, 0, sizeof *e);
+  if (n == 0) { e->kind = 2; e->in_path = cur_in_path; e->in_fp = cur_in_fp; return cur_in_fd >= 3 ? (*e = fdtab[cur_in_fd], 1) : 1; }
+  if (n == 1) { e->kind = 1; e->out = cur_out; e->out.fp = 0; return 1; }
+  if (n == 2) { e->kind = 1; e->out = cur_err; e->out.fp = 0; return 1; }
+  if (n >= 3 && n < NFD && fdtab[n].kind) { *e = fdtab[n]; e->out.fp = 0; return 1; }
+  return 0;
+}
+/* make descriptor n stand for e */
+static void fd_install (int n, const struct fdent *e)
+{
+  if (n == 0)
+    {
+      if (e->kind == 2) { cur_in_path = e->in_path; cur_in_fp = e->in_fp; cur_in_fd = -1; }
+      else { cur_in_path = 0; cur_in_fp = 0; cur_in_fd = -1; }
+    }
+  else if (n == 1) { sink_close (&cur_out); if (e->kind == 1) { cur_out = e->out; cur_out.fp = 0; } else cur_out.kind = K_CONSOLE; }
+  else if (n == 2) { sink_close (&cur_err); err_null = 0; if (e->kind == 1) { cur_err = e->out; cur_err.fp = 0; } else cur_err.kind = K_CONSOLE; }
+  else if (n >= 3 && n < NFD) fdtab[n] = *e;
+}
+static void fd_close (int n)
+{
+  struct fdent e;
+  memset (&e, 0, sizeof e);
+  if (n == 0) { cur_in_path = 0; cur_in_fp = 0; }
+  else if (n == 1 || n == 2) fd_install (n, &e);
+  else if (n >= 3 && n < NFD)
+    {
+      FILE *f = fdtab[n].kind == 2 ? fdtab[n].in_fp : 0;
+      int k, shared = f && f == cur_in_fp;
+      for (k = 3; k < NFD && f && !shared; k++) if (k != n && fdtab[k].kind == 2 && fdtab[k].in_fp == f) shared = 1;
+      if (f && !shared) fclose (f);					/* the last descriptor for the file: it is closed (so the file can be written, renamed, removed) */
+      fdtab[n] = e;
+    }
+}
+static void set_output_file (int n, char *path, int append)
+{
+  struct fdent e;
+  memset (&e, 0, sizeof e);
+  e.kind = 1; e.out.kind = K_PATH; e.out.path = path; e.out.append = append;
+  fd_install (n, &e);
+}
+static void set_input_file (int n, char *path)
+{
+  struct fdent e;
+  memset (&e, 0, sizeof e);
+  e.kind = 2; e.in_path = path;
+  fd_install (n, &e);
+  if (n >= 3) cur_in_fd = -1;
+}
+
 static int apply_redirs (struct redir *r, struct saved_io *s)
 {
   for (; r; r = r->next)
     {
       char *t;
+      int fd = r->fd;
+      if (fd >= NFD) { errf ("sh: file descriptor %d is out of range\n", fd); return 1; }
       if (r->type == R_HERE)
 	{
 	  char *name = scrap_name (), *body;
@@ -1986,40 +2221,40 @@ static int apply_redirs (struct redir *r, struct saved_io *s)
 	      body = sb_take (&x.cur.s);
 	    }
 	  f = fopen (name, "w");
-	  if (!f) { fprintf (stderr, "sh: cannot make a here document\n"); free (body); free (name); return 1; }
+	  if (!f) { errf ("sh: cannot make a here document\n"); free (body); free (name); return 1; }
 	  fputs (body, f); fclose (f); free (body);
 	  l_add (&s->tmp, name);
-	  cur_in_fp = 0;
-	  cur_in_path = name;
+	  set_input_file (fd, name);
 	  continue;
 	}
       t = expand_str (r->target);
       if (r->type == R_IN || r->type == R_RW)
 	{
-	  if (r->fd != 0) { free (t); continue; }
 	  if (!strcmp (t, "/dev/null")) { char *e = scrap_name (); FILE *f = fopen (e, "w"); if (f) fclose (f); l_add (&s->tmp, e); free (t); t = strdup (e); }
-	  else if (!is_exec_file (t) && access (t, R_OK) != 0) { fprintf (stderr, "sh: cannot open %s: %s\n", t, strerror (errno)); free (t); return 1; }
-	  cur_in_fp = 0;
-	  cur_in_path = t;
-	  l_add (&s->tmp, strdup ("/tmp/.sh_no_such_file"));
-	  free (s->tmp.v[--s->tmp.n]); s->tmp.v[s->tmp.n] = 0;
+	  else if (!is_exec_file (t) && access (t, R_OK) != 0) { errf ("sh: cannot open %s: %s\n", t, strerror (errno)); free (t); return 1; }
+	  set_input_file (fd, t);
 	  continue;
 	}
       if (r->type == R_OUT || r->type == R_APPEND)
 	{
-	  struct sink *d = r->fd == 2 ? &cur_err : &cur_out;
-	  if (r->fd != 1 && r->fd != 2) { free (t); continue; }
-	  if (r->fd == 2 && !strcmp (t, "/dev/null")) { err_null = 1; cur_err.kind = K_CONSOLE; free (t); continue; }
-	  sink_close (d);
-	  d->kind = K_PATH; d->path = t; d->append = r->type == R_APPEND; d->fp = 0; d->buf = 0;
-	  if (r->type == R_OUT && strcmp (t, "/dev/null")) { FILE *f = fopen (t, "w"); if (!f) { fprintf (stderr, "sh: cannot create %s: %s\n", t, strerror (errno)); return 1; } fclose (f); d->append = 0; }
+	  if (fd == 2 && !strcmp (t, "/dev/null")) { fd_close (2); err_null = 1; free (t); continue; }
+	  if (r->type == R_OUT && strcmp (t, "/dev/null")) { FILE *f = fopen (t, "w"); if (!f) { errf ("sh: cannot create %s: %s\n", t, strerror (errno)); free (t); return 1; } fclose (f); }
+	  else if (r->type == R_APPEND && strcmp (t, "/dev/null")) { FILE *f = fopen (t, "a"); if (f) fclose (f); }
+	  set_output_file (fd, t, r->type == R_APPEND);
 	  continue;
 	}
       if (r->type == R_DUPOUT || r->type == R_DUPIN)
 	{
-	  int to = !strcmp (t, "-") ? -1 : atoi (t);
-	  if (r->fd == 2 && to == 1) { cur_err = cur_out; cur_err.fp = 0; err_null = 0; }
-	  else if (r->fd == 1 && to == 2) { cur_out = cur_err; cur_out.fp = 0; }
+	  if (!strcmp (t, "-")) fd_close (fd);
+	  else if (isdigit ((unsigned char) t[0]))
+	    {
+	      struct fdent e;
+	      int from = atoi (t);
+	      if (from >= NFD || !fd_source (from, &e)) { errf ("sh: %d: bad file descriptor\n", from); free (t); return 1; }
+	      fd_install (fd, &e);
+	      if (fd == 0 && from >= 3) cur_in_fd = from;
+	      if (fd >= 3 && e.kind == 2) fdtab[fd].in_fp = fdtab[from < NFD && from >= 3 ? from : fd].in_fp;
+	    }
 	  free (t);
 	  continue;
 	}
@@ -2039,13 +2274,27 @@ static void trace (list *words)
   fputc ('\n', stderr);
 }
 
+static int exec_simple_ (struct node *n);
 static int exec_simple (struct node *n)
+{
+  clock_t t0 = profile ? clock () : 0;
+  int r = exec_simple_ (n);
+  if (profile)
+    {
+      long cs = (long) ((clock () - t0) * 100 / CLOCKS_PER_SEC);
+      if (cs >= 20) errf ("sh: profile: %s took %ld cs\n", n->words.n ? n->words.v[0] : "(assignment)", cs);
+    }
+  return r;
+}
+static int exec_simple_ (struct node *n)
 {
   list argv = { 0, 0, 0 };
   int i, r = 0;
   struct saved_io saved;
+  if (n->line) { char ln[16]; snprintf (ln, sizeof ln, "%d", n->line); set_var ("LINENO", ln); }
   const struct builtin *b = 0;
   struct func *fn = 0;
+  int keep_io = 0;
   for (i = 0; i < n->words.n; i++) expand_word (n->words.v[i], &argv);
   save_io (&saved);
   if (apply_redirs (n->redirs, &saved)) { restore_io (&saved); return 1; }
@@ -2090,7 +2339,7 @@ static int exec_simple (struct node *n)
     if (!strcmp (argv.v[0], "exec"))
       {
 	if (argv.n > 1) { memmove (argv.v, argv.v + 1, (size_t) argv.n * sizeof *argv.v); argv.n--; r = 0; goto run_prog; }
-	r = 0; goto restore;
+	r = 0; keep_io = 1; goto restore;			/* exec with only redirections: they stay */
       }
     fn = find_func (argv.v[0]);
     if (fn) { r = call_function (fn, argv.n, argv.v); goto restore; }
@@ -2118,7 +2367,7 @@ static int exec_simple (struct node *n)
       }
     free (save);
   }
-  restore_io (&saved);
+  if (keep_io) { free (saved.tmp.v); } else restore_io (&saved);
   (void) status_of_cmd;
   return r;
 }
@@ -2205,7 +2454,7 @@ static int match_case (struct node *n, const char *word)
 	char *pat = expand_pattern (it->pats.v[i]);
 	int m = fnmatch (pat, word, 0) == 0;
 	free (pat);
-	if (m) return exec_node (it->body) + 1000000;
+	if (m) return (it->body ? exec_node (it->body) : 0) + 1000000;
       }
   return -1;
 }
@@ -2345,8 +2594,11 @@ static int run_parser (struct parser *p)
       n = parse_list (p, 1);
       if (!n) { if (peek (p) == T_EOF) break; if (peek (p) == T_NL) { next (p); continue; } syntax (p, "unexpected token"); }
       if (peek (p) == T_NL) next (p);
-      r = exec_node (n);
-      if (opt_n) r = 0;
+      {
+	clock_t t0 = profile ? clock () : 0;
+	r = opt_n ? 0 : exec_node (n);			/* -n: read the commands, do not run them */
+	if (profile && (clock () - t0) * 100 / CLOCKS_PER_SEC >= 50) fprintf (stderr, "sh: profile: top-level command ending at line %zu took %ld cs\n", p->pos ? (size_t) 0 : (size_t) 0, (long) ((clock () - t0) * 100 / CLOCKS_PER_SEC));
+      }
       brk_n = cont = 0;
       if (ret_flag) break;
     }
@@ -2357,6 +2609,7 @@ static int exec_string (const char *text, const char *name)
   struct parser p;
   int r;
   memset (&p, 0, sizeof p);
+  p.line = 1;
   p.s = text; p.len = strlen (text); p.name = name; p.pend_tail = &p.pending;
   r = run_parser (&p);
   free (p.word);
@@ -2367,7 +2620,7 @@ static int run_file (const char *path, int pass_args, int argc, char **argv)
   FILE *f = fopen (path, "rb");
   str b; char buf[4096]; size_t n; int r;
   char **sp = pos_params; int snp = npos;
-  if (!f) { fprintf (stderr, "sh: %s: %s\n", path, strerror (errno)); return 127; }
+  if (!f) { errf ("sh: %s: %s\n", path, strerror (errno)); return 127; }
   sb_init (&b); sb_adds (&b, "");
   while ((n = fread (buf, 1, sizeof buf, f)) > 0) sb_add (&b, buf, n);
   fclose (f);
@@ -2409,6 +2662,7 @@ int main (int argc, char **argv)
   char cwd[1024];
   char **env;
   arg0 = argv[0];
+  profile = getenv ("SH_PROFILE") != 0;
   self_path = strdup (argv[0]);
   for (env = environ; env && *env; env++)
     {

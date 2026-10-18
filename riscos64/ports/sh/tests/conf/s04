@@ -1,0 +1,44 @@
+echo "[control flow]"
+for i in 1 2 3; do
+  for j in a b c; do
+    [ $j = b ] && continue
+    [ $i = 3 ] && break 2
+    echo "$i$j"
+  done
+done
+i=0
+while :; do i=$((i+1)); [ $i -ge 3 ] && break; done
+echo "i=$i"
+n=0
+until [ $n -ge 3 ]; do n=$((n+1)); done
+echo n=$n
+case "abc" in
+  a*c) echo glob1;;
+esac
+case "x" in a|b) echo no;; x|y) echo alt;; esac
+case "" in "") echo empty;; esac
+case "a b" in "a b") echo quoted;; esac
+case "[x]" in "[x]") echo bracket;; esac
+case x in *) echo star;; esac
+case aXb in a[A-Z]b) echo range;; esac
+case ab in a?) echo q;; esac
+if true; then echo t; fi
+if false; then echo f; else echo e; fi
+if false; then echo 1; elif false; then echo 2; elif true; then echo 3; fi
+! false && echo negated
+true && true && echo chain1
+false || false || echo chain2
+true || echo skipped
+{ false; } || echo group-or
+f() { return 3; }
+f; echo "rc=$?"
+f || echo "f failed"
+if f; then :; else echo "if-f=$?"; fi
+while read a b; do echo "[$a][$b]"; done <<EOT
+one two three
+four
+EOT
+for x in $(echo a b c); do printf '%s;' "$x"; done; echo
+for x in; do echo never; done
+for x in "a b" c; do echo "<$x>"; done
+exit 0

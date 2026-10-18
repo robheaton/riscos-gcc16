@@ -1,0 +1,17 @@
+[functions and scope]
+in f: local
+in g: local
+after: global
+done
+args: 3 x y
+after shift: 2 y
+k rc=0
+a b c
+n sees: 1 3
+main: p 2
+o:1
+o:2 3
+p-ran
+changed
+in sub: sub
+after sub: changed

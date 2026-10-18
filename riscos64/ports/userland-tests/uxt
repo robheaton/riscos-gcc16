@@ -1,0 +1,36 @@
+echo "== diff"
+diff fa fb
+diff -u fa fb | tail -n +3
+cmp fa fa && echo cmp-same
+cmp fa fb
+echo "== patch"
+diff -u fa fb > fa.patch
+cp fa fa_work
+patch fa_work < fa.patch
+cmp fa_work fb && echo patched-equal
+echo "== gzip"
+gzip -c big > big.gz
+ls -l big.gz | cut -c1-60
+gzip -dc big.gz | wc -c
+gzip -dc fa.gz | cmp - fa && echo host-gz-ok
+gzip -c fa > fa2.gz
+gzip -d fa2.gz
+cmp fa2 fa && echo gunzip-ok
+echo "== tar"
+tar cf t.tar tree
+tar tf t.tar | sort
+mkdir out
+cd out
+tar xf ../t.tar
+cd ..
+diff -r tree out/tree && echo tar-roundtrip-ok
+echo "== find"
+find tree -name '*.txt' | sort
+find tree -type d | sort
+find tree -type f -size -2 | sort
+find tree -name '*.dat' -exec cat {} ';'
+echo "== xargs"
+echo a b c | xargs echo got
+printf 'x\ny\n' | xargs -n1 echo item
+echo "== done"
+exit 0

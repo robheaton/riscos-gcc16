@@ -1,0 +1,8 @@
+for p in make gawk; do
+  for o in --version --help --bogus-option; do
+    echo "=== $p $o"
+    sh cfg_$p $o 2>&1
+    echo "rc=$?"
+  done
+done
+exit 0

@@ -178,8 +178,14 @@ char *realpath (const char *path, char *resolved)
 
 extern int __riscos_dup (int fd, int want);
 int dup (int fd) { return __riscos_dup (fd, -1); }
-int dup2 (int fd, int fd2) { if (fd2 < 0) { errno = EBADF; return -1; } return __riscos_dup (fd, fd2); }
-int pipe (int fds[2]) { (void) fds; __ul64_nosys ("pipe"); return -1; }
+extern int __ul64_vfork_depth_get (void);
+int dup2 (int fd, int fd2)
+{
+  if (fd2 < 0) { errno = EBADF; return -1; }
+  /* in a vfork child, before the exec: the standard descriptors of the program that is started are the system's, so a redirection of them has no meaning here and is accepted (the descriptor must be good) */
+  if (fd2 < 3 && __ul64_vfork_depth_get () > 0) { struct stat st; if (fd != fd2 && fstat (fd, &st) != 0) return -1; return fd2; }
+  return __riscos_dup (fd, fd2);
+}
 int link (const char *a, const char *b) { (void) a; (void) b; __ul64_nosys ("link"); return -1; }
 int symlink (const char *a, const char *b) { (void) a; (void) b; __ul64_nosys ("symlink"); return -1; }
 ssize_t readlink (const char *p, char *buf, size_t n) { (void) p; (void) buf; (void) n; errno = EINVAL; return -1; }

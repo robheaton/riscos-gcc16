@@ -378,3 +378,17 @@ int statfs (const char *path, struct statfs *s)
   return 0;
 }
 int fstatfs (int fd, struct statfs *s) { (void) fd; (void) s; errno = ENOSYS; return -1; }
+
+/* sysconf: a few answers that suit RISC OS 64; the rest is picolibc's (renamed __pico_sysconf when the tool chain is built, like setlocale) */
+extern long __pico_sysconf (int name);
+long sysconf (int name)
+{
+  switch (name)
+    {
+    case _SC_ARG_MAX: return 32768;			/* xargs and make split long command lines to fit */
+    case _SC_OPEN_MAX: return 240;			/* RISC OS file handles 1 to 255 */
+    case _SC_CLK_TCK: return 100;			/* centiseconds */
+    case _SC_PAGESIZE: return 4096;
+    default: return __pico_sysconf (name);
+    }
+}

@@ -1,0 +1,25 @@
+echo "[parameter expansion]"
+unset v
+echo "${v:-def}" "${v-def}" "${v:=assigned}" "$v"
+v=
+echo "[${v:-colon}] [${v-nocolon}] [${v:+alt}] [${v+alt}]"
+v=value
+echo "${v:+alt}" "${v+alt}" "${#v}"
+p=/usr/local/lib/libfoo.so.1.2
+echo "${p#*/}" "${p##*/}" "${p%/*}" "${p%%/*}" "${p%.*}" "${p%%.*}" "${p#/usr}"
+echo "${p%.so*}" "${p##*.}"
+x="a b  c"
+set -- $x
+echo $#
+set -- "$x"
+echo $#
+echo "${x#a }"
+unset w
+echo "${w:-}" "[${w}]" "${w-x}"
+n=5
+echo "$((n+1))" "${n}0" "$n"0
+a=1; b=2
+echo "$a$b" "${a}${b}"
+echo '$a' "\$a" "\\" "\"" 'it'"'"'s'
+echo "tilde: ${HOME:+set}"
+exit 0

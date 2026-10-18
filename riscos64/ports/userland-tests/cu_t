@@ -1,0 +1,42 @@
+echo "== uname date"
+uname -s
+uname -m
+date -u -d @86400 +%Y-%m-%d
+echo "== text"
+printf 'b\na\nc\nb\n' | sort
+printf 'b\na\nc\nb\n' | sort -u | tr a-z A-Z
+printf 'b\na\nc\nb\n' | sort | uniq -c
+echo hello world | wc
+wc -l data1
+echo hello | tee tee_out
+cat tee_out
+seq 1 5 | tail -n 2
+seq 3
+echo "a,b,c" | cut -d, -f2
+head -n 2 data1
+tail -n 1 data1
+nl data1 | head -n 2
+sort -k2 data1 | head -n 2
+echo "== files"
+mkdir -p dd1/sub
+touch dd1/f1 dd1/sub/f2
+cp data1 dd1/copy
+mv dd1/copy dd1/moved
+ls dd1
+ls -l dd1/moved
+stat -c '%s %F' dd1/moved
+basename /a/b/c.txt .txt
+dirname /a/b/c.txt
+rm -r dd1
+echo "== sums"
+md5sum data1
+sha256sum data1
+cksum data1
+echo "== misc"
+expr 6 '*' 7
+env FOO=bar printenv FOO
+echo "x y z" | fold -w 2 | head -n 2
+whoami
+id -u
+test -f data1 && echo has-data1
+echo "== done"

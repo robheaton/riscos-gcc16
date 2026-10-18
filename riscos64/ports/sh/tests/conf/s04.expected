@@ -1,0 +1,30 @@
+[control flow]
+1a
+1c
+2a
+2c
+i=3
+n=3
+glob1
+alt
+empty
+quoted
+bracket
+star
+range
+q
+t
+e
+3
+negated
+chain1
+chain2
+group-or
+rc=3
+f failed
+if-f=3
+[one][two three]
+[four][]
+a;b;c;
+<a b>
+<c>

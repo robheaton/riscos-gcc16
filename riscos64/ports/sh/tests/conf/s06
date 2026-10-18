@@ -1,0 +1,31 @@
+echo "[quoting and expansion]"
+echo "a   b" 'c   d' e   f
+x="two words"
+echo $x "$x" '$x'
+echo "a\tb" 'a\tb'
+echo a\ b
+echo "back\\slash" 'back\\slash'
+echo `echo bq` "$(echo dq)" $(echo "inner $(echo nested)")
+echo "$(printf 'a\nb')"
+echo $(printf 'a\nb')
+echo "nl:$(printf 'x\n\n')end"
+y=$(printf 'abc')
+echo "${y}def"
+echo "glob: $(ls sh_nonexist* 2>/dev/null | wc -l | tr -d ' ')"
+set -f; echo *; set +f
+echo "~" ~ | cut -c1-1
+echo \* '*' "*"
+echo a"b"'c'd
+z='single "double" inside'
+echo "$z"
+w="double 'single' inside"
+echo "$w"
+echo "line1
+line2"
+echo 'multi
+line'
+echo "\$HOME" '\$HOME'
+e=""
+echo "[$e]" [$e]
+echo ${e:-"quoted default"}
+exit 0

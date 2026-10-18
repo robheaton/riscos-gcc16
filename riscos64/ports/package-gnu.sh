@@ -18,8 +18,17 @@ add "$W/make-build/make" make
 add "$W/lua-5.4.7/lua,ff8" lua
 add "$W/bz-o/bzip2,ff8" bzip2
 add "$W/sqlite3,ff8" sqlite3
+add "$W/diffutils-build/src/diff" diff
+add "$W/diffutils-build/src/cmp" cmp
+add "$W/diffutils-build/src/diff3" diff3
+add "$W/diffutils-build/src/sdiff" sdiff
+add "$W/findutils-build/find/find" find
+add "$W/findutils-build/xargs/xargs" xargs
+add "$W/patch-build/src/patch" patch
+add "$W/tar-build/src/tar" tar
+add "$W/gzip-build/gzip" gzip
 cp "$W/sed-4.9/COPYING" "$D/Licences/sed-GPL3"; cp "$W/grep-3.11/COPYING" "$D/Licences/grep-GPL3"; cp "$W/gawk-5.3.1/COPYING" "$D/Licences/gawk-GPL3"; cp "$W/make-4.4.1/COPYING" "$D/Licences/make-GPL3" 2>/dev/null || true
-cp "$W/lua-5.4.7/doc/readme.html" "$D/Licences/lua-readme" 2>/dev/null || true; cp "$W/bzip2-1.0.8/LICENSE" "$D/Licences/bzip2-LICENSE"
+cp "$W/lua-5.4.7/doc/readme.html" "$D/Licences/lua-readme" 2>/dev/null || true; cp "$W/bzip2-1.0.8/LICENSE" "$D/Licences/bzip2-LICENSE"; for p in diffutils-3.10 findutils-4.10.0 patch-2.7.6 tar-1.35 gzip-1.13; do cp "$W/$p/COPYING" "$D/Licences/${p%%-*}-GPL3" 2>/dev/null || true; done
 {
   echo "| !Boot file for GNU tools (RISC OS 64)"
   echo
@@ -32,6 +41,8 @@ cp "$W/lua-5.4.7/doc/readme.html" "$D/Licences/lua-readme" 2>/dev/null || true; 
   echo 'Set Alias$awk WimpSlot -min 1200k|MRun <GNU$Dir>.gawk %%*0'
   echo 'Set Alias$egrep WimpSlot -min 800k|MRun <GNU$Dir>.grep -E %%*0'
   echo 'Set Alias$fgrep WimpSlot -min 800k|MRun <GNU$Dir>.grep -F %%*0'
+  echo 'Set Alias$gunzip WimpSlot -min 700k|MRun <GNU$Dir>.gzip -d %%*0'
+  echo 'Set Alias$zcat WimpSlot -min 700k|MRun <GNU$Dir>.gzip -dc %%*0'
 } > "$D/!Boot"
 printf '| !Run file for GNU tools\n\n/<Obey$Dir>.!Boot\n' > "$D/!Run"
 cat > "$D/!Help" <<E
@@ -41,6 +52,7 @@ GNU and other tools for RISC OS 64 (AArch64), release $V
 sh        a POSIX shell for a system with no fork (ports/sh of the riscos-gcc16 project); runs scripts, pipelines (stage after stage), redirections; needs !CoreUtils for most utilities
 sed       GNU sed 4.9        grep  GNU grep 3.11 (egrep, fgrep as aliases)        gawk  GNU awk 5.3.1 (awk as an alias)
 make      GNU make 4.4.1 (use  SHELL = ./sh  or the full name of sh; the jobserver is off)
+diff cmp diff3 sdiff (diffutils 3.10)   find xargs (findutils 4.10.0)   patch 2.7.6   tar 1.35   gzip 1.13 (gunzip, zcat as aliases)
 lua       Lua 5.4.7          bzip2  bzip2 1.0.8          sqlite3  SQLite 3.47.2 (no WAL, no extensions)
 
 Run !GNU (or its !Boot) once: it sets GNU\$Dir and an alias for each program. The shell finds the programs through GNU\$Dir and CoreUtils\$Dir.
@@ -58,7 +70,7 @@ Licence: GPL-3+
 Maintainer: RISC OS 64 GCC port <https://github.com/robheaton/riscos-gcc16>
 Standards-Version: 0.4.0
 Components: Apps.Utilities.!GNU (Movable LookAt)
-Description: sh, sed, grep, gawk, make, Lua, bzip2 and SQLite for RISC OS 64
+Description: sh, sed, grep, gawk, make, diff, find, patch, tar, gzip, Lua, bzip2 and SQLite for RISC OS 64
  Programs built with GCC 16 and UnixLib 64: ${progs[*]}
 Homepage: https://github.com/robheaton/riscos-gcc16
 E

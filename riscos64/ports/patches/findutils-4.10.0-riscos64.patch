@@ -1,0 +1,17 @@
+--- findutils-4.10.0/xargs/xargs.c	2026-10-18 13:05:54.078302068 +0100
++++ findutils-4.10.0/xargs/xargs.c
+@@ -1239,7 +1239,14 @@
+ 
+      We use 0 here in order to avoid generating a data structure that appears
+      to indicate that we (the child) have a child. */
++#ifdef __riscos__
++  /* RISC OS 64: the child is not a process of its own (vfork), so it must not change the table of the parent: work out the slot that the parent will get */
++  unsigned int slot = 0;
++  while (slot < pids_alloc && pids[slot])
++    slot++;
++#else
+   unsigned int slot = add_proc (0);
++#endif
+   set_slot_var (slot);
+ 
+   if (!keep_stdin || open_tty)

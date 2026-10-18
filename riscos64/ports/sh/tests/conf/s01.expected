@@ -1,0 +1,20 @@
+[redirections with descriptors]
+to-five
+more
+read: to-five / more
+out1
+err1
+sub-out
+sub-err
+to-five
+more
+appended
+via-seven
+redirect order: 
+a
+b
+d
+c
+L:to-five
+L:more
+L:appended

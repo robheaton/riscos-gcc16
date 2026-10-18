@@ -1,0 +1,26 @@
+[quoting and expansion]
+a   b c   d e f
+two words two words $x
+a	b a	b
+a b
+back\slash back\slash
+bq dq inner nested
+a
+b
+a b
+nl:xend
+abcdef
+glob: 0
+*
+~
+* * *
+abcd
+single "double" inside
+double 'single' inside
+line1
+line2
+multi
+line
+$HOME \$HOME
+[] []
+quoted default

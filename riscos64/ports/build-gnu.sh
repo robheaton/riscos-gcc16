@@ -24,6 +24,17 @@ cp grep-build/src/grep "grep,ff8"
 (cd gawk-build && ../gawk-5.3.1/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS=-O2 --disable-nls --disable-extensions --without-readline --without-mpfr --disable-pma > conf.log 2>&1 \
   && make -j"$(nproc)" CFLAGS="-O2 -std=gnu17 -include stdbool.h -DPIPES_SIMULATED" > make.log 2>&1)	# (gawk's own getopt.c is K&R; C23 refuses it; dfa.h needs bool)
 cp gawk-build/gawk "gawk,ff8"
+# diffutils, findutils, patch, tar, gzip
+for pkg in diffutils-3.10:diffutils findutils-4.10.0:findutils patch-2.7.6:patch tar-1.35:tar gzip-1.13:gzip; do t=${pkg%%:*}; n=${pkg##*:}
+  case $n in diffutils) h=90e5e93cc724e4ebe12ede80df1634063c7a855692685919bfe60b556c9bd09e;; findutils) h=1387e0b67ff247d2abde998f90dfbf70c1491391a59ddfecb8ae698789f0a4f5;; patch) h=ac610bda97abe0d9f6b7c963255a11dcb196c25e337c61f94e4778d632f1d8fd;; tar) h=4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16;; gzip) h=7454eb6935db17c6655576c2e1b0fabefd38b4d0936e0f87f48cd062ce91a057;; esac
+  fetch $n $t.tar.xz $h
+  [ -d $t ] || tar xf $t.tar.xz
+  python3 "$HERE/patches/gnulib-riscos64.py" $t > /dev/null	# (freadahead and friends: picolibc's FILE)
+  mkdir -p $n-build
+  extra=-O2; [ $n = findutils ] && extra="-O2 -Dfork=vfork" && { [ -f .findutils-patched ] || { patch -p0 < "$HERE/patches/findutils-4.10.0-riscos64.patch" && touch .findutils-patched; }; }	# (find and xargs: fork is vfork; xargs's child must not change the table of its parent)
+  (cd $n-build && ../$t/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS="$extra" --disable-nls --without-selinux --disable-acl --disable-xattr > conf.log 2>&1 && make -k -j"$(nproc)" > make.log 2>&1 || true)
+done
+
 # coreutils: one program per utility (no --enable-single-binary), then the application
 fetch coreutils coreutils-9.5.tar.xz cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a
 [ -d coreutils-9.5 ] || tar xf coreutils-9.5.tar.xz

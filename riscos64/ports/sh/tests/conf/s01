@@ -1,0 +1,23 @@
+echo "[redirections with descriptors]"
+exec 5>sh_fd5
+echo to-five >&5
+echo more >&5
+exec 5>&-
+cat sh_fd5
+exec 6<sh_fd5
+read a <&6
+read b <&6
+exec 6<&-
+echo "read: $a / $b"
+{ echo out1; echo err1 >&2; } 2>&1 | cat
+( echo sub-out; echo sub-err >&2 ) 2>sh_err; cat sh_err
+echo appended >> sh_fd5; cat sh_fd5
+exec 7>&1
+echo via-seven >&7
+exec 7>&-
+echo "redirect order: "
+{ echo a; echo b >&2; } >sh_o1 2>&1; cat sh_o1
+{ echo c; echo d >&2; } 2>sh_o2 >sh_o3; cat sh_o2 sh_o3
+cat < sh_fd5 | while read l; do echo "L:$l"; done
+rm -f sh_fd5 sh_err sh_o1 sh_o2 sh_o3
+exit 0
