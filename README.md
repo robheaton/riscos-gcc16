@@ -10,6 +10,8 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 
 > **Status: experimental.** Everything here has been built and tested by one person on one machine (a Raspberry Pi Compute Module 4, Cortex-A72, RISC OS 5.30).
 > It is not part of, and not supported by, the GCCSDK project. Please report problems [here](https://github.com/robheaton/riscos-gcc16/issues), not to the GCCSDK mailing list.
+>
+> There is also an early preview for **64-bit RISC OS** (AArch64), described [further down](#risc-os-64-aarch64-early-preview); everything else on this page is for 32-bit machines.
 
 ## What you get
 
@@ -77,7 +79,29 @@ arm-riscos-gnueabihf-gcc -O2 -o hello,e1f hello.c        # ,e1f gives the file t
 Copy `hello,e1f` to the RISC OS machine and run it there; it needs the `SharedLibs-C-armeabihf` package (step 2 above), and C++ and Fortran programs need `SharedLibs-C++-armeabihf` and
 `SharedLibs-Fortran-armeabihf` as well, unless you link those libraries statically. See [docs/CROSS-COMPILER.md](docs/CROSS-COMPILER.md). To build the tool chain from source: [docs/BUILDING.md](docs/BUILDING.md).
 
-## Downloads
+## RISC OS 64 (AArch64): early preview
+
+Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section.**
+
+There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux only (there is no native compiler on RISC OS 64 yet), and it has been tested only on the RISC OS Pyromaniac emulator, **not yet on a real RISC OS 64 machine**, so please treat it as a first look. What you can do with it today:
+
+* **Compile C and C++** on Linux with `aarch64-riscos-gcc` (C++ includes exceptions, threads and the standard library) and run the programs on RISC OS 64. They use a 64-bit port of UnixLib, so ordinary Unix-style code (files, `printf`, `malloc`, threads, signals, `getopt`, ...) builds as it does on the 32-bit side.
+* **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
+* **Use a command-line toolbox**, built with the same compiler: a shell (`sh`), GNU `sed`, `grep`, `awk`, `make`, `diff`, `find`, `tar`, `gzip`, `xz` and `zstd`, `zip`/`unzip`, `less`, `jq`, `m4` and more (the `!GNU` application), and the GNU coreutils (`!CoreUtils`, 102 programs, laid out like the 32-bit package).
+* **Link against ready-made libraries**: zlib, libpng, libjpeg-turbo, expat and PCRE2.
+
+What it cannot do yet: there is no `fork`, so programs that start several processes at once, and `bash`, do not work (the included `sh` covers most scripts); sockets are written but untried; and the modules cannot yet intercept vectors or be Wimp tasks.
+
+| Download (all pre-releases) | What it is |
+|---|---|
+| [`riscos64-toolchain-0.5`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.5) | the Linux cross compiler (x86-64) |
+| [`riscos64-gnu-tools-6`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-6) | `!GNU`: the shell and the tools |
+| [`riscos64-coreutils-9.5-3`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-3) | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
+| [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | the libraries, for the cross compiler |
+
+Start with [docs/AARCH64.md](docs/AARCH64.md) (the compiler) and [docs/USERLAND64.md](docs/USERLAND64.md) (the shell and tools); [docs/RISCOS64.md](docs/RISCOS64.md) says what was tested.
+
+## Downloads (32-bit)
 
 Everything is attached to the [releases page](https://github.com/robheaton/riscos-gcc16/releases). Check the downloads against `SHA256SUMS`.
 
@@ -92,7 +116,7 @@ Everything is attached to the [releases page](https://github.com/robheaton/risco
 | `riscos-gcc16-cross-16.2.0-24-x86_64-linux.tar.xz` (54 MB) | the cross compiler for Linux | compiling on Linux |
 | `gcc-16.2.0.tar.xz`, `binutils-2.45.1.tar.xz`, `make-4.4.1.tar.gz`, `gccsdk-unixlib-r7800.tar.xz` | the unmodified upstream sources the binaries were built from (UnixLib is a snapshot of GCCSDK svn r7800) | the source offer, see [SOURCES.md](SOURCES.md) |
 
-## How it was tested
+## How it was tested (32-bit)
 
 On a Raspberry Pi Compute Module 4 (Cortex-A72) with RISC OS 5.30, ARMEABISupport 1.08 and Shared Object Manager 3.04. The compiler differs from that of 16.2.0-16 only in two options of its driver (16.2.0-20), in how the cross compiler reads `#include "Prefix:Name.h"` (16.2.0-21) in libgcov's profile directories (16.2.0-22) and, in 16.2.0-23, in one option of the linker that `-mmodule` passes (`--gc-sections`), and in 16.2.0-24, in the thread ticker of UnixLib (the runtime 16.2.0-15, fix level 17); UnixLib has seven more error codes (16.2.0-22, runtime 16.2.0-14, fix level 16) and the rest of the runtime packages is as in 16.2.0-16; 16.2.0-17 to -23 changed the module kit; they passed all of the following on that machine (what was run with the packages of 16.2.0-24 is in the last paragraph of this section):
 
