@@ -14,6 +14,7 @@ extern unsigned long __ul64_main_stack_low (unsigned long cur_sp);
 extern unsigned long __riscos_ramlimit;
 #define OS_CLI 0x05
 #define OS_ChangeEnvironment 0x40
+extern void __ul64_fault_reinstall (void) __attribute__ ((weak));	/* fault.c: the handlers of SIGSEGV and the like, if a program has them */
 #define OS_DynamicArea 0x66
 #define OS_SynchroniseCodeAreas 0x6E
 
@@ -109,6 +110,7 @@ int __ul64_run_swap (const char *cmd)
 	unsigned long k[10] = { 1, area };
 	swi_x (OS_ChangeEnvironment, b);
 	swi_x (OS_DynamicArea, k);
+	if (__ul64_fault_reinstall) __ul64_fault_reinstall ();
 	return __ul64_run_error[0] ? 2 : 0;
       }
     }
@@ -117,6 +119,7 @@ int __ul64_run_swap (const char *cmd)
     unsigned long k[10] = { 1, area };
     swi_x (OS_ChangeEnvironment, b);
     swi_x (OS_DynamicArea, k);
+    if (__ul64_fault_reinstall) __ul64_fault_reinstall ();
   }
   return 0;
 }

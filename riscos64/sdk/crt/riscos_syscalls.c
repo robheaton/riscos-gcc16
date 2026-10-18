@@ -71,9 +71,17 @@ static void put_text (const char *s, size_t n)
     }
 }
 
+extern int __ul64_is_sock (int) __attribute__ ((weak));		/* posix/sockets.c: descriptors 300 and up that are sockets */
+extern ssize_t __ul64_sock_read (int, void *, size_t) __attribute__ ((weak));
+extern ssize_t __ul64_sock_write (int, const void *, size_t) __attribute__ ((weak));
+extern int __ul64_sock_close (int) __attribute__ ((weak));
+extern int __ul64_sock_fstat (int, struct stat *) __attribute__ ((weak));
+#define SOCK(fd) (__ul64_is_sock && __ul64_is_sock (fd))
+
 ssize_t write (int fd, const void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
+  if (SOCK (fd)) return __ul64_sock_write (fd, buf, n);
   if (fd == 1 || fd == 2) { __ul64_poll_signals (); put_text ((const char *) buf, n); return (ssize_t) n; }
   if (!isfile (fd)) { errno = EBADF; return -1; }
   r[0] = 2; r[1] = (unsigned long) fdhandle (fd); r[2] = (unsigned long) buf; r[3] = n;
@@ -84,6 +92,7 @@ ssize_t write (int fd, const void *buf, size_t n)
 ssize_t read (int fd, void *buf, size_t n)
 {
   unsigned long r[10] = { 0 };
+  if (SOCK (fd)) return __ul64_sock_read (fd, buf, n);
   if (fd == 0 && !(__riscos_tty_lflag & 0x10))		/* the keyboard, termios non-canonical: no line editing, returns when VMIN characters have come (0 = whatever is waiting) */
     {
       char *p = (char *) buf;
@@ -187,6 +196,7 @@ int close (int fd)
 {
   unsigned long r[10] = { 0 };
   int rf, h;
+  if (SOCK (fd)) return __ul64_sock_close (fd);
   if (!isfile (fd)) return 0;
   rf = realfd (fd);
   h = rf - 3;
@@ -235,6 +245,7 @@ off_t lseek (int fd, off_t off, int whence)
 int fstat (int fd, struct stat *st)
 {
   unsigned long r[10] = { 0 };
+  if (SOCK (fd)) return __ul64_sock_fstat (fd, st);
   char *p = (char *) st;
   size_t i;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;

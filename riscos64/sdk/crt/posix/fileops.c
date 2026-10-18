@@ -32,9 +32,26 @@ static int os_err (unsigned long *r)
     }
 }
 
+extern int __ul64_is_sock (int) __attribute__ ((weak));		/* sockets.c */
+extern int __ul64_sock_nonblock (int, int) __attribute__ ((weak));
+extern int __ul64_sock_getfl (int) __attribute__ ((weak));
+extern int __ul64_sock_ioctl (int, unsigned long, void *) __attribute__ ((weak));
+
 int fcntl (int fd, int cmd, ...)
 {
-  (void) fd;
+  if (__ul64_is_sock && __ul64_is_sock (fd))
+    {
+      va_list ap;
+      int arg;
+      switch (cmd)
+	{
+	case F_GETFD: return 0;
+	case F_SETFD: return 0;
+	case F_GETFL: return __ul64_sock_getfl (fd);
+	case F_SETFL: va_start (ap, cmd); arg = va_arg (ap, int); va_end (ap); return __ul64_sock_nonblock (fd, (arg & O_NONBLOCK) != 0);
+	default: errno = EINVAL; return -1;
+	}
+    }
   switch (cmd)
     {
     case F_GETFD: case F_SETFD: case F_SETFL: return 0;
@@ -44,7 +61,18 @@ int fcntl (int fd, int cmd, ...)
     }
 }
 
-int ioctl (int fd, unsigned long request, ...) { (void) fd; (void) request; errno = ENOTTY; return -1; }
+int ioctl (int fd, unsigned long request, ...)
+{
+  if (__ul64_is_sock && __ul64_is_sock (fd))
+    {
+      va_list ap;
+      void *arg;
+      va_start (ap, request); arg = va_arg (ap, void *); va_end (ap);
+      return __ul64_sock_ioctl (fd, request, arg);
+    }
+  errno = ENOTTY;
+  return -1;
+}
 
 int fsync (int fd)
 {

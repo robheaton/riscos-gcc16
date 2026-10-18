@@ -48,3 +48,17 @@ int getlogin_r (char *, size_t);
 add_before_last_endif("poll.h", "ppoll", """#include <sys/_sigset.h>
 struct timespec;
 int ppoll (struct pollfd *, nfds_t, const struct timespec *, const __sigset_t *);""")
+
+# descriptors of sockets are 300 and up (crt/posix/sockets.c): fd_set must reach them
+sel = inc + "/sys/_select.h"
+t = open(sel).read()
+if "#define FD_SETSIZE 512" not in t:
+    t = t.replace("#define FD_SETSIZE 64", "#define FD_SETSIZE 512", 1)
+    open(sel, "w").write(t)
+
+# FIONBIO and FIONREAD for sockets: the numbers of the BSD ioctl that the Internet module takes
+ioc = inc + "/sys/ioctl.h"
+t = open(ioc).read()
+if "FIONBIO" not in t:
+    i = t.rindex("#endif")
+    open(ioc, "w").write(t[:i] + "#define FIONBIO 0x8004667e\n#define FIONREAD 0x4004667f\n" + t[i:])

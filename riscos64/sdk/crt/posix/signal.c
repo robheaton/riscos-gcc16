@@ -1,5 +1,5 @@
 /* signal.c - signal, raise, sigaction, kill (of the process itself), sigprocmask and alarm, in the way that needs no operating system support: a table of handlers, raise () calls the handler of the signal, the default of
-   a signal is to end the process (or nothing, for SIGCHLD, SIGURG, SIGWINCH).  Escape and alarm () arrive at the places where the library looks for them (__ul64_poll_signals: every write, every read of the keyboard, sleeps, poll and select, pause): Escape is SIGINT, the timer of alarm () is SIGALRM.  Not yet: a data abort as SIGSEGV.
+   a signal is to end the process (or nothing, for SIGCHLD, SIGURG, SIGWINCH).  Escape and alarm () arrive at the places where the library looks for them (__ul64_poll_signals: every write, every read of the keyboard, sleeps, poll and select, pause): Escape is SIGINT, the timer of alarm () is SIGALRM.  A data abort and the like are SIGSEGV, SIGILL, SIGBUS, SIGFPE for a program that has a handler for them (fault.c).
    libriscosstub.a is searched before libc.a, so these take the place of picolibc's fallbacks.  The SDK of RISC OS 64. */
 #include <errno.h>
 #include <signal.h>
@@ -20,6 +20,16 @@ static int signalled;						/* a handler has run (for pause) */
 static unsigned long alarm_at;					/* centiseconds on the monotonic clock */
 #define BIT(s) ((sigset_t) 1 << (s))
 
+extern void __ul64_fault_update (int active);
+static void fault_sync (void)					/* SIGSEGV, SIGBUS, SIGILL, SIGFPE: the kernel's handlers (fault.c) are set while one of them has a handler */
+{
+  int active = 0, s;
+  static const int fs[4] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE };
+  for (s = 0; s < 4; s++) if (handlers[fs[s]] != SIG_DFL && handlers[fs[s]] != SIG_IGN && handlers[fs[s]] != 0) active = 1;
+  __ul64_fault_update (active);
+}
+void (*__ul64_signal_handler (int sig)) (int) { return handlers[sig]; }
+
 static int ignored_by_default (int sig) { return sig == SIGCHLD || sig == SIGURG || sig == SIGWINCH || sig == SIGCONT; }
 
 void (*signal (int sig, void (*handler) (int))) (int)
@@ -29,6 +39,7 @@ void (*signal (int sig, void (*handler) (int))) (int)
   old = handlers[sig];
   handlers[sig] = handler;
   resethand[sig] = 0;
+  if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE) fault_sync ();
   return old;
 }
 
@@ -66,7 +77,7 @@ int sigaction (int sig, const struct sigaction *act, struct sigaction *old)
       old->sa_flags = 0;
       sigemptyset (&old->sa_mask);
     }
-  if (act) { handlers[sig] = act->sa_handler; resethand[sig] = (act->sa_flags & SA_RESETHAND) != 0; }
+  if (act) { handlers[sig] = act->sa_handler; resethand[sig] = (act->sa_flags & SA_RESETHAND) != 0; if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE) fault_sync (); }
   return 0;
 }
 
