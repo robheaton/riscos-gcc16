@@ -21,6 +21,9 @@ extern char __heap_start[];
 extern char __tdata_start[], __tdata_end[], __tbss_start[], __tbss_end[], __tls_space[], __tls_align[];
 __thread char __ul64_tls_anchor_d = 1;
 __thread char __ul64_tls_anchor_b;
+/* libstdc++ tests a weak reference to pthread_cancel to find out whether threads are there, and calls the other pthread functions through weak references too: link the thread code (it is small) into every program, or std::call_once and the like fail. */
+extern int __ul64_nthreads;
+static int *const keep_pthread __attribute__ ((used)) = &__ul64_nthreads;
 static void init_tls (void)
 {
   unsigned long a = (unsigned long) __tls_align, i;

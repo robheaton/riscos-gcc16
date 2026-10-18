@@ -82,3 +82,6 @@ int posix_spawn_file_actions_init (posix_spawn_file_actions_t *a) { *a = (posix_
 int posix_spawn_file_actions_destroy (posix_spawn_file_actions_t *a) { free (*a); *a = 0; return 0; }
 int posix_spawn_file_actions_addclose (posix_spawn_file_actions_t *a, int fd) { (void) fd; (*a)->n++; return 0; }
 int posix_spawn_file_actions_adddup2 (posix_spawn_file_actions_t *a, int fd, int nfd) { (void) fd; (void) nfd; (*a)->n++; return 0; }
+
+int get_nprocs (void) { return 1; }
+int get_nprocs_conf (void) { return 1; }

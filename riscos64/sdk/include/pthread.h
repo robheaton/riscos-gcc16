@@ -8,6 +8,7 @@
 #include <time.h>
 #include <sched.h>
 #include <signal.h>
+#include <sys/_sigset.h>			/* (sigset_t is declared by <signal.h> only for some feature macros, which a strict C++ compile does not set) */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -111,7 +112,7 @@ int pthread_key_create (pthread_key_t *, void (*) (void *));
 int pthread_key_delete (pthread_key_t);
 void *pthread_getspecific (pthread_key_t);
 int pthread_setspecific (pthread_key_t, const void *);
-int pthread_sigmask (int, const sigset_t *, sigset_t *);
+int pthread_sigmask (int, const __sigset_t *, __sigset_t *);
 int pthread_atfork (void (*) (void), void (*) (void), void (*) (void));
 #ifdef __cplusplus
 }

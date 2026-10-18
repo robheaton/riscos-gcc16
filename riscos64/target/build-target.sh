@@ -49,6 +49,7 @@ fi
 if go 4; then
 step "the SDK files into $PREFIX/aarch64-riscos (before libstdc++: its configure links test programs)"
 T=$PREFIX/aarch64-riscos
+cp -a "$SDK/include/." "$T/include/" && python3 "$SDK/fix-picolibc-headers.py" "$T/include"
 # the start-up files and the system calls of the SDK (sdk/crt), compiled with the new compiler
 CC=$PREFIX/bin/aarch64-riscos-gcc
 for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
