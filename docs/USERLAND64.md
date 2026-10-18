@@ -17,7 +17,7 @@ This page is for people who **use** the programs in the two packages [`!GNU`](ht
 
 | Package | Contents |
 |---|---|
-| **`!GNU`** (`gnutools_2_aarch64.zip`, 5 MB) | `sh` (a POSIX shell written for this system), GNU `sed` 4.9, `grep` 3.11 (`egrep` and `fgrep` as aliases), `gawk` 5.3.1 (`awk`), `make` 4.4.1, `diff` `cmp` `diff3` `sdiff` (diffutils 3.10), `find` `xargs` (findutils 4.10.0), `patch` 2.7.6, `tar` 1.35, `gzip` 1.13 (`gunzip`, `zcat`), `m4` 1.4.19, `which` 2.21, `bc`/`dc` 1.07.1, `xxd`, `xz` 5.4.7 (`unxz`, `xzcat`), Lua 5.4.7, `bzip2` 1.0.8, `sqlite3` 3.47.2 (`m4`, `which`, `bc`, `dc`, `xxd` and `xz` are in `!GNU` 3 and later) |
+| **`!GNU`** (`gnutools_2_aarch64.zip`, 5 MB) | `sh` (a POSIX shell written for this system), GNU `sed` 4.9, `grep` 3.11 (`egrep` and `fgrep` as aliases), `gawk` 5.3.1 (`awk`), `make` 4.4.1, `diff` `cmp` `diff3` `sdiff` (diffutils 3.10), `find` `xargs` (findutils 4.10.0), `patch` 2.7.6, `tar` 1.35, `gzip` 1.13 (`gunzip`, `zcat`), `m4` 1.4.19, `which` 2.21, `bc`/`dc` 1.07.1, `xxd`, `xz` 5.4.7 (`unxz`, `xzcat`), `zstd` 1.5.6, `lz4` 1.10.0, `unzip` 6.00, `zip` 3.0, `tree` 2.1.3, `jq` 1.7.1, `pcre2grep`/`pcre2test` 10.44, `cjpeg`/`djpeg`/`jpegtran`, `pngfix`, `xmlwf` (these are in `!GNU` 5 and later), Lua 5.4.7, `bzip2` 1.0.8, `sqlite3` 3.47.2 (`m4`, `which`, `bc`, `dc`, `xxd` and `xz` are in `!GNU` 3 and later) |
 | **`!CoreUtils`** (`coreutils_9.5-2_aarch64.zip`, 22 MB) | GNU coreutils 9.5: 102 programs, one file each, in the way of the 32-bit package `coreutils_8.30-2_arm.zip`: `ls cp mv rm mkdir cat sort uniq tr cut wc head tail tee seq expr date uname env printenv md5sum sha256sum cksum stat basename dirname fold nl od ...` (`install` is `ginstall`) |
 
 Each application is a folder `Apps.Utilities.!GNU` / `!CoreUtils` with one program per tool (file type &FF8, an AIF64 program), a `!Boot` that sets `GNU$Dir` / `CoreUtils$Dir` and one `Alias$NAME` per program, `!Run`, `!Help` and the licences. Both are meant to be used together: the shell finds both.
@@ -118,6 +118,8 @@ sh -n script          read the commands, do not run them (syntax check)
 | **find, xargs** | `find` with the usual tests; `-exec` and `-execdir` run the command to its end for each file; `xargs` runs the command once per batch, in sequence (`-P` makes no difference) |
 | **m4, which, bc, dc, xxd** | m4 1.4.19 (`syscmd` and `esyscmd` run the command with `system ()`/`popen ()`, so they use `sh -c` when there is an `sh`); which 2.21 (searches `PATH`); bc and dc 1.07.1 (arbitrary precision, `-l` maths library); xxd from Vim 9.1.0000 (`-p`, `-i`, `-r`). Output identical to the host versions on the tests |
 | **xz** | XZ Utils 5.4.7 (not the 5.6.0/5.6.1 releases): `xz`, `-d`, `-k`, `-t`, `-l`, levels `-0` to `-9e`; reads archives made on other systems; single thread |
+| **zstd, lz4, unzip, zip, tree, jq, pcre2grep** | Zstandard and LZ4 read files made on Linux and give files Linux reads (zstd without threads); `unzip` reads a zip made on Linux and tests the zips `zip` makes (Info-ZIP 6.00 and 3.0 have no Unicode names and no zip64 here; `zipnote`, `zipcloak` and `zipsplit` are not built); `jq` has its own Oniguruma and gives the host's output (use `-M` when the output is a file you read, it colours the console); `pcre2grep` is Perl-compatible (`-P` of `grep` is not built) |
+| **cjpeg, djpeg, jpegtran, pngfix, xmlwf** | libjpeg-turbo 3.0.4 (no SIMD: bytes equal to a SIMD build's), libpng 1.6.44, expat 2.6.4: `cjpeg` / `djpeg` give the bytes of PIL's libjpeg-turbo |
 | **Lua** | 5.4.7 with its libraries; 16 of the 17 files of its test suite that were run pass (the 17th is too slow for the build service). Scripts need `.lua` names as the program `lua` sees them (`UnixEnv$lua$sfix`) |
 | **bzip2** | the library gives the bytes that the host's libbz2 gives; the program compresses, tests and decompresses |
 | **sqlite3** | 3.47.2 shell and library without WAL and without extensions; transactions, indexes and rollback work; the database file stays valid between runs |
@@ -163,6 +165,10 @@ What worked for the programs in the packages (all with `aarch64-riscos-gcc -muni
 6. **Pipes:** `pipe ()` is a scrap file and fits "write in the child, read in the parent". gawk is built with `-DPIPES_SIMULATED` and a small patch so that it uses `popen`; make's `$(shell)` has a patch for the same reason.
 7. **File names** in the package's own files (dots, suffixes) are the usual trouble: see [3.1](#31-file-names).
 8. **Test on Pyromaniac** with `tools/run_on_service.py` (a job is a list of commands and the files it needs; see the jobs `port_*` in it). Lines with `{` start RISC OS redirection and single quotes are not removed: put programs with such arguments in a script and run the script with `sh`.
+
+### Libraries
+
+`riscos64-libs-1.tar.xz` (a separate release) holds the static libraries and headers of zlib 1.3.1, expat 2.6.4, PCRE2 10.44, libpng 1.6.44 and libjpeg-turbo 3.0.4. Unpack it into the tool chain with `tar -xf riscos64-libs-1.tar.xz -C PREFIX/aarch64-riscos --strip-components=1` and link with `-lpng16 -lz`, `-ljpeg`, `-lexpat`, `-lpcre2-8`. `ports/build-more.sh` builds them and the programs above; `package-libs.sh` packs them.
 
 ## 9. Testing and building
 
