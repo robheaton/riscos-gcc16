@@ -1,5 +1,18 @@
 # Changelog
 
+## RISC OS 64 (AArch64) preview: releases of 18 October 2026
+
+The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac, not yet on a real RISC OS 64 machine); they are separate from the 32-bit releases below and are listed on the [releases page](https://github.com/robheaton/riscos-gcc16/releases) with names that start `riscos64-`:
+
+| Release | What it is |
+|---|---|
+| `riscos64-toolchain-0.2` to `-0.5` | the Linux cross compiler: 0.3 adds `wordexp`, POSIX timers and named semaphores; 0.4 adds `backtrace` and `crashsym`; 0.5 adds termcap and the window size |
+| `riscos64-gnu-tools-1` to `-6` | `!GNU`: `sh`, `sed`, `grep`, `gawk`, `make`, diff and find tools, `tar`, `gzip`, `xz`, `zstd`, `zip`, `jq`, `less`, `m4`, `bc` and more; 4 adds shell arrays, aliases and traps |
+| `riscos64-coreutils-9.5-1` to `-3` | `!CoreUtils`: the 102 programs of GNU coreutils 9.5 |
+| `riscos64-libs-1` | static zlib, expat, PCRE2, libpng and libjpeg-turbo |
+
+See [docs/USERLAND64.md](docs/USERLAND64.md) and [docs/AARCH64.md](docs/AARCH64.md).
+
 ## v16.2.0-24: 2026-10-14, UnixLib with the thread ticker of Andrew Youll's riscos-unixlib: a threaded program no longer makes other tasks abort
 
 | Asset | Version |

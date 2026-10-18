@@ -5,6 +5,22 @@
 
 `aarch64-riscos` is a real target of binutils 2.45.1 and GCC 16.2.0 (`aarch64-riscos-gcc`, `-g++`, `-as`, `-ld` ...). It runs on a PC (Linux) and makes programs and modules for 64-bit RISC OS.
 
+## Use the release (no build needed)
+
+Download `aarch64-riscos-gcc-16.2.0-0.5-linux-x86_64.tar.xz` (or a newer one) from the [releases page](https://github.com/robheaton/riscos-gcc16/releases) (the names start `riscos64-toolchain-`); you need Linux x86-64 with glibc 2.38 or newer.
+
+```
+tar -xf aarch64-riscos-gcc-16.2.0-0.5-linux-x86_64.tar.xz
+export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.5-linux-x86_64/bin:$PATH
+./aarch64-riscos-gcc-16.2.0-0.5-linux-x86_64/selftest.sh                 # builds three small programs and checks them
+aarch64-riscos-gcc -O2 -o hello,ff8 hello.c                              # the SDK C library (picolibc): small programs
+aarch64-riscos-gcc -munixlib -O2 -o prog,ff8 prog.c                      # UnixLib 64: Unix file names, vfork/exec, signals, threads, sockets
+aarch64-riscos-g++ -munixlib -pthread -O2 -o prog,ff8 prog.cc           # C++20 with the standard library and std::thread
+aarch64-riscos-gcc -mmodule -O2 mod.c mod_hdr.o -o Mod,ffa               # a 64-bit module (see MODULES64.md)
+```
+
+The programs have file type &FF8 (`,ff8`) and modules &FFA (`,ffa`); copy them to a RISC OS 64 machine or run them on the [RISC OS Pyromaniac](https://github.com/gerph/pyromaniac) emulator. The libraries zlib, expat, PCRE2, libpng and libjpeg-turbo are a separate download, `riscos64-libs-1`: `tar -xf riscos64-libs-1.tar.xz -C PREFIX/aarch64-riscos --strip-components=1` (PREFIX is the directory you unpacked the tool chain into), then link with `-lz`, `-lpng16`, `-ljpeg`, `-lexpat` or `-lpcre2-8`. `bin/riscos64-crashsym` names the addresses of a crash report from a link map (`-Wl,-Map=prog.map`). The shell and the GNU tools are the `!GNU` and `!CoreUtils` applications: [USERLAND64.md](USERLAND64.md). Programs that need `fork` (`bash`, servers) do not work: see its limits table.
+
 ## Build it
 
 ```
