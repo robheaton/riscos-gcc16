@@ -28,6 +28,7 @@
 
 extern char **environ;
 extern const char *__riscos_path (const char *name, char *buf, int create_dir);
+extern int __ul64_system_raw (const char *cmd);	/* the command line to the operating system, as it is (system () would use this shell again) */
 
 /* ------------------------------------------------------------------------------------------------------ strings */
 typedef struct { char *s; size_t n, cap; } str;
@@ -652,7 +653,7 @@ static int can_redirect (void)
       redirect_ok = 0;
       ros (t, rb, sizeof rb);
       snprintf (cmd, sizeof cmd, "Set Sh$Probe 1 { > %s }", rb);	/* with the redirection the (empty) file is made; without, nothing is written or shown */
-      system (cmd);
+      __ul64_system_raw (cmd);
       if (access (t, F_OK) == 0) redirect_ok = 1;
       remove (t); free (t);
     }
@@ -717,17 +718,17 @@ static int run_command_line (const char *cmdline, struct sink *out, const char *
     {
       ros (outpath, rb, sizeof rb);
       if (use_redirect) { snprintf (tmp, sizeof tmp, " { > %s }", rb); sb_adds (&c, tmp); }
-      else { snprintf (tmp, sizeof tmp, "Spool %s", rb); system (tmp); spool = 1; }
+      else { snprintf (tmp, sizeof tmp, "Spool %s", rb); __ul64_system_raw (tmp); spool = 1; }
     }
   if (in_path)
     {
       ros (in_path, rb, sizeof rb);
       if (use_redirect) { snprintf (tmp, sizeof tmp, " { < %s }", rb); sb_adds (&c, tmp); }
-      else { snprintf (tmp, sizeof tmp, "Exec %s", rb); system (tmp); exec_in = 1; }
+      else { snprintf (tmp, sizeof tmp, "Exec %s", rb); __ul64_system_raw (tmp); exec_in = 1; }
     }
-  status = system (c.s);
-  if (exec_in) system ("Exec");
-  if (spool) system ("Spool");
+  status = __ul64_system_raw (c.s);
+  if (exec_in) __ul64_system_raw ("Exec");
+  if (spool) __ul64_system_raw ("Spool");
   if (append_after && scrap)
     {
       FILE *f = fopen (scrap, "r");
@@ -743,6 +744,41 @@ static int run_command_line (const char *cmdline, struct sink *out, const char *
   return WIFEXITED (status) ? WEXITSTATUS (status) : 128 + (WIFSIGNALED (status) ? WTERMSIG (status) : 1);
 }
 
+static char *self_path;				/* this shell, for running scripts */
+/* a file that is text (or starts with #!) is a script for this shell */
+static int is_script (const char *path)
+{
+  FILE *f = fopen (path, "rb");
+  unsigned char b[256];
+  size_t n, i;
+  if (!f) return 0;
+  n = fread (b, 1, sizeof b, f);
+  fclose (f);
+  if (n == 0) return 1;				/* an empty file: a script that does nothing */
+  if (n >= 2 && b[0] == '#' && b[1] == '!') return 1;
+  for (i = 0; i < n; i++) if (b[i] == 0 || (b[i] < 32 && b[i] != '\n' && b[i] != '\r' && b[i] != '\t' && b[i] != 12)) return 0;
+  return 1;
+}
+/* A name that is not a file in PATH is a command of the operating system only if it is one that RISC OS has (the operating system would otherwise be asked, and it can hang waiting for the keyboard on an
+   unknown command), or an Alias$ variable, or starts with *. */
+extern unsigned long swi_x (unsigned long swi, unsigned long regs[10]);
+static int is_ros_command (const char *name)
+{
+  static const char *const known[] = { "cat", "copy", "delete", "dir", "cdir", "count", "create", "ex", "info", "lcat", "lex", "list", "lib", "back", "rename", "type", "wipe", "access", "stamp", "settype",
+    "set", "seteval", "setmacro", "unset", "show", "echo", "fx", "run", "obey", "spool", "exec", "rmload", "rmkill", "rmensure", "rmreinit", "modules", "wimpslot", "help", "time", "desktop", "filer_run", "filer_opendir",
+    "configure", "status", "ifthere", "x", "shut", "shutdown", "mount", "dismount", "free", "bye", "up", "opt", "title", "pointer", "iconsprites", "unalias", "alias", "key", "memoryi", "memory", "go", "load", "save", "print",
+    "quit", "sync", "screenload", "screensave", "spritefile", "ttyexec", "ttyspool", "ttyspoolon", "ttyspooloff", "close", "cache", "shadow", "tv", "wimpmode", "uptime", 0 };
+  char low[64], var[96];
+  size_t i;
+  unsigned long r[10];
+  if (name[0] == '*') return 1;
+  for (i = 0; name[i] && i < sizeof low - 1; i++) low[i] = (char) (name[i] >= 'A' && name[i] <= 'Z' ? name[i] + 32 : name[i]);
+  low[i] = 0;
+  for (i = 0; known[i]; i++) if (!strcmp (low, known[i])) return 1;
+  snprintf (var, sizeof var, "Alias$%s", name);
+  { char buf[8]; r[0] = (unsigned long) var; r[1] = (unsigned long) buf; r[2] = sizeof buf - 1; r[3] = 0; r[4] = 0; if (!swi_x (0x23, r)) return 1; }
+  return 0;
+}
 static void touch_file (const char *path) { FILE *f = fopen (path, "a"); if (f) fclose (f); }
 static char *saved_env (const char *name) { const char *v = getenv (name); return v ? strdup (v) : 0; }
 static void restore_env (const char *name, char *old) { if (old) { setenv (name, old, 1); free (old); } else unsetenv (name); }
@@ -756,13 +792,24 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
   sb_init (&c);
   if (!prog)
     {
-      if (strchr (argv->v[0], '/')) { fprintf (stderr, "sh: %s: not found\n", argv->v[0]); return 127; }
+      if (strchr (argv->v[0], '/') || !is_ros_command (argv->v[0])) { fprintf (stderr, "sh: %s: not found\n", argv->v[0]); return 127; }
       /* a command of the operating system: its screen output is captured with { > } or *Spool, its input is not available */
       sb_adds (&c, argv->v[0]);
       for (i = 1; i < argv->n; i++) quote_arg (&c, argv->v[i]);
       status = run_command_line (c.s, out, 0);
       sb_free (&c);
       return status;
+    }
+  if (self_path && is_script (prog))
+    {
+      list sa = { 0, 0, 0 };
+      int k, r;
+      l_add (&sa, self_path); l_add (&sa, prog);
+      for (k = 1; k < argv->n; k++) l_add (&sa, argv->v[k]);
+      r = run_external (&sa, out, in_path, err);
+      free (sa.v);
+      free (prog);
+      return r;
     }
   /* a program of the SDK: its standard streams are set with the variables Sh$Stdin, Sh$Stdout, Sh$Stderr (the library of the program reads them) */
   {
@@ -785,7 +832,7 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
       }
     else if (err->kind != K_CONSOLE && same_sink (err, out)) setenv ("Sh$Stderr", "stdout", 1);
     fflush (stdout); fflush (stderr);
-    status = system (c.s);
+    status = __ul64_system_raw (c.s);
     restore_env ("Sh$Stdin", o_in); restore_env ("Sh$Stdout", o_out); restore_env ("Sh$Stderr", o_err);
     if (scrap)
       {
@@ -2354,6 +2401,7 @@ int main (int argc, char **argv)
   char cwd[1024];
   char **env;
   arg0 = argv[0];
+  self_path = strdup (argv[0]);
   for (env = environ; env && *env; env++)
     {
       char *eq = strchr (*env, '=');

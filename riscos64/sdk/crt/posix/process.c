@@ -215,6 +215,9 @@ static int run_user (const char *cmd)
   return run (cmd);
 }
 
+/* the command line as it is, for the operating system: no sh -c and no change of the name (the shell uses it to start programs) */
+int __ul64_system_raw (const char *cmd) { return run_translated (cmd); }
+
 int system (const char *cmd)
 {
   if (!cmd) return 1;					/* a command processor is there */
