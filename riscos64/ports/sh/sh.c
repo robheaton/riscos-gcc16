@@ -15,6 +15,7 @@
 #include <glob.h>
 #include <limits.h>
 #include <regex.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +75,11 @@ static struct var *vars;
 static char **pos_params; static int npos;		/* $1 ... */
 static char *arg0;
 static int last_status, bg_pid;
+/* background jobs run to their end at once: their status is kept for  wait PID  */
+static struct { int pid, status; } jobs_[64];
+static void job_add (int pid, int status) { jobs_[pid % 64].pid = pid; jobs_[pid % 64].status = status; }
+static int job_known (int pid) { return pid > 0 && jobs_[pid % 64].pid == pid; }
+static int job_status (int pid) { return job_known (pid) ? jobs_[pid % 64].status : 127; }
 static int opt_e, opt_x, opt_u, opt_f, opt_n, opt_pipefail;
 
 static struct var *find_var (const char *name)
@@ -88,6 +94,10 @@ static void sync_env (struct var *v)
   if (v->exported && v->value) setenv (v->name, v->value, 1);
   else if (!v->value || !v->exported) unsetenv (v->name);
 }
+struct arr;
+static struct arr *find_arr (const char *name);
+static void arr_set (struct arr *a, int idx, const char *val);
+static int arr_syncing;
 static int set_var (const char *name, const char *value)
 {
   struct var *v = find_var (name);
@@ -96,6 +106,7 @@ static int set_var (const char *name, const char *value)
   free (v->value);
   v->value = value ? strdup (value) : 0;
   if (v->exported) sync_env (v);
+  if (!arr_syncing && value) { struct arr *a = find_arr (name); if (a) { arr_syncing++; arr_set (a, 0, value); arr_syncing--; } }
   return 0;
 }
 static void export_var (const char *name, const char *value)
@@ -107,13 +118,59 @@ static void export_var (const char *name, const char *value)
   v->exported = 1;
   if (v->value) sync_env (v);
 }
+static void arr_remove (const char *name);
 static void unset_var (const char *name)
 {
   struct var *v = find_var (name);
   if (!v || v->readonly) return;
   free (v->value); v->value = 0;
   unsetenv (name);
+  arr_remove (name);
 }
+/* ---- indexed arrays (bash style): a[i]=v  a=(x y z)  a+=(w)  ${a[i]} ${a[@]} ${#a[@]} ${!a[@]}  unset a[i].  The scalar variable of the same name always holds element 0, so $a works. ---- */
+struct arr { char *name; char **v; int n; struct arr *next; };	/* v[i] is NULL for an index that is not set */
+static struct arr *arrays;
+static struct arr *find_arr (const char *name)
+{
+  struct arr *a;
+  for (a = arrays; a; a = a->next) if (!strcmp (a->name, name)) return a;
+  return 0;
+}
+static void arr_clear (struct arr *a) { int i; for (i = 0; i < a->n; i++) free (a->v[i]); free (a->v); a->v = 0; a->n = 0; }
+static int set_var (const char *name, const char *value);
+static void arr_sync (struct arr *a)
+{
+  int i;
+  arr_syncing++;
+  for (i = 0; i < a->n && !a->v[i]; i++) ;
+  if (i < a->n) set_var (a->name, a->v[i]); else set_var (a->name, "");
+  arr_syncing--;
+}
+static struct arr *make_arr (const char *name)
+{
+  struct arr *a = find_arr (name);
+  const char *old;
+  if (a) return a;
+  a = calloc (1, sizeof *a); a->name = strdup (name); a->next = arrays; arrays = a;
+  old = get_var (name);
+  if (old) { a->v = calloc (1, sizeof *a->v); a->v[0] = strdup (old); a->n = 1; }
+  return a;
+}
+static void arr_set (struct arr *a, int idx, const char *val)
+{
+  if (idx < 0) idx = 0;
+  if (idx >= a->n) { a->v = realloc (a->v, (size_t) (idx + 1) * sizeof *a->v); memset (a->v + a->n, 0, (size_t) (idx + 1 - a->n) * sizeof *a->v); a->n = idx + 1; }
+  free (a->v[idx]); a->v[idx] = strdup (val);
+  arr_sync (a);
+}
+static int arr_count (struct arr *a) { int i, c = 0; for (i = 0; i < a->n; i++) if (a->v[i]) c++; return c; }
+static void arr_remove (const char *name)
+{
+  struct arr **pp;
+  for (pp = &arrays; *pp; pp = &(*pp)->next)
+    if (!strcmp ((*pp)->name, name)) { struct arr *a = *pp; *pp = a->next; arr_clear (a); free (a->name); free (a); return; }
+}
+
 static int valid_name (const char *s)
 {
   if (!(isalpha ((unsigned char) *s) || *s == '_')) return 0;
@@ -145,7 +202,7 @@ static struct func *funcs;
 /* ------------------------------------------------------------------------------------------------------ the lexer */
 enum { T_EOF, T_NL, T_WORD, T_IONUM, T_SEMI, T_DSEMI, T_AMP, T_AND, T_OR, T_PIPE, T_LP, T_RP, T_LESS, T_GREAT, T_DGREAT, T_DLESS, T_DLESSDASH, T_LESSAND, T_GREATAND, T_LESSGREAT };
 struct heredoc_wait { struct redir *r; char *delim; int strip; struct heredoc_wait *next; };
-struct parser { size_t line, tok_line; const char *s; size_t pos, len; int tok; char *word; int peeked; struct heredoc_wait *pending, **pend_tail; const char *name; };
+struct parser { size_t line, tok_line; const char *s; size_t pos, len; int tok; char *word; int peeked; struct heredoc_wait *pending, **pend_tail; const char *name; char *no_alias; };
 
 static int p_getc (struct parser *p)
 {
@@ -261,6 +318,23 @@ static void lex_dollar (struct parser *p, str *b)
     }
 }
 
+static int assignment_word (const char *w);
+/* inside  name=( ... )  : read up to the matching ) */
+static void lex_arraylit (struct parser *p, str *b)
+{
+  int depth = 1, c;
+  while ((c = p_getc (p)) >= 0)
+    {
+      sb_addc (b, (char) c);
+      if (c == '(') depth++;
+      else if (c == ')') { if (--depth == 0) return; }
+      else if (c == '\\') { int d = p_getc (p); if (d >= 0) sb_addc (b, (char) d); }
+      else if (c == '\'') lex_quoted_until (p, b, '\'', 0);
+      else if (c == '"') lex_quoted_until (p, b, '"', 1);
+      else if (c == '$') lex_dollar (p, b);
+    }
+  syntax (p, "unterminated array assignment");
+}
 static int is_meta (int c) { return c == ' ' || c == '\t' || c == '\n' || c == ';' || c == '&' || c == '|' || c == '(' || c == ')' || c == '<' || c == '>'; }
 
 static int lex (struct parser *p)
@@ -302,9 +376,10 @@ static int lex (struct parser *p)
   {
     str b; int digits = 1;
     sb_init (&b);
-    while ((c = p_peekc (p)) >= 0 && !is_meta (c))
+    while ((c = p_peekc (p)) >= 0 && (!is_meta (c) || (c == '(' && b.n > 0 && b.s[b.n - 1] == '=' && assignment_word (b.s))))
       {
 	p->pos++;
+	if (c == '(') { sb_addc (&b, '('); lex_arraylit (p, &b); digits = 0; continue; }
 	if (!isdigit (c)) digits = 0;
 	sb_addc (&b, (char) c);
 	if (c == '\\') { int d = p_getc (p); if (d == '\n') b.n--; else if (d >= 0) sb_addc (&b, (char) d); b.s[b.n] = 0; }
@@ -366,16 +441,21 @@ static struct redir *parse_redir (struct parser *p)
 
 static int assignment_word (const char *w)
 {
-  const char *e = strchr (w, '=');
+  /* name=  name+=  name[expr]=  name[expr]+= */
+  const char *e = w;
   size_t n;
   char name[256];
-  if (!e || e == w) return 0;
+  if (!(isalpha ((unsigned char) *e) || *e == '_')) return 0;
+  while (isalnum ((unsigned char) *e) || *e == '_') e++;
   n = (size_t) (e - w);
   if (n >= sizeof name) return 0;
   memcpy (name, w, n); name[n] = 0;
-  return valid_name (name);
+  if (*e == '[') { int d = 0; for (; *e; e++) { if (*e == '[') d++; else if (*e == ']' && --d == 0) { e++; break; } } if (d) return 0; }
+  if (*e == '+') e++;
+  return *e == '=';
 }
 
+static const char *find_alias (const char *name);
 static struct node *parse_simple (struct parser *p)
 {
   struct node *n = new_node (N_SIMPLE);
@@ -388,10 +468,27 @@ static struct node *parse_simple (struct parser *p)
       int t = peek (p);
       if (t == T_IONUM || is_redir_tok (t)) { *tail = parse_redir (p); tail = &(*tail)->next; continue; }
       if (t != T_WORD) break;
+      if (!seen_word && !assignment_word (p->word) && strspn (p->word, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_!%,@-.") == strlen (p->word))
+	{
+	  const char *val = find_alias (p->word);
+	  if (val && !(p->no_alias && !strcmp (p->no_alias, p->word)))
+	    {
+	      /* replace the word by the text of the alias; the word is not looked at again in this command */
+	      size_t rest = p->len - p->pos;
+	      char *nb = malloc (strlen (val) + rest + 1);
+	      strcpy (nb, val);
+	      memcpy (nb + strlen (val), p->s + p->pos, rest);
+	      nb[strlen (val) + rest] = 0;
+	      free (p->no_alias); p->no_alias = strdup (p->word);
+	      p->s = nb; p->pos = 0; p->len = strlen (nb); p->peeked = 0;
+	      continue;
+	    }
+	}
       if (!seen_word && assignment_word (p->word)) l_add (&n->assigns, strdup (p->word));
       else { seen_word = 1; l_add (&n->words, strdup (p->word)); }
       next (p);
     }
+  free (p->no_alias); p->no_alias = 0;
   return n;
 }
 
@@ -1042,6 +1139,7 @@ static const char *special_param (char c, char *buf, size_t size)
 
 static char *expand_str (const char *raw);		/* no splitting, no pattern matching: assignments, redirections */
 static char *expand_pattern (const char *raw);
+static int do_assign (const char *raw);
 
 /* the value of a parameter reference name; *set tells if it is set */
 static const char *param_value (const char *name, int *set, char *buf, size_t size)
@@ -1172,6 +1270,67 @@ static void expand_dollar (struct xctx *x, const char **pp, int in_dq)
       for (; *q; q++) { if (*q == '{') depth++; else if (*q == '}') { if (--depth == 0) break; } else if (*q == '\\' && q[1]) q++; }
       inner = strndup (p + 1, (size_t) (q - p) - 1);
       *pp = *q ? q + 1 : q;
+      {
+	/* ${a[i]} ${a[@]} ${a[*]} ${#a[@]} ${#a[i]} ${!a[@]} ${a[@]:off:len} */
+	const char *q = inner;
+	int len_of = 0, keys = 0;
+	char an[256]; size_t k = 0;
+	if (*q == '#') { len_of = 1; q++; } else if (*q == '!') { keys = 1; q++; }
+	while ((isalnum ((unsigned char) *q) || *q == '_') && k < sizeof an - 1) an[k++] = *q++;
+	an[k] = 0;
+	if (k && *q == '[' && (isalpha ((unsigned char) an[0]) || an[0] == '_'))
+	  {
+	    const char *cl = q; int d = 0;
+	    for (; *cl; cl++) { if (*cl == '[') d++; else if (*cl == ']' && --d == 0) break; }
+	    if (*cl)
+	      {
+		char *ix = strndup (q + 1, (size_t) (cl - q - 1));
+		const char *rest = cl + 1;
+		struct arr *a = find_arr (an);
+		int all = !strcmp (ix, "@") || !strcmp (ix, "*");
+		int at = !strcmp (ix, "@"), i;
+		if (!a && get_var (an)) a = make_arr (an);
+		if (len_of && all) { char num[32]; snprintf (num, sizeof num, "%d", a ? arr_count (a) : 0); add_expansion (x, num, strlen (num), in_dq); }
+		else if (len_of) { char *ex = expand_str (ix), num[32]; long i2 = arith (ex); snprintf (num, sizeof num, "%zu", a && i2 >= 0 && i2 < a->n && a->v[i2] ? strlen (a->v[i2]) : 0); add_expansion (x, num, strlen (num), in_dq); free (ex); }
+		else if (keys)
+		  {
+		    int first = 1;
+		    for (i = 0; a && i < a->n; i++) if (a->v[i])
+		      { char num[32]; snprintf (num, sizeof num, "%d", i); if (at && in_dq) { if (!first) emit_field (x); f_add (&x->cur, num, strlen (num), 1); } else { if (!first) add_expansion (x, " ", 1, in_dq); add_expansion (x, num, strlen (num), in_dq); } first = 0; }
+		  }
+		else if (all)
+		  {
+		    long off = 0, cnt = -1, seen = 0;
+		    int first = 1;
+		    if (*rest == ':') { char *r2 = expand_str (rest + 1), *c2 = strchr (r2, ':'); if (c2) *c2++ = 0; off = arith (r2); if (c2) cnt = arith (c2); free (r2); }
+		    if (off < 0) { off += a ? arr_count (a) : 0; if (off < 0) off = 0; }
+		    for (i = 0; a && i < a->n; i++) if (a->v[i])
+		      {
+			if (seen++ < off) continue;
+			if (cnt >= 0 && cnt-- == 0) break;
+			if (at && in_dq) { if (!first) emit_field (x); f_add (&x->cur, a->v[i], strlen (a->v[i]), 1); }
+			else { const char *ifs_ = get_var ("IFS"); char sp[2] = { in_dq && !at && ifs_ ? ifs_[0] : ' ', 0 }; if (!first) add_expansion (x, sp, 1, in_dq); add_expansion (x, a->v[i], strlen (a->v[i]), in_dq); }
+			first = 0;
+		      }
+		    if (first && at && in_dq) x->cur.started = x->cur.started;
+		  }
+		else
+		  {
+		    char *ex = expand_str (ix);
+		    long i2 = arith (ex);
+		    if (a && i2 < 0) i2 += a->n;
+		    const char *v = a && i2 >= 0 && i2 < a->n ? a->v[i2] : 0;
+		    if (!v && !a && i2 == 0) v = get_var (an);
+		    if (!v && rest[0] == ':' && rest[1] == '-') { char *w2 = expand_str (rest + 2); add_expansion (x, w2, strlen (w2), in_dq); free (w2); }
+		    else if (!v && rest[0] == '-') { char *w2 = expand_str (rest + 1); add_expansion (x, w2, strlen (w2), in_dq); free (w2); }
+		    else if (v) add_expansion (x, v, strlen (v), in_dq);
+		    free (ex);
+		  }
+		free (ix); free (inner);
+		return;
+	      }
+	  }
+      }
       if (inner[0] == '#' && inner[1])		/* ${#x} */
 	{
 	  char num[32];
@@ -1749,8 +1908,28 @@ static int bi_read (int argc, char **argv)
 {
   int i = 1, raw = 0, r;
   str line; sb_init (&line);
-  while (i < argc && argv[i][0] == '-' && argv[i][1]) { if (!strcmp (argv[i], "-r")) raw = 1; i++; }
+  const char *into_arr = 0;
+  while (i < argc && argv[i][0] == '-' && argv[i][1]) { if (!strcmp (argv[i], "-r")) raw = 1; else if (!strcmp (argv[i], "-a") && i + 1 < argc) { into_arr = argv[++i]; } i++; }
   r = read_line_from_input (&line, raw);
+  if (into_arr)
+    {
+      struct arr *a = make_arr (into_arr);
+      const char *p = line.s ? line.s : "", *ifs = ifs_chars ();
+      int k = 0;
+      arr_clear (a);
+      for (;;)
+	{
+	  size_t n;
+	  while (*p && strchr (ifs, *p) && (*p == ' ' || *p == '\t')) p++;
+	  if (!*p) break;
+	  n = 0; while (p[n] && !strchr (ifs, p[n])) n++;
+	  { char *w = strndup (p, n); arr_set (a, k++, w); free (w); }
+	  p += n; if (*p) p++;
+	}
+      if (!k) arr_sync (a);
+      sb_free (&line);
+      return r < 0 ? 1 : 0;
+    }
   if (i >= argc) { set_var ("REPLY", line.s ? line.s : ""); sb_free (&line); return r < 0 ? 1 : 0; }
   {
     const char *p = line.s ? line.s : "", *ifs = ifs_chars ();
@@ -1868,12 +2047,53 @@ static int bi_readonly (int argc, char **argv)
     }
   return 0;
 }
+static int bi_declare (int argc, char **argv)
+{
+  int i, isarr = 0, ro = 0, ex = 0, print = 0, r = 0;
+  for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1]; i++)
+    {
+      const char *c;
+      for (c = argv[i] + 1; *c; c++) { if (*c == 'a' || *c == 'A') isarr = 1; else if (*c == 'r') ro = 1; else if (*c == 'x') ex = 1; else if (*c == 'p') print = 1; }
+    }
+  for (; i < argc; i++)
+    {
+      char *eq = strchr (argv[i], '='), *nm = eq ? strndup (argv[i], (size_t) (eq - argv[i])) : strdup (argv[i]);
+      if (print)
+	{
+	  struct arr *a = find_arr (nm);
+	  const char *v = get_var (nm);
+	  if (a) { int k, first = 1; out_printf (&cur_out, "declare -a %s=(", nm); for (k = 0; k < a->n; k++) if (a->v[k]) { out_printf (&cur_out, "%s[%d]=\"%s\"", first ? "" : " ", k, a->v[k]); first = 0; } out_printf (&cur_out, ")\n"); }
+	  else if (v) out_printf (&cur_out, "declare -- %s=\"%s\"\n", nm, v);
+	  else r = 1;
+	  free (nm);
+	  continue;
+	}
+      if (eq && do_assign (argv[i])) r = 1;
+      else if (!eq && isarr) make_arr (nm);
+      if (ro) { struct var *v = find_var (nm); if (v) v->readonly = 1; }
+      if (ex) export_var (nm, 0);
+      free (nm);
+    }
+  return r;
+}
 static int bi_unset (int argc, char **argv)
 {
   int i;
   for (i = 1; i < argc; i++)
     {
       if (!strcmp (argv[i], "-f") || !strcmp (argv[i], "-v")) continue;
+      {
+	char *br = strchr (argv[i], '[');
+	if (br && argv[i][strlen (argv[i]) - 1] == ']')
+	  {
+	    char *nm = strndup (argv[i], (size_t) (br - argv[i])), *ix = strndup (br + 1, strlen (br) - 2), *ex = expand_str (ix);
+	    struct arr *a = find_arr (nm);
+	    long k = arith (ex);
+	    if (a && k >= 0 && k < a->n) { free (a->v[k]); a->v[k] = 0; arr_sync (a); }
+	    free (nm); free (ix); free (ex);
+	    continue;
+	  }
+      }
       unset_var (argv[i]);
     }
   return 0;
@@ -1958,24 +2178,161 @@ static int bi_local (int argc, char **argv)
   int i;
   for (i = 1; i < argc; i++)
     {
-      char *eq = strchr (argv[i], '=');
-      struct localsave *l = calloc (1, sizeof *l);
+      char *eq;
+      struct localsave *l;
       const char *old;
+      if (argv[i][0] == '-' && argv[i][1]) continue;
+      eq = strchr (argv[i], '=');
+      l = calloc (1, sizeof *l);
       if (eq) *eq = 0;
       old = get_var (argv[i]);
       l->name = strdup (argv[i]); l->had = old != 0; l->old = old ? strdup (old) : 0;
       l->next = locals; locals = l;
-      if (eq) { set_var (argv[i], eq + 1); *eq = '='; } else unset_var (argv[i]);
+      if (eq) { *eq = '='; do_assign (argv[i]); } else unset_var (argv[i]);
     }
   return 0;
 }
+/* ---- traps: EXIT, ERR, and the signals that can arrive here (kill -SIG $$, Escape = INT, alarm ...); a handler only notes the signal, the trap command runs after the current command ---- */
+static const struct { const char *name; int num; } sig_names[] = {
+  { "HUP", SIGHUP }, { "INT", SIGINT }, { "QUIT", SIGQUIT }, { "ILL", SIGILL }, { "ABRT", SIGABRT }, { "FPE", SIGFPE }, { "KILL", SIGKILL }, { "SEGV", SIGSEGV }, { "PIPE", SIGPIPE },
+  { "ALRM", SIGALRM }, { "TERM", SIGTERM }, { "USR1", SIGUSR1 }, { "USR2", SIGUSR2 }, { "CHLD", SIGCHLD }, { 0, 0 } };
+#define NTRAP 64
+static char *traps[NTRAP];
+static volatile sig_atomic_t trap_pending[NTRAP], any_trap;
+static char *trap_err;
+static int in_trap;
+static void on_trap_signal (int sig) { if (sig > 0 && sig < NTRAP) { trap_pending[sig] = 1; any_trap = 1; } }
+static int sig_from_name (const char *n)
+{
+  int i;
+  if (isdigit ((unsigned char) n[0])) return atoi (n);
+  if (!strncmp (n, "SIG", 3)) n += 3;
+  for (i = 0; sig_names[i].name; i++) if (!strcmp (n, sig_names[i].name)) return sig_names[i].num;
+  return -1;
+}
+static int exec_string (const char *text, const char *name);
+static void run_pending_traps (void)
+{
+  int sig;
+  if (in_trap) return;
+  any_trap = 0;
+  for (sig = 1; sig < NTRAP; sig++)
+    if (trap_pending[sig])
+      {
+	trap_pending[sig] = 0;
+	if (traps[sig] && traps[sig][0])
+	  {
+	    int saved = last_status;
+	    in_trap++;
+	    exec_string (traps[sig], "trap");
+	    in_trap--;
+	    last_status = saved;
+	  }
+      }
+}
+static void run_err_trap (void)
+{
+  int saved = last_status;
+  char *t;
+  if (!trap_err || !trap_err[0] || in_trap) return;
+  t = strdup (trap_err);
+  in_trap++;
+  exec_string (t, "trap");
+  in_trap--;
+  free (t);
+  last_status = saved;
+}
 static int bi_trap (int argc, char **argv)
 {
-  if (argc >= 3 && !strcmp (argv[argc - 1], "EXIT")) { free (trap_exit); trap_exit = strdup (argv[1]); }
-  if (argc >= 3 && !strcmp (argv[argc - 1], "0")) { free (trap_exit); trap_exit = strdup (argv[1]); }
+  int i = 1, sig;
+  const char *action;
+  if (argc == 1 || (argc == 2 && !strcmp (argv[1], "-p")))
+    {
+      if (trap_exit) out_printf (&cur_out, "trap -- '%s' EXIT\n", trap_exit);
+      if (trap_err) out_printf (&cur_out, "trap -- '%s' ERR\n", trap_err);
+      for (sig = 1; sig < NTRAP; sig++) if (traps[sig]) { int k; for (k = 0; sig_names[k].name; k++) if (sig_names[k].num == sig) out_printf (&cur_out, "trap -- '%s' SIG%s\n", traps[sig], sig_names[k].name); }
+      return 0;
+    }
+  if (!strcmp (argv[1], "-l")) { int k; for (k = 0; sig_names[k].name; k++) out_printf (&cur_out, "%d) SIG%s\n", sig_names[k].num, sig_names[k].name); return 0; }
+  if (!strcmp (argv[1], "--")) i++;
+  if (i >= argc) return 0;
+  if (isdigit ((unsigned char) argv[i][0]) && !argv[i][1 + strspn (argv[i] + 1, "0123456789")]) action = "-";		/* trap 2 : reset */
+  else action = argv[i++];
+  for (; i < argc; i++)
+    {
+      const char *nm = argv[i];
+      int reset = !strcmp (action, "-"), ignore = !action[0];
+      if (!strcmp (nm, "EXIT") || !strcmp (nm, "0")) { free (trap_exit); trap_exit = reset ? 0 : strdup (action); continue; }
+      if (!strcmp (nm, "ERR")) { free (trap_err); trap_err = reset ? 0 : strdup (action); continue; }
+      if (!strcmp (nm, "DEBUG") || !strcmp (nm, "RETURN")) continue;
+      sig = sig_from_name (nm);
+      if (sig <= 0 || sig >= NTRAP || sig == SIGKILL) { errf ("sh: trap: %s: bad trap\n", nm); return 1; }
+      free (traps[sig]); traps[sig] = 0;
+      if (reset) signal (sig, SIG_DFL);
+      else if (ignore) { traps[sig] = strdup (""); signal (sig, SIG_IGN); }
+      else { traps[sig] = strdup (action); signal (sig, on_trap_signal); }
+    }
   return 0;
 }
-static int bi_wait (int argc, char **argv) { (void) argc; (void) argv; return 0; }
+static int bi_kill (int argc, char **argv)
+{
+  int i = 1, sig = SIGTERM, r = 0;
+  if (argc >= 2 && !strcmp (argv[1], "-l")) { int k; for (k = 0; sig_names[k].name; k++) out_printf (&cur_out, "%s%s", k ? " " : "", sig_names[k].name); outs ("\n"); return 0; }
+  if (argc >= 3 && !strcmp (argv[1], "-s")) { sig = sig_from_name (argv[2]); i = 3; }
+  else if (argc >= 2 && argv[1][0] == '-' && argv[1][1]) { sig = sig_from_name (argv[1] + 1); i = 2; }
+  if (sig < 0) { errf ("sh: kill: bad signal\n"); return 1; }
+  if (i >= argc) { errf ("sh: kill: usage: kill [-s sig] pid ...\n"); return 2; }
+  for (; i < argc; i++)
+    {
+      int pid = atoi (argv[i]);
+      if (pid == (int) getpid () || pid == 0) { if (sig == 0) continue; raise (sig); }
+      else if (pid > 0 && job_known (pid)) { /* a background job has already run to its end */ errf ("sh: kill: (%d) - No such process\n", pid); r = 1; }
+      else { errf ("sh: kill: (%d) - No such process\n", pid); r = 1; }
+    }
+  return r;
+}
+/* ---- aliases: replaced in the text before the parser reads a command word (see parse_simple) ---- */
+struct alias_ { char *name, *value; struct alias_ *next; };
+static struct alias_ *aliases_;
+static const char *find_alias (const char *name) { struct alias_ *a; for (a = aliases_; a; a = a->next) if (!strcmp (a->name, name)) return a->value; return 0; }
+static int bi_alias (int argc, char **argv)
+{
+  int i, r = 0;
+  if (argc == 1) { struct alias_ *a; for (a = aliases_; a; a = a->next) out_printf (&cur_out, "alias %s='%s'\n", a->name, a->value); return 0; }
+  for (i = 1; i < argc; i++)
+    {
+      char *eq = strchr (argv[i], '=');
+      if (!eq) { const char *v = find_alias (argv[i]); if (v) out_printf (&cur_out, "alias %s='%s'\n", argv[i], v); else { errf ("sh: alias: %s: not found\n", argv[i]); r = 1; } continue; }
+      {
+	char *nm = strndup (argv[i], (size_t) (eq - argv[i]));
+	struct alias_ *a;
+	for (a = aliases_; a; a = a->next) if (!strcmp (a->name, nm)) break;
+	if (a) { free (a->value); a->value = strdup (eq + 1); free (nm); }
+	else { a = calloc (1, sizeof *a); a->name = nm; a->value = strdup (eq + 1); a->next = aliases_; aliases_ = a; }
+      }
+    }
+  return r;
+}
+static int bi_unalias (int argc, char **argv)
+{
+  int i, r = 0;
+  for (i = 1; i < argc; i++)
+    {
+      struct alias_ **pp;
+      if (!strcmp (argv[i], "-a")) { while (aliases_) { struct alias_ *a = aliases_; aliases_ = a->next; free (a->name); free (a->value); free (a); } continue; }
+      for (pp = &aliases_; *pp; pp = &(*pp)->next)
+	if (!strcmp ((*pp)->name, argv[i])) { struct alias_ *a = *pp; *pp = a->next; free (a->name); free (a->value); free (a); break; }
+      if (!*pp && !find_alias (argv[i])) { /* removed above, or not there */ }
+    }
+  return r;
+}
+static int bi_wait (int argc, char **argv)
+{
+  int i, r = 0;
+  for (i = 1; i < argc; i++) { int pid = atoi (argv[i]); r = job_known (pid) ? job_status (pid) : 127; }
+  return r;
+}
+static int bi_jobs (int argc, char **argv) { (void) argc; (void) argv; return 0; }
 static int bi_umask (int argc, char **argv) { (void) argc; (void) argv; if (argc == 1) outs ("0022\n"); return 0; }
 static int bi_true0 (int argc, char **argv) { (void) argc; (void) argv; return 0; }
 static int bi_sleep (int argc, char **argv)
@@ -2236,10 +2593,10 @@ struct builtin { const char *name; builtin_fn fn; int special; };
 static const struct builtin builtins[] = {
   { ":", bi_colon, 1 }, { ".", bi_dot, 1 }, { "source", bi_dot, 1 }, { "break", bi_break, 1 }, { "continue", bi_continue, 1 }, { "eval", bi_eval, 1 }, { "exit", bi_exit, 1 }, { "export", bi_export, 1 },
   { "readonly", bi_readonly, 1 }, { "return", bi_return, 1 }, { "set", bi_set, 1 }, { "shift", bi_shift, 1 }, { "trap", bi_trap, 1 }, { "unset", bi_unset, 1 }, { "exec", bi_exec_dummy, 1 },
-  { "echo", bi_echo, 0 }, { "printf", bi_printf, 0 }, { "cd", bi_cd, 0 }, { "pwd", bi_pwd, 0 }, { "test", bi_test, 0 }, { "[", bi_test, 0 }, { "read", bi_read, 0 }, { "getopts", bi_getopts, 0 }, { "true", bi_true0, 0 }, { "false", bi_false, 0 },
+  { "echo", bi_echo, 0 }, { "printf", bi_printf, 0 }, { "cd", bi_cd, 0 }, { "pwd", bi_pwd, 0 }, { "declare", bi_declare, 0 }, { "typeset", bi_declare, 0 }, { "test", bi_test, 0 }, { "[", bi_test, 0 }, { "read", bi_read, 0 }, { "getopts", bi_getopts, 0 }, { "true", bi_true0, 0 }, { "false", bi_false, 0 },
   { "local", bi_local, 0 }, { "wait", bi_wait, 0 }, { "umask", bi_umask, 0 }, { "ulimit", bi_true0, 0 }, { "sleep", bi_sleep, 2 }, { "basename", bi_basename, 2 }, { "dirname", bi_dirname, 2 }, { "expr", bi_expr, 2 },
   { "rm", bi_rm, 2 }, { "mkdir", bi_mkdir, 2 }, { "rmdir", bi_rmdir, 2 }, { "cp", bi_cp, 2 }, { "mv", bi_mv, 2 }, { "cat", bi_cat, 2 }, { "touch", bi_touch, 2 }, { "chmod", bi_true0, 2 },
-  { "type", bi_type, 0 }, { "command", 0, 0 }, { "hash", bi_true0, 0 }, { "alias", bi_true0, 0 }, { "unalias", bi_true0, 0 }, { 0, 0, 0 } };
+  { "type", bi_type, 0 }, { "command", 0, 0 }, { "hash", bi_true0, 0 }, { "alias", bi_alias, 0 }, { "unalias", bi_unalias, 0 }, { "kill", bi_kill, 0 }, { "jobs", bi_jobs, 0 }, { 0, 0, 0 } };
 static const struct builtin *find_builtin (const char *name)
 {
   const struct builtin *b;
@@ -2440,6 +2797,108 @@ static void trace (list *words)
   fputc ('\n', stderr);
 }
 
+/* ---- assignments: name=v  name+=v  name[i]=v  name=(a b c)  name+=(d)  name[i]+=v ---- */
+static void arr_literal (struct arr *a, const char *inner, int append)
+{
+  /* the words of the text between ( and ): [i]=v items, and words that are expanded (split, globbed) */
+  const char *p = inner;
+  int next_idx = 0, i;
+  if (!append) arr_clear (a);
+  else for (i = 0; i < a->n; i++) if (a->v[i]) next_idx = i + 1;
+  for (;;)
+    {
+      str w; int c;
+      while (*p == ' ' || *p == '\t' || *p == '\n') p++;
+      if (!*p) break;
+      sb_init (&w); sb_adds (&w, "");
+      while (*p && *p != ' ' && *p != '\t' && *p != '\n')
+	{
+	  c = *p++;
+	  sb_addc (&w, (char) c);
+	  if (c == '\\' && *p) sb_addc (&w, *p++);
+	  else if (c == '\'') { while (*p && *p != '\'') sb_addc (&w, *p++); if (*p) sb_addc (&w, *p++); }
+	  else if (c == '"') { while (*p && *p != '"') { if (*p == '\\' && p[1]) sb_addc (&w, *p++); sb_addc (&w, *p++); } if (*p) sb_addc (&w, *p++); }
+	  else if (c == '$' && (*p == '(' || *p == '{'))
+	    {
+	      char open = *p, close = open == '(' ? ')' : '}';
+	      int depth = 0;
+	      while (*p) { sb_addc (&w, *p); if (*p == open) depth++; else if (*p == close && --depth == 0) { p++; break; } p++; }
+	    }
+	  else if (c == '`') { while (*p && *p != '`') { if (*p == '\\' && p[1]) sb_addc (&w, *p++); sb_addc (&w, *p++); } if (*p) sb_addc (&w, *p++); }
+	}
+      if (w.s[0] == '[' && strchr (w.s, ']') && strchr (w.s, ']')[1] == '=')
+	{
+	  char *close = strchr (w.s, ']'), *ix = strndup (w.s + 1, (size_t) (close - w.s - 1)), *ex = expand_str (ix), *val = expand_str (close + 2);
+	  next_idx = (int) arith (ex);
+	  arr_set (a, next_idx, val); next_idx++;
+	  free (ix); free (ex); free (val);
+	}
+      else
+	{
+	  list l = { 0, 0, 0 };
+	  expand_word (w.s, &l);
+	  for (i = 0; i < l.n; i++) { arr_set (a, next_idx++, l.v[i]); free (l.v[i]); }
+	  free (l.v);
+	}
+      sb_free (&w);
+    }
+  arr_sync (a);
+}
+static int do_assign (const char *raw)
+{
+  const char *e = raw;
+  char name[256], *idx = 0;
+  int plus = 0, rc = 0;
+  size_t n;
+  while (isalnum ((unsigned char) *e) || *e == '_') e++;
+  n = (size_t) (e - raw);
+  if (n >= sizeof name) return 1;
+  memcpy (name, raw, n); name[n] = 0;
+  if (*e == '[')
+    {
+      const char *q = e; int d = 0;
+      for (; *q; q++) { if (*q == '[') d++; else if (*q == ']' && --d == 0) break; }
+      idx = strndup (e + 1, (size_t) (q - e - 1));
+      e = *q ? q + 1 : q;
+    }
+  if (*e == '+') { plus = 1; e++; }
+  if (*e != '=') { free (idx); return 1; }
+  e++;
+  if (idx)
+    {
+      char *ex = expand_str (idx), *val = expand_str (e);
+      struct arr *a = make_arr (name);
+      long i = arith (ex);
+      if (plus && i >= 0 && i < a->n && a->v[i]) { char *t = malloc (strlen (a->v[i]) + strlen (val) + 1); strcpy (t, a->v[i]); strcat (t, val); arr_set (a, (int) i, t); free (t); }
+      else arr_set (a, (int) i, val);
+      free (ex); free (val); free (idx);
+      return 0;
+    }
+  if (*e == '(' && e[strlen (e) - 1] == ')')
+    {
+      char *inner = strndup (e + 1, strlen (e) - 2);
+      struct arr *a = plus ? make_arr (name) : find_arr (name);
+      if (!a) { a = make_arr (name); arr_clear (a); }
+      arr_literal (a, inner, plus);
+      free (inner);
+      return 0;
+    }
+  {
+    char *val = expand_str (e);
+    if (plus)
+      {
+        const char *old = get_var (name);
+        char *t = malloc ((old ? strlen (old) : 0) + strlen (val) + 1);
+        strcpy (t, old ? old : ""); strcat (t, val);
+        rc = set_var (name, t);
+        free (t);
+      }
+    else rc = set_var (name, val);
+    free (val);
+  }
+  return rc;
+}
+
 static int exec_simple_ (struct node *n);
 static int exec_simple (struct node *n)
 {
@@ -2469,9 +2928,7 @@ static int exec_simple_ (struct node *n)
       /* only assignments (and redirections: the files are made) */
       for (i = 0; i < n->assigns.n; i++)
 	{
-	  char *eq = strchr (n->assigns.v[i], '='), *name = strndup (n->assigns.v[i], (size_t) (eq - n->assigns.v[i])), *val = expand_str (eq + 1);
-	  if (set_var (name, val)) r = 1;
-	  free (name); free (val);
+	  if (do_assign (n->assigns.v[i])) r = 1;
 	}
       sink_open (&cur_out); sink_open (&cur_err);
       restore_io (&saved);
@@ -2485,6 +2942,8 @@ static int exec_simple_ (struct node *n)
       {
 	char *eq = strchr (n->assigns.v[i], '='), *val;
 	struct var *v;
+	if (eq > n->assigns.v[i] && (eq[-1] == '+' || strchr (n->assigns.v[i], '[') != 0) && strchr (n->assigns.v[i], '[') < eq) { do_assign (n->assigns.v[i]); save[i].name = strdup ("_"); continue; }
+	if (eq > n->assigns.v[i] && eq[-1] == '+') { do_assign (n->assigns.v[i]); save[i].name = strdup ("_"); continue; }
 	save[i].name = strndup (n->assigns.v[i], (size_t) (eq - n->assigns.v[i]));
 	v = find_var (save[i].name);
 	save[i].had = v && v->value; save[i].old = v && v->value ? strdup (v->value) : 0; save[i].exported = v ? v->exported : 0;
@@ -2752,11 +3211,15 @@ static int exec_node (struct node *n)
     case N_SIMPLE:
       r = exec_simple (n);
       last_status = r;
+      if (r && trap_err && !in_condition) run_err_trap ();
+      if (any_trap) run_pending_traps ();
       if (r && opt_e && !in_condition && !exit_flag) { exit_code = r; exit_flag = 1; }
       return r;
     case N_PIPE:
       r = exec_pipe (n);
       last_status = r;
+      if (r && trap_err && !in_condition) run_err_trap ();
+      if (any_trap) run_pending_traps ();
       if (r && opt_e && !in_condition && !exit_flag) { exit_code = r; exit_flag = 1; }
       return r;
     case N_DBRACKET:
@@ -2777,6 +3240,7 @@ static int exec_node (struct node *n)
     case N_BG:
       bg_pid = 100 + (bg_pid % 900) + 1;
       r = exec_node (n->a);			/* run now, to its end */
+      job_add (bg_pid, r);
       last_status = 0;
       return 0;
     case N_AND:
@@ -2794,6 +3258,7 @@ static int exec_node (struct node *n)
       r = n->type == N_GROUP ? exec_node (n->a) : exec_subshell (n);
       restore_io (&s);
       last_status = r;
+      if (r && n->type == N_SUBSHELL && trap_err && !in_condition) run_err_trap ();
       return r;
     case N_IF:
       save_io (&s);

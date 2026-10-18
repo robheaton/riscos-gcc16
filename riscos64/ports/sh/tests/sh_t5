@@ -1,0 +1,46 @@
+# arrays (bash style)
+a=(one two three)
+echo "${a[0]} ${a[1]} ${a[2]} [${a[3]}]"
+echo "${#a[@]} ${#a[1]}"
+echo "${a[@]}"
+echo "${a[*]}"
+for x in "${a[@]}"; do echo "item:$x"; done
+a[5]=six
+echo "${#a[@]} ${!a[@]}"
+a+=(seven eight)
+echo "${a[@]}"
+echo "${#a[@]}"
+unset 'a[1]'
+echo "${a[@]}" "${!a[@]}"
+b=("x y" 'p q' "$((1+2))" $(echo m n))
+echo "${#b[@]}"
+printf '<%s>' "${b[@]}"; echo
+echo "${b[@]:1:2}"
+echo "$a"
+c=hello
+c+=" world"
+echo "$c"
+declare -a d=(1 2 3)
+d[1]+=X
+echo "${d[@]}"
+i=2
+echo "${d[i]} ${d[i-1]}"
+set -- p1 p2
+e=("$@" tail)
+echo "${e[@]}"
+echo "${#e[@]}"
+f=([2]=two [4]=four)
+echo "${!f[@]} ${f[2]} ${f[4]}"
+unset a
+echo "[${a[@]}] ${#a[@]}"
+g=(a b c)
+g[1]=B
+echo "${g[@]}"
+h=()
+echo "${#h[@]}"
+h+=(z)
+echo "${h[0]} ${#h[@]}"
+printf '%s\n' "${g[@]:1}"
+echo "${g[-1]:-none}"
+echo "${zz[0]-unset}"
+echo "line one two three" | { read -a w; echo "${#w[@]} ${w[2]}"; }

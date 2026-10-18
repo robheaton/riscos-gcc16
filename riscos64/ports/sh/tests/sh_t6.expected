@@ -1,0 +1,22 @@
+long one two
+alias ll='echo long'
+hello world
+[x]
+plain
+ll-gone
+e2: a b
+loop2-ok
+got-usr1
+after-kill
+got-term 0
+rc=0
+err-trap rc=1
+err-trap rc=3
+survived-hup
+wait=7
+wait2=0
+wait3=127
+T:trap -- 'echo bye' EXIT
+T:trap -- '' SIGHUP
+done
+bye

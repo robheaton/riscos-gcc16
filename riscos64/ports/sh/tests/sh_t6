@@ -1,0 +1,49 @@
+# aliases, traps, kill, wait, $!
+alias ll='echo long'
+ll one two
+alias ll
+alias greet='echo hello' lsx='echo [x]'
+greet world; lsx
+alias echo='echo >>'
+unalias echo
+echo plain
+alias -p >/dev/null 2>&1
+unalias ll
+alias ll 2>/dev/null || echo ll-gone
+alias e2='echo e2:'
+e2 a b
+alias loop='loop2'
+alias loop2='echo loop2-ok'
+loop
+# traps
+trap 'echo got-usr1' USR1
+kill -USR1 $$
+echo after-kill
+trap 'echo got-term $?' TERM
+false
+kill -s TERM $$
+echo rc=$?
+trap - USR1 TERM
+trap 'echo err-trap rc=$?' ERR
+false
+true
+(exit 3)
+trap - ERR
+trap 'echo bye' EXIT
+trap 'echo ignored-no' HUP
+trap '' HUP
+kill -HUP $$
+echo survived-hup
+sleep 0
+# wait / $!
+(exit 7) &
+pid=$!
+wait $pid
+echo wait=$?
+true &
+wait $!
+echo wait2=$?
+wait 99999 2>/dev/null
+echo wait3=$?
+trap 2>&1 | sed 's/^/T:/'
+echo done
