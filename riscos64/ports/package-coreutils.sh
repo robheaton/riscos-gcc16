@@ -21,6 +21,7 @@ IFS=$'\n' progs=($(sort <<<"${progs[*]}")); unset IFS
   echo "| !Boot file for CoreUtils (GNU coreutils $V for RISC OS 64)"
   echo
   echo 'Set CoreUtils$Dir <Obey$Dir>'
+  echo 'Set UnixEnv$swap 1'
   echo 'IfThere <CoreUtils$Dir>.!Sprites then Iconsprites <CoreUtils$Dir>.!Sprites'
   echo
   for n in "${progs[@]}"; do
@@ -34,6 +35,8 @@ printf '| !Run file for CoreUtils\n\n/<Obey$Dir>.!Boot\n' > "$D/!Run"
   echo
   echo "Run !CoreUtils (or its !Boot) once: it sets CoreUtils\$Dir and an alias for each program, so that the programs can be used by name from the command line, from Obey files, and by programs"
   echo "that use system () or posix_spawn. The shell of this port (sh) also finds them through CoreUtils\$Dir. 'install' is called 'ginstall', as in the 32-bit package."
+  echo
+  echo "Documentation: docs/USERLAND64.md in https://github.com/robheaton/riscos-gcc16 (file names, the shell, limits, porting)."
   echo
   echo "The programs are built with the GCC 16 tool chain for RISC OS 64 (UnixLib 64): see https://github.com/robheaton/riscos-gcc16 . What does not work on RISC OS: ln -s (no links), chown/chgrp (one user), df, who, users"
   echo "and uptime (no list of mounted file systems or logins), stty/tty (only the keyboard and screen)."

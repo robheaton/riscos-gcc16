@@ -33,6 +33,7 @@ cp "$W/lua-5.4.7/doc/readme.html" "$D/Licences/lua-readme" 2>/dev/null || true; 
   echo "| !Boot file for GNU tools (RISC OS 64)"
   echo
   echo 'Set GNU$Dir <Obey$Dir>'
+  echo 'Set UnixEnv$swap 1'
   echo
   for n in "${progs[@]}"; do
     k=$(( ($(stat -c %s "$D/$n,ff8") + 1023) / 1024 + 192 ))
@@ -54,6 +55,8 @@ sed       GNU sed 4.9        grep  GNU grep 3.11 (egrep, fgrep as aliases)      
 make      GNU make 4.4.1 (use  SHELL = ./sh  or the full name of sh; the jobserver is off)
 diff cmp diff3 sdiff (diffutils 3.10)   find xargs (findutils 4.10.0)   patch 2.7.6   tar 1.35   gzip 1.13 (gunzip, zcat as aliases)
 lua       Lua 5.4.7          bzip2  bzip2 1.0.8          sqlite3  SQLite 3.47.2 (no WAL, no extensions)
+
+Documentation: docs/USERLAND64.md in https://github.com/robheaton/riscos-gcc16 (file names, the shell, limits, porting).
 
 Run !GNU (or its !Boot) once: it sets GNU\$Dir and an alias for each program. The shell finds the programs through GNU\$Dir and CoreUtils\$Dir.
 Built with the GCC 16.2.0 tool chain for RISC OS 64 and UnixLib 64: https://github.com/robheaton/riscos-gcc16 (ports/, riscos64/). The programs are the unmodified releases except for the patches in ports/patches
