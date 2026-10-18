@@ -13,6 +13,21 @@ It is a forward port of the GCCSDK GCC 10.2.0 EABI tool chain, together with a r
 >
 > There is also an early preview for **64-bit RISC OS** (AArch64), described [further down](#risc-os-64-aarch64-early-preview); everything else on this page is for 32-bit machines.
 
+## Downloads (32-bit)
+
+The file names below are download links (they always give the file from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest); older versions are on the [releases page](https://github.com/robheaton/riscos-gcc16/releases)). Check the downloads against [`SHA256SUMS`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SHA256SUMS).
+
+| File | What it is | Needed for |
+|---|---|---|
+| [`SharedLibs-C-armeabihf_16.2.0-15_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-C-armeabihf_16.2.0-15_arm.zip) (2 MB) | the C runtime: UnixLib 5.0 rebuilt with GCC 16 and fixed, loader, libgcc_s | running **any** program from this tool chain |
+| [`Gcc16_16.2.0-24_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/Gcc16_16.2.0-24_arm.zip) (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
+| [`Gcc16SelfTest_16.2.0-24_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/Gcc16SelfTest_16.2.0-24_arm.zip) (19 KB) | the self-test of the native compiler, as `!GCC16Test` | checking an installation |
+| [`SharedULibFix_1.16-vforkfix3_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedULibFix_1.16-vforkfix3_arm.zip) (24 KB) | the fixed SharedUnixLibrary 1.16-vforkfix3 with an installer that checks everything, a restore script and a check, as `!SULFix`. **It replaces a system module: [read this first](docs/SHAREDULIB-FIX.md)** | programs that `vfork` children that can fail to `exec` (optional) |
+| [`SharedLibs-C++-armeabihf_16.2.0-6_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-C++-armeabihf_16.2.0-6_arm.zip) (0.7 MB) | libstdc++ 6.0.36 | running C++ programs that link it dynamically (the cross compiler's default) |
+| [`SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip) (0.4 MB) | libgfortran 5 | running Fortran programs that link it dynamically (the cross compiler's default) |
+| [`riscos-gcc16-cross-16.2.0-24-x86_64-linux.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/riscos-gcc16-cross-16.2.0-24-x86_64-linux.tar.xz) (54 MB) | the cross compiler for Linux | compiling on Linux |
+| [`gcc-16.2.0.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/gcc-16.2.0.tar.xz), [`binutils-2.45.1.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/binutils-2.45.1.tar.xz), [`make-4.4.1.tar.gz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/make-4.4.1.tar.gz), [`gccsdk-unixlib-r7800.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/gccsdk-unixlib-r7800.tar.xz) | the unmodified upstream sources the binaries were built from (UnixLib is a snapshot of GCCSDK svn r7800) | the source offer, see [SOURCES.md](SOURCES.md) |
+
 ## What you get
 
 | | Native (on RISC OS) | Cross (on Linux) |
@@ -100,21 +115,6 @@ What it cannot do yet: there is no `fork`, so programs that start several proces
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | the libraries, for the cross compiler |
 
 Start with [docs/AARCH64.md](docs/AARCH64.md) (the compiler) and [docs/USERLAND64.md](docs/USERLAND64.md) (the shell and tools); [docs/RISCOS64.md](docs/RISCOS64.md) says what was tested.
-
-## Downloads (32-bit)
-
-The file names below are download links (they always give the file from the [latest release](https://github.com/robheaton/riscos-gcc16/releases/latest); older versions are on the [releases page](https://github.com/robheaton/riscos-gcc16/releases)). Check the downloads against [`SHA256SUMS`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SHA256SUMS).
-
-| File | What it is | Needed for |
-|---|---|---|
-| [`SharedLibs-C-armeabihf_16.2.0-15_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-C-armeabihf_16.2.0-15_arm.zip) (2 MB) | the C runtime: UnixLib 5.0 rebuilt with GCC 16 and fixed, loader, libgcc_s | running **any** program from this tool chain |
-| [`Gcc16_16.2.0-24_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/Gcc16_16.2.0-24_arm.zip) (70 MB) | the native compilers and tools, as `!GCC16` | compiling on RISC OS |
-| [`Gcc16SelfTest_16.2.0-24_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/Gcc16SelfTest_16.2.0-24_arm.zip) (19 KB) | the self-test of the native compiler, as `!GCC16Test` | checking an installation |
-| [`SharedULibFix_1.16-vforkfix3_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedULibFix_1.16-vforkfix3_arm.zip) (24 KB) | the fixed SharedUnixLibrary 1.16-vforkfix3 with an installer that checks everything, a restore script and a check, as `!SULFix`. **It replaces a system module: [read this first](docs/SHAREDULIB-FIX.md)** | programs that `vfork` children that can fail to `exec` (optional) |
-| [`SharedLibs-C++-armeabihf_16.2.0-6_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-C++-armeabihf_16.2.0-6_arm.zip) (0.7 MB) | libstdc++ 6.0.36 | running C++ programs that link it dynamically (the cross compiler's default) |
-| [`SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/SharedLibs-Fortran-armeabihf_16.2.0-2_arm.zip) (0.4 MB) | libgfortran 5 | running Fortran programs that link it dynamically (the cross compiler's default) |
-| [`riscos-gcc16-cross-16.2.0-24-x86_64-linux.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/riscos-gcc16-cross-16.2.0-24-x86_64-linux.tar.xz) (54 MB) | the cross compiler for Linux | compiling on Linux |
-| [`gcc-16.2.0.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/gcc-16.2.0.tar.xz), [`binutils-2.45.1.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/binutils-2.45.1.tar.xz), [`make-4.4.1.tar.gz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/make-4.4.1.tar.gz), [`gccsdk-unixlib-r7800.tar.xz`](https://github.com/robheaton/riscos-gcc16/releases/latest/download/gccsdk-unixlib-r7800.tar.xz) | the unmodified upstream sources the binaries were built from (UnixLib is a snapshot of GCCSDK svn r7800) | the source offer, see [SOURCES.md](SOURCES.md) |
 
 ## How it was tested (32-bit)
 
