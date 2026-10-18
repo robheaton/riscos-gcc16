@@ -104,6 +104,7 @@ static unsigned long now_cs (void)
 }
 
 /* called where the library waits or does I/O: Escape (OS_Byte 126 says it was pressed, and clears it) becomes SIGINT, the end of the alarm () time SIGALRM */
+extern void __ul64_poll_timers (void) __attribute__ ((weak));
 void __ul64_poll_signals (void)
 {
   static int busy;
@@ -116,6 +117,7 @@ void __ul64_poll_signals (void)
   busy = 0;						/* before a handler runs: it may not return (longjmp) */
   if (esc) raise (SIGINT);
   if (alrm) raise (SIGALRM);
+  if (__ul64_poll_timers) __ul64_poll_timers ();
 }
 
 int __ul64_take_signalled (void) { int s = signalled; signalled = 0; return s; }	/* nanosleep: did a handler run? */

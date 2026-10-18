@@ -1,0 +1,93 @@
+--- m4-1.4.19/src/builtin.c	2026-10-18 14:52:02.321176072 +0100
++++ m4-1.4.19/src/builtin.c	2026-10-18 14:52:50.011737168 +0100
+@@ -23,6 +23,7 @@
+    expansion of user defined macros.  */
+ 
+ #include "m4.h"
++#include <sys/wait.h>
+ 
+ #include "execute.h"
+ #include "memchr2.h"
+@@ -963,21 +964,11 @@
+       prog_args[1] = "/c";
+     }
+ #endif
+-  prog_args[2] = cmd;
++  /* RISC OS 64: no fork; the command is run with system () */
++  (void) prog_args; (void) sig_status;
+   errno = 0;
+-  status = execute (ARG (0), SYSCMD_SHELL, prog_args, NULL, false,
+-                    false, false, false, true, false, &sig_status);
+-  if (sig_status)
+-    {
+-      assert (status == 127);
+-      sysval = sig_status << 8;
+-    }
+-  else
+-    {
+-      if (status == 127 && errno)
+-        M4ERROR ((warning_status, errno, _("cannot run command `%s'"), cmd));
+-      sysval = status;
+-    }
++  status = system (cmd);
++  sysval = (status == -1) ? 127 : (WIFEXITED (status) ? WEXITSTATUS (status) : 127);
+ }
+ 
+ static void
+@@ -1006,28 +997,14 @@
+       prog_args[1] = "/c";
+     }
+ #endif
+-  prog_args[2] = cmd;
++  /* RISC OS 64: there is no fork or pipe between processes, so the command is run with popen () (through sh -c when there is an sh) */
++  (void) prog_args; (void) child; (void) fd; (void) sig_status;
+   errno = 0;
+-  child = create_pipe_in (ARG (0), SYSCMD_SHELL, prog_args, NULL,
+-                          NULL, false, true, false, &fd);
+-  if (child == -1)
+-    {
+-      M4ERROR ((warning_status, errno, _("cannot run command `%s'"), cmd));
+-      sysval = 127;
+-      return;
+-    }
+-#if OS2
+-  /* On OS/2 kLIBC, fdopen() creates a stream in a mode of a file descriptor.
+-     So include "t" to open a stream in a text mode explicitly on OS/2. */
+-  pin = fdopen (fd, "rt");
+-#else
+-  pin = fdopen (fd, "r");
+-#endif
++  pin = popen (cmd, "r");
+   if (pin == NULL)
+     {
+       M4ERROR ((warning_status, errno, _("cannot run command `%s'"), cmd));
+       sysval = 127;
+-      close (fd);
+       return;
+     }
+   while (1)
+@@ -1047,22 +1024,8 @@
+         break;
+       obstack_blank_fast (obs, len);
+     }
+-  if (ferror (pin) || fclose (pin))
+-    m4_failure (errno, _("cannot read pipe"));
+-  errno = 0;
+-  status = wait_subprocess (child, ARG (0), false, true, true, false,
+-                            &sig_status);
+-  if (sig_status)
+-    {
+-      assert (status == 127);
+-      sysval = sig_status << 8;
+-    }
+-  else
+-    {
+-      if (status == 127 && errno)
+-        M4ERROR ((warning_status, errno, _("cannot run command `%s'"), cmd));
+-      sysval = status;
+-    }
++  status = pclose (pin);
++  sysval = (status == -1) ? 127 : (WIFEXITED (status) ? WEXITSTATUS (status) : 127);
+ }
+ 
+ static void

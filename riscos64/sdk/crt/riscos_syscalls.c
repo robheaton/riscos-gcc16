@@ -87,6 +87,7 @@ extern int __ul64_pipe_fstat (int, struct stat *) __attribute__ ((weak));
 /* The standard streams can be sent to a file or nowhere by the program that started this one (the shell does that for  cmd > file,  cmd < file,  cmd 2>file ...): the system variables Sh$Stdin, Sh$Stdout and
    Sh$Stderr hold the name of a file, or "null" (output thrown away, input empty), or, for Sh$Stderr, "stdout" (with the output).  Each is read once, at the first use of the descriptor; output is appended to
    the file.  The variables are inherited by the programs that a program starts (they are exported with the rest of the environment), as a redirection is. */
+static long rfd_lines = -1, rfd_written;		/* Sh$StdoutLines: the shell says the program after the pipe wants only this many lines of standard output */
 static struct { int state; int handle; } rfd[3];		/* state: 0 not looked at, 1 the console, 2 nowhere, 3 a file (handle), 4 (stderr) with standard output */
 static void rfd_init (int fd)
 {
@@ -94,6 +95,12 @@ static void rfd_init (int fd)
   char buf[512];
   unsigned long r[10] = { (unsigned long) names[fd], (unsigned long) buf, sizeof buf - 1, 0, 3 };
   rfd[fd].state = 1;
+  if (fd == 1)
+    {
+      char lb[24];
+      unsigned long q[10] = { (unsigned long) "Sh$StdoutLines", (unsigned long) lb, sizeof lb - 1, 0, 3 };
+      if (!swi_x (0x23, q) && q[2] < sizeof lb) { lb[q[2]] = 0; if (lb[0] >= '0' && lb[0] <= '9') rfd_lines = atol (lb); }
+    }
   if (swi_x (0x23, r) || r[2] >= sizeof buf) return;		/* OS_ReadVarVal */
   buf[r[2]] = 0;
   if (!strcmp (buf, "null")) { rfd[fd].state = 2; return; }
@@ -130,7 +137,21 @@ ssize_t write (int fd, const void *buf, size_t n)
       int st = rfd_state (fd), h = rfd[fd].handle;
       if (fd == 2 && st == 4) { st = rfd_state (1); h = rfd[1].handle; }
       if (st == 2) return (ssize_t) n;
-      if (st == 3) { unsigned long w[10] = { 2, (unsigned long) h, (unsigned long) buf, n }; if (swi_x (OS_GBPB, w)) { errno = EIO; return -1; } return (ssize_t) (n - w[3]); }
+      if (st == 3)
+	{
+	  unsigned long w[10] = { 2, (unsigned long) h, (unsigned long) buf, n };
+	  int last = 0;
+	  if (fd == 1 && rfd_lines >= 0)		/* the reader after the pipe wants rfd_lines lines: write up to the end of the last one and stop, as a write to a closed pipe does (SIGPIPE) */
+	    {
+	      size_t i;
+	      for (i = 0; i < n; i++)
+		if (((const char *) buf)[i] == '\n' && ++rfd_written >= rfd_lines) { w[3] = i + 1; last = 1; break; }
+	      if (!last && rfd_lines == 0) { w[3] = 0; last = 1; }
+	    }
+	  if (swi_x (OS_GBPB, w)) { errno = EIO; return -1; }
+	  if (last) { rfd_close (); _exit (141); }
+	  return (ssize_t) (n - w[3]);
+	}
     }
   if (fd == 1 || fd == 2) { __ul64_poll_signals (); put_text ((const char *) buf, n); return (ssize_t) n; }
   if (!isfile (fd)) { errno = EBADF; return -1; }
@@ -456,6 +477,7 @@ void _exit (int code)
   unsigned long r[10] = { 0 };
   if (__ul64_vfork_exit) __ul64_vfork_exit (code);
   rfd_close ();
+  { int h; for (h = 1; h < 256; h++) if (fd_names[h]) { unsigned long c[10] = { 0, (unsigned long) h }; swi_x (OS_Find, c); } }	/* the files that were left open (RISC OS does not close them: the next program would find them in use, a pipe () file for one) */
   if (da_mode == 1) { unsigned long q[10] = { 1, da_number }; swi_x (OS_DynamicArea, q); }		/* remove the heap */
   r[0] = (unsigned long) &done;
   r[1] = 0x58454241UL;					/* "ABEX" */

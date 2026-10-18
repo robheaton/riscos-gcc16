@@ -88,6 +88,7 @@ int posix_spawnattr_setpgroup (posix_spawnattr_t *a, pid_t p) { (*a)->pgroup = p
 int posix_spawnattr_getpgroup (const posix_spawnattr_t *a, pid_t *p) { *p = (*a)->pgroup; return 0; }
 int posix_spawn_file_actions_addopen (posix_spawn_file_actions_t *a, int fd, const char *path, int flags, mode_t mode) { (void) fd; (void) path; (void) flags; (void) mode; (*a)->n++; return 0; }
 int posix_spawn_file_actions_addchdir_np (posix_spawn_file_actions_t *a, const char *path) { (void) path; (*a)->n++; return 0; }
+int posix_spawn_file_actions_addchdir (posix_spawn_file_actions_t *a, const char *path) { return posix_spawn_file_actions_addchdir_np (a, path); }
 int posix_spawn_file_actions_init (posix_spawn_file_actions_t *a) { *a = (posix_spawn_file_actions_t) calloc (1, sizeof **a); return *a ? 0 : ENOMEM; }
 int posix_spawn_file_actions_destroy (posix_spawn_file_actions_t *a) { free (*a); *a = 0; return 0; }
 int posix_spawn_file_actions_addclose (posix_spawn_file_actions_t *a, int fd) { (void) fd; (*a)->n++; return 0; }

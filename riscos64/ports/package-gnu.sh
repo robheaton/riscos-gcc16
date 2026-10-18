@@ -15,8 +15,14 @@ add "$W/sed-build/sed/sed" sed
 add "$W/grep-build/src/grep" grep
 add "$W/gawk-build/gawk" gawk
 add "$W/make-build/make" make
-add "$W/lua-5.4.7/lua,ff8" lua
-add "$W/bz-o/bzip2,ff8" bzip2
+add "$W/m4-build/src/m4" m4
+add "$W/which-build/which" which
+add "$W/bc-build/bc/bc" bc
+add "$W/bc-build/dc/dc" dc
+add "$W/xxd,ff8" xxd
+add "$W/xz-build/src/xz/xz" xz
+add "$( [ -f "$W/lua-run/luax,ff8" ] && echo "$W/lua-run/luax,ff8" || echo "$W/lua-5.4.7/lua,ff8" )" lua
+add "$( [ -f "$W/bzip2,ff8" ] && echo "$W/bzip2,ff8" || echo "$W/bz-o/bzip2,ff8" )" bzip2
 add "$W/sqlite3,ff8" sqlite3
 add "$W/diffutils-build/src/diff" diff
 add "$W/diffutils-build/src/cmp" cmp
@@ -27,7 +33,7 @@ add "$W/findutils-build/xargs/xargs" xargs
 add "$W/patch-build/src/patch" patch
 add "$W/tar-build/src/tar" tar
 add "$W/gzip-build/gzip" gzip
-cp "$W/sed-4.9/COPYING" "$D/Licences/sed-GPL3"; cp "$W/grep-3.11/COPYING" "$D/Licences/grep-GPL3"; cp "$W/gawk-5.3.1/COPYING" "$D/Licences/gawk-GPL3"; cp "$W/make-4.4.1/COPYING" "$D/Licences/make-GPL3" 2>/dev/null || true
+cp "$W/sed-4.9/COPYING" "$D/Licences/sed-GPL3"; cp "$W/m4-1.4.19/COPYING" "$D/Licences/m4-GPL3"; cp "$W/xz-5.4.7/COPYING" "$D/Licences/xz-COPYING" 2>/dev/null || true; cp "$W/which-2.21/COPYING" "$D/Licences/which-GPL3" 2>/dev/null || true; cp "$W/bc-1.07.1/COPYING" "$D/Licences/bc-GPL3" 2>/dev/null || true; cp "$W/grep-3.11/COPYING" "$D/Licences/grep-GPL3"; cp "$W/gawk-5.3.1/COPYING" "$D/Licences/gawk-GPL3"; cp "$W/make-4.4.1/COPYING" "$D/Licences/make-GPL3" 2>/dev/null || true
 cp "$W/lua-5.4.7/doc/readme.html" "$D/Licences/lua-readme" 2>/dev/null || true; cp "$W/bzip2-1.0.8/LICENSE" "$D/Licences/bzip2-LICENSE"; for p in diffutils-3.10 findutils-4.10.0 patch-2.7.6 tar-1.35 gzip-1.13; do cp "$W/$p/COPYING" "$D/Licences/${p%%-*}-GPL3" 2>/dev/null || true; done
 {
   echo "| !Boot file for GNU tools (RISC OS 64)"
@@ -43,6 +49,8 @@ cp "$W/lua-5.4.7/doc/readme.html" "$D/Licences/lua-readme" 2>/dev/null || true; 
   echo 'Set Alias$egrep WimpSlot -min 800k|MRun <GNU$Dir>.grep -E %%*0'
   echo 'Set Alias$fgrep WimpSlot -min 800k|MRun <GNU$Dir>.grep -F %%*0'
   echo 'Set Alias$gunzip WimpSlot -min 700k|MRun <GNU$Dir>.gzip -d %%*0'
+  echo 'Set Alias$unxz WimpSlot -min 1500k|MRun <GNU$Dir>.xz -d %%*0'
+  echo 'Set Alias$xzcat WimpSlot -min 1500k|MRun <GNU$Dir>.xz -dc %%*0'
   echo 'Set Alias$zcat WimpSlot -min 700k|MRun <GNU$Dir>.gzip -dc %%*0'
 } > "$D/!Boot"
 printf '| !Run file for GNU tools\n\n/<Obey$Dir>.!Boot\n' > "$D/!Run"
@@ -52,6 +60,8 @@ GNU and other tools for RISC OS 64 (AArch64), release $V
 
 sh        a POSIX shell for a system with no fork (ports/sh of the riscos-gcc16 project); runs scripts, pipelines (stage after stage), redirections; needs !CoreUtils for most utilities
 sed       GNU sed 4.9        grep  GNU grep 3.11 (egrep, fgrep as aliases)        gawk  GNU awk 5.3.1 (awk as an alias)
+which     GNU which 2.21        bc dc  GNU bc/dc 1.07.1        xz  XZ Utils 5.4.7 (unxz, xzcat as aliases)   xxd  hex dump (from Vim 9.1.0000; Vim licence / GPL-2)
+m4        GNU m4 1.4.19 (esyscmd and syscmd run the command with popen / system)
 make      GNU make 4.4.1 (use  SHELL = ./sh  or the full name of sh; the jobserver is off)
 diff cmp diff3 sdiff (diffutils 3.10)   find xargs (findutils 4.10.0)   patch 2.7.6   tar 1.35   gzip 1.13 (gunzip, zcat as aliases)
 lua       Lua 5.4.7          bzip2  bzip2 1.0.8          sqlite3  SQLite 3.47.2 (no WAL, no extensions)

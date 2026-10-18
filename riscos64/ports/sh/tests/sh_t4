@@ -1,0 +1,10 @@
+yes | head -3
+echo rc=$?
+yes abc | head -n 2 | wc -l
+while true; do echo loop; done | head -n 2
+i=0
+f() { while :; do i=$((i+1)); echo "n$i"; done; }
+f | head -1
+seq 1 1000 | head -3
+seq 1 5 | head
+echo end

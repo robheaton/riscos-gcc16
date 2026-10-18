@@ -14,6 +14,7 @@
 #include <fnmatch.h>
 #include <glob.h>
 #include <limits.h>
+#include <regex.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,7 +74,7 @@ static struct var *vars;
 static char **pos_params; static int npos;		/* $1 ... */
 static char *arg0;
 static int last_status, bg_pid;
-static int opt_e, opt_x, opt_u, opt_f, opt_n;
+static int opt_e, opt_x, opt_u, opt_f, opt_n, opt_pipefail;
 
 static struct var *find_var (const char *name)
 {
@@ -121,7 +122,7 @@ static int valid_name (const char *s)
 }
 
 /* ------------------------------------------------------------------------------------------------------ the syntax tree */
-enum { N_SIMPLE, N_PIPE, N_AND, N_OR, N_LIST, N_BG, N_IF, N_WHILE, N_UNTIL, N_FOR, N_CASE, N_FUNC, N_GROUP, N_SUBSHELL, N_NOT };
+enum { N_SIMPLE, N_PIPE, N_AND, N_OR, N_LIST, N_BG, N_IF, N_WHILE, N_UNTIL, N_FOR, N_CASE, N_FUNC, N_GROUP, N_SUBSHELL, N_NOT, N_DBRACKET };
 enum { R_IN, R_OUT, R_APPEND, R_DUPIN, R_DUPOUT, R_HERE, R_RW };
 struct redir { int fd, type; char *target; char *body; int quoted; struct redir *next; };
 struct caseitem { list pats; struct node *body; struct caseitem *next; };
@@ -217,6 +218,17 @@ static void lex_quoted_until (struct parser *p, str *b, int close, int dq)
 static void lex_dollar (struct parser *p, str *b)
 {
   int c = p_peekc (p);
+  if (c == '\'')					/* $'...': C escapes; \' does not end it */
+    {
+      sb_addc (b, (char) p_getc (p));
+      while ((c = p_getc (p)) >= 0)
+	{
+	  sb_addc (b, (char) c);
+	  if (c == '\\') { int d = p_getc (p); if (d >= 0) sb_addc (b, (char) d); }
+	  else if (c == '\'') return;
+	}
+      syntax (p, "unterminated $'");
+    }
   if (c == '(')
     {
       int depth = 0;
@@ -407,6 +419,30 @@ static struct node *parse_command (struct parser *p)
       n->a = parse_compound_list (p);
       if (peek (p) != T_RP) syntax (p, "\")\" expected");
       next (p);
+      attach_redirs (p, n);
+      return n;
+    }
+  if (t == T_WORD && !strcmp (p->word, "[["))
+    {
+      next (p);
+      n = new_node (N_DBRACKET);
+      n->line = (int) p->tok_line;
+      for (;;)
+	{
+	  int k = peek (p);
+	  if (k == T_EOF) syntax (p, "\"]]\" expected");
+	  if (k == T_NL) { next (p); continue; }
+	  if (k == T_WORD && !strcmp (p->word, "]]")) { next (p); break; }
+	  if (k == T_WORD || k == T_IONUM) l_add (&n->words, strdup (p->word));
+	  else if (k == T_AND) l_add (&n->words, strdup ("&&"));
+	  else if (k == T_OR) l_add (&n->words, strdup ("||"));
+	  else if (k == T_LP) l_add (&n->words, strdup ("("));
+	  else if (k == T_RP) l_add (&n->words, strdup (")"));
+	  else if (k == T_LESS) l_add (&n->words, strdup ("<"));
+	  else if (k == T_GREAT) l_add (&n->words, strdup (">"));
+	  else syntax (p, "unexpected token in [[ ]]");
+	  next (p);
+	}
       attach_redirs (p, n);
       return n;
     }
@@ -670,8 +706,20 @@ static void sink_close (struct sink *s)
   fclose (s->fp);
   s->fp = 0;
 }
+/* a producer in front of  head -n N  needs to make only N lines: pipe_limit >= 0 while such a stage runs; its output is cut after N lines and the stage is stopped (broken_pipe) as a write to a closed pipe would */
+static long pipe_limit = -1, pipe_lines;
+static const char *pipe_limit_path;
+static int broken_pipe;
 static void out_write (struct sink *s, const char *p, size_t n)
 {
+  if (pipe_limit >= 0 && s->kind == K_PATH && pipe_limit_path && !strcmp (s->path, pipe_limit_path))
+    {
+      size_t i;
+      if (broken_pipe) return;
+      for (i = 0; i < n; i++)
+	if (p[i] == '\n' && ++pipe_lines >= pipe_limit) { n = i + 1; broken_pipe = 1; break; }
+      if (pipe_limit == 0) { broken_pipe = 1; return; }
+    }
   if (s->kind == K_BUF) sb_add (s->buf, p, n);
   else if (s->kind == K_PATH) { sink_open (s); if (s->fp) fwrite (p, 1, n, s->fp); }
   else if (s == &cur_err) { if (!err_null) { fflush (stdout); fwrite (p, 1, n, stderr); fflush (stderr); } }
@@ -881,6 +929,7 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
       }
     else if (out->kind == K_BUF) { char t[1100]; scrap = scrap_name (); touch_file (scrap); ros (scrap, t, sizeof t); setenv ("Sh$Stdout", t, 1); }
     if (in_path) { char t[1100]; ros (in_path, t, sizeof t); setenv ("Sh$Stdin", t, 1); }
+    if (pipe_limit >= 0 && out->kind == K_PATH && pipe_limit_path && !strcmp (out->path, pipe_limit_path)) { char t[24]; snprintf (t, sizeof t, "%ld", pipe_limit); setenv ("Sh$StdoutLines", t, 1); }
     if (err_null) setenv ("Sh$Stderr", "null", 1);
     else if (err->kind == K_PATH && !same_sink (err, out))
       {
@@ -891,6 +940,7 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
     fflush (stdout); fflush (stderr);
     status = __ul64_system_raw (c.s);
     restore_env ("Sh$Stdin", o_in); restore_env ("Sh$Stdout", o_out); restore_env ("Sh$Stderr", o_err);
+    unsetenv ("Sh$StdoutLines");
     if (scrap)
       {
 	FILE *f = fopen (scrap, "r");
@@ -991,6 +1041,7 @@ static const char *special_param (char c, char *buf, size_t size)
 }
 
 static char *expand_str (const char *raw);		/* no splitting, no pattern matching: assignments, redirections */
+static char *expand_pattern (const char *raw);
 
 /* the value of a parameter reference name; *set tells if it is set */
 static const char *param_value (const char *name, int *set, char *buf, size_t size)
@@ -1044,6 +1095,37 @@ static char *trim_pattern (const char *value, const char *pat, int prefix, int l
 }
 
 static void expand_into (struct xctx *x, const char *raw, int in_dq);
+
+/* ${v/pat/rep} ${v//pat/rep} ${v/#pat/rep} ${v/%pat/rep}: the longest match of the pattern is replaced (R: the first one, G: all, A: only at the start, E: only at the end) */
+static void replace_pattern (str *res, const char *v, const char *pat, const char *rep, int mode)
+{
+  size_t vl = strlen (v), i = 0;
+  while (i <= vl)
+    {
+      size_t e = 0;
+      int found = 0;
+      if (*pat && (mode != 'A' || i == 0) && i < vl)
+	for (e = (mode == 'E') ? vl : vl; e > i; e--)
+	  {
+	    char *t;
+	    if (mode == 'E' && e != vl) break;
+	    t = strndup (v + i, e - i);
+	    found = fnmatch (pat, t, 0) == 0;
+	    free (t);
+	    if (found) break;
+	  }
+      if (found)
+	{
+	  sb_adds (res, rep);
+	  i = e;
+	  if (mode != 'G') { sb_adds (res, v + i); return; }
+	  continue;
+	}
+      if (mode == 'A' || mode == 'E') { if (mode == 'A') { sb_adds (res, v); return; } }
+      if (i < vl) sb_addc (res, v[i]);
+      i++;
+    }
+}
 
 static void expand_dollar (struct xctx *x, const char **pp, int in_dq)
 {
@@ -1105,8 +1187,13 @@ static void expand_dollar (struct xctx *x, const char **pp, int in_dq)
 	if (strchr ("?$#!-0123456789@*", *s) && !isalpha ((unsigned char) *s)) { while (*s && (isdigit ((unsigned char) *s) && isdigit ((unsigned char) inner[0]) ? 1 : nl == 0) && nl < sizeof name - 1) { name[nl++] = *s++; if (!isdigit ((unsigned char) inner[0])) break; } }
 	else while ((isalnum ((unsigned char) *s) || *s == '_') && nl < sizeof name - 1) name[nl++] = *s++;
 	name[nl] = 0;
+	if (*s == '/' ) { op = 'R'; s++; if (*s == '/') { op = 'G'; s++; } else if (*s == '#') { op = 'A'; s++; } else if (*s == '%') { op = 'E'; s++; } word = s; }
+	else if (*s == '^' || *s == ',') { op = *s++; if (*s == op) { op = (char) (op == '^' ? 'U' : 'L'); s++; } word = s; }
+	else if (*s == ':' && s[1] && !strchr ("-=?+", s[1])) { op = 'O'; s++; word = s; }
+	else {
 	if (*s == ':') { colon = 1; s++; }
 	if (*s) { op = *s++; if ((op == '#' || op == '%') && *s == op) { op = (char) (op == '#' ? 'P' : 'S'); s++; } word = s; }
+	}
       }
       if (!strcmp (name, "@") && in_dq) { /* "${@}" like "$@" */ }
       val = param_value (name, &set, buf, sizeof buf);
@@ -1117,6 +1204,50 @@ static void expand_dollar (struct xctx *x, const char **pp, int in_dq)
 	else if (op == '=' && use_default) { set_var (name, w); add_expansion (x, w, strlen (w), in_dq); }
 	else if (op == '?' && use_default) { errf ("sh: %s: %s\n", name, w && *w ? w : "parameter null or not set"); exit (2); }
 	else if (op == '+') { if (colon ? (set && val && *val) : set) add_expansion (x, w, strlen (w), in_dq); }
+	else if (op == 'R' || op == 'G' || op == 'A' || op == 'E')
+	  {
+	    /* ${v/pat/rep} ${v//pat/rep} ${v/#pat/rep} ${v/%pat/rep}: the longest match of the pattern is replaced */
+	    const char *v = val ? val : "";
+	    const char *sl = word ? word : "";
+	    const char *q2;
+	    char *patraw, *pat, *rep;
+	    str res;
+	    for (q2 = sl; *q2 && *q2 != '/'; q2++) if (*q2 == '\\' && q2[1]) q2++;
+	    patraw = strndup (sl, (size_t) (q2 - sl));
+	    pat = expand_pattern (patraw);
+	    rep = expand_str (*q2 ? q2 + 1 : "");
+	    sb_init (&res); sb_adds (&res, "");
+	    replace_pattern (&res, v, pat, rep, op);
+	    add_expansion (x, res.s ? res.s : "", res.s ? strlen (res.s) : 0, in_dq);
+	    sb_free (&res); free (patraw); free (pat); free (rep);
+	  }
+	else if (op == 'O')
+	  {
+	    /* ${v:off} ${v:off:len} */
+	    const char *v = val ? val : "";
+	    long vl = (long) strlen (v), off, len;
+	    const char *colon2 = word ? strchr (word, ':') : 0;
+	    char *offs = colon2 ? strndup (word, (size_t) (colon2 - word)) : strdup (word ? word : "0"), *e1 = expand_str (offs), *e2 = 0;
+	    off = arith (e1);
+	    if (off < 0) { off += vl; if (off < 0) off = 0; }
+	    if (off > vl) off = vl;
+	    len = vl - off;
+	    if (colon2) { e2 = expand_str (colon2 + 1); len = arith (e2); if (len < 0) { len = vl - off + len; if (len < 0) len = 0; } if (len > vl - off) len = vl - off; }
+	    add_expansion (x, v + off, (size_t) len, in_dq);
+	    free (offs); free (e1); free (e2);
+	  }
+	else if (op == 'U' || op == 'L' || op == '^' || op == ',')
+	  {
+	    char *t = strdup (val ? val : "");
+	    size_t i;
+	    for (i = 0; t[i]; i++)
+	      {
+		if ((op == '^' || op == ',') && i > 0) break;
+		t[i] = (char) ((op == 'U' || op == '^') ? toupper ((unsigned char) t[i]) : tolower ((unsigned char) t[i]));
+	      }
+	    add_expansion (x, t, strlen (t), in_dq);
+	    free (t);
+	  }
 	else if (op == '#' || op == 'P' || op == '%' || op == 'S')
 	  {
 	    char *t = trim_pattern (val ? val : "", w, op == '#' || op == 'P', op == 'P' || op == 'S');
@@ -1195,6 +1326,31 @@ static void expand_into (struct xctx *x, const char *raw, int in_dq)
 	  expand_into (x, inner, 1);
 	  free (inner);
 	  p = *e ? e + 1 : e;
+	}
+      else if (c == '$' && p[1] == '\'' && !in_dq)
+	{
+	  const char *q = p + 2;
+	  x->cur.started = 1;
+	  while (*q && *q != '\'')
+	    {
+	      char ch = *q++;
+	      if (ch == '\\' && *q)
+		{
+		  char e = *q++;
+		  switch (e)
+		    {
+		    case 'n': ch = '\n'; break; case 't': ch = '\t'; break; case 'r': ch = '\r'; break; case 'a': ch = '\a'; break;
+		    case 'b': ch = '\b'; break; case 'f': ch = '\f'; break; case 'v': ch = '\v'; break; case 'e': case 'E': ch = 27; break;
+		    case '\\': case '\'': case '"': case '?': ch = e; break;
+		    case 'x': { int v = 0, k = 0; while (k < 2 && isxdigit ((unsigned char) *q)) { v = v * 16 + (isdigit ((unsigned char) *q) ? *q - '0' : (tolower ((unsigned char) *q) - 'a' + 10)); q++; k++; } ch = (char) v; break; }
+		    case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
+		      { int v = e - '0', k = 1; while (k < 3 && *q >= '0' && *q <= '7') { v = v * 8 + (*q - '0'); q++; k++; } ch = (char) v; break; }
+		    default: f_add (&x->cur, "\\", 1, 1); ch = e; break;
+		    }
+		}
+	      f_add (&x->cur, &ch, 1, 1);
+	    }
+	  p = *q ? q + 1 : q;
 	}
       else if (c == '$') { const char *q = p + 1; expand_dollar (x, &q, in_dq); p = q; }
       else if (c == '`')
@@ -1744,7 +1900,17 @@ static int bi_set (int argc, char **argv)
 	  for (c = a + 1; *c; c++)
 	    {
 	      if (*c == 'e') opt_e = on; else if (*c == 'x') opt_x = on; else if (*c == 'u') opt_u = on; else if (*c == 'f') opt_f = on; else if (*c == 'n') opt_n = on;
-	      else if (*c == 'o') { i++; }
+	      else if (*c == 'o')
+		{
+		  const char *name = i + 1 < argc ? argv[++i] : 0;
+		  if (!name) { outs (opt_pipefail ? "pipefail on\n" : "pipefail off\n"); }
+		  else if (!strcmp (name, "pipefail")) opt_pipefail = on;
+		  else if (!strcmp (name, "errexit")) opt_e = on;
+		  else if (!strcmp (name, "nounset")) opt_u = on;
+		  else if (!strcmp (name, "noglob")) opt_f = on;
+		  else if (!strcmp (name, "xtrace")) opt_x = on;
+		  else if (!strcmp (name, "noexec")) opt_n = on;
+		}
 	    }
 	}
       else break;
@@ -2395,22 +2561,45 @@ static void collect_pipeline (struct node *n, struct node **stages, int *count)
   else stages[(*count)++] = n;
 }
 
+/* the number of lines that the stage wants, when it is  head  with only -n N, -N or nothing: else -1 */
+static long head_lines (struct node *st)
+{
+  int i;
+  long n = 10;
+  if (!st || st->type != N_SIMPLE || st->words.n < 1 || strcmp (st->words.v[0], "head") || st->redirs) return -1;
+  for (i = 1; i < st->words.n; i++)
+    {
+      const char *a = st->words.v[i];
+      if (!strcmp (a, "-n") && i + 1 < st->words.n && isdigit ((unsigned char) st->words.v[i + 1][0])) { n = atol (st->words.v[++i]); }
+      else if (!strncmp (a, "-n", 2) && isdigit ((unsigned char) a[2])) n = atol (a + 2);
+      else if (a[0] == '-' && isdigit ((unsigned char) a[1])) n = atol (a + 1);
+      else return -1;
+      if (strspn (a, "-n0123456789") != strlen (a) && strcmp (a, "-n") && !isdigit ((unsigned char) a[0])) return -1;
+    }
+  return n;
+}
+
 static int exec_pipe (struct node *n)
 {
   struct node *stages[64];
-  int count = 0, i, r = 0;
+  int count = 0, i, r = 0, failed = 0;
   char *prev = 0;
   collect_pipeline (n, stages, &count);
   for (i = 0; i < count; i++)
     {
       char *outf = 0;
       if (i < count - 1) outf = scrap_name ();
+      if (outf && (pipe_limit = head_lines (stages[i + 1])) >= 0) { pipe_limit_path = outf; pipe_lines = 0; broken_pipe = 0; } else pipe_limit_path = 0;
       r = exec_with_io (stages[i], outf, prev, i == count - 1 ? &cur_out : 0);
+      if (pipe_limit_path && broken_pipe && !r) r = 141;
+      pipe_limit = -1; pipe_limit_path = 0; broken_pipe = 0;
+      if (r && opt_pipefail) failed = r;
       if (prev) { remove (prev); free (prev); }
       prev = outf;
       if (exit_flag) break;
     }
   if (prev) { remove (prev); free (prev); }
+  if (opt_pipefail && failed) return failed;
   return r;
 }
 
@@ -2459,11 +2648,105 @@ static int match_case (struct node *n, const char *word)
   return -1;
 }
 
+/* ---- [[ expression ]]: no word splitting or pathname expansion of the operands; == != match a pattern; =~ is an extended regular expression; && || ! ( ) ---- */
+struct dbl { char **w; int n, i; int err; };
+static int dbl_or (struct dbl *d, int live);
+static int dbl_binop (const char *s)
+{
+  static const char *ops[] = { "==", "=", "!=", "<", ">", "=~", "-eq", "-ne", "-lt", "-le", "-gt", "-ge", "-nt", "-ot", "-ef", 0 };
+  int k;
+  for (k = 0; ops[k]; k++) if (!strcmp (s, ops[k])) return 1;
+  return 0;
+}
+static int dbl_unop (const char *s)
+{
+  return s[0] == '-' && s[1] && !s[2] && strchr ("zneEfdrwxsLhbcpSgukOG", s[1]);
+}
+static int dbl_primary (struct dbl *d, int live)
+{
+  int r;
+  if (d->i >= d->n) { d->err = 1; return 0; }
+  if (!strcmp (d->w[d->i], "(")) { d->i++; r = dbl_or (d, live); if (d->i < d->n && !strcmp (d->w[d->i], ")")) d->i++; else d->err = 1; return r; }
+  if (!strcmp (d->w[d->i], "!")) { d->i++; return !dbl_primary (d, live); }
+  if (dbl_unop (d->w[d->i]) && d->i + 1 < d->n && strcmp (d->w[d->i + 1], "&&") && strcmp (d->w[d->i + 1], "||") && strcmp (d->w[d->i + 1], ")")
+      && !(d->i + 2 < d->n && dbl_binop (d->w[d->i + 1])))
+    {
+      const char *op = d->w[d->i];
+      char *arg;
+      d->i += 2;
+      if (!live) return 0;
+      arg = expand_str (d->w[d->i - 1]);
+      if (op[1] == 'z') r = !*arg;
+      else if (op[1] == 'n') r = *arg != 0;
+      else if (op[1] == 'e' || op[1] == 'E') { struct stat st; r = stat (arg, &st) == 0; }
+      else { char *av[4]; av[0] = "test"; av[1] = (char *) op; av[2] = arg; av[3] = 0; r = bi_test (3, av) == 0; }
+      free (arg);
+      return r;
+    }
+  if (d->i + 2 < d->n + 0 && dbl_binop (d->w[d->i + 1]))
+    {
+      const char *a = d->w[d->i], *op = d->w[d->i + 1], *b = d->w[d->i + 2];
+      char *l, *rr;
+      d->i += 3;
+      if (!live) return 0;
+      l = expand_str (a);
+      if (!strcmp (op, "==") || !strcmp (op, "=") || !strcmp (op, "!="))
+	{
+	  char *pat = expand_pattern (b);
+	  r = fnmatch (pat, l, 0) == 0;
+	  if (op[0] == '!') r = !r;
+	  free (pat);
+	}
+      else if (!strcmp (op, "=~"))
+	{
+	  regex_t re;
+	  rr = expand_str (b);
+	  r = regcomp (&re, rr, REG_EXTENDED) == 0 && regexec (&re, l, 0, 0, 0) == 0;
+	  free (rr);
+	}
+      else if (!strcmp (op, "<")) { rr = expand_str (b); r = strcmp (l, rr) < 0; free (rr); }
+      else if (!strcmp (op, ">")) { rr = expand_str (b); r = strcmp (l, rr) > 0; free (rr); }
+      else { char *av[5]; rr = expand_str (b); av[0] = "test"; av[1] = l; av[2] = (char *) op; av[3] = rr; av[4] = 0; r = bi_test (4, av) == 0; free (rr); }
+      free (l);
+      return r;
+    }
+  {
+    char *w;
+    d->i++;
+    if (!live) return 0;
+    w = expand_str (d->w[d->i - 1]);
+    r = *w != 0;
+    free (w);
+    return r;
+  }
+}
+static int dbl_and (struct dbl *d, int live)
+{
+  int r = dbl_primary (d, live);
+  while (d->i < d->n && !strcmp (d->w[d->i], "&&")) { d->i++; r = dbl_primary (d, live && r) && r; }
+  return r;
+}
+static int dbl_or (struct dbl *d, int live)
+{
+  int r = dbl_and (d, live);
+  while (d->i < d->n && !strcmp (d->w[d->i], "||")) { d->i++; { int b = dbl_and (d, live && !r); r = r || b; } }
+  return r;
+}
+static int exec_dbracket (struct node *n)
+{
+  struct dbl d;
+  int r;
+  d.w = n->words.v; d.n = n->words.n; d.i = 0; d.err = 0;
+  r = dbl_or (&d, 1);
+  if (d.err || d.i < d.n) { errf ("sh: [[: syntax error in expression\n"); return 2; }
+  return r ? 0 : 1;
+}
+
 static int exec_node (struct node *n)
 {
   int r = 0;
   struct saved_io s;
-  if (!n || exit_flag) return last_status;
+  if (!n || exit_flag || broken_pipe) return last_status;
   switch (n->type)
     {
     case N_SIMPLE:
@@ -2473,6 +2756,11 @@ static int exec_node (struct node *n)
       return r;
     case N_PIPE:
       r = exec_pipe (n);
+      last_status = r;
+      if (r && opt_e && !in_condition && !exit_flag) { exit_code = r; exit_flag = 1; }
+      return r;
+    case N_DBRACKET:
+      r = exec_dbracket (n);
       last_status = r;
       if (r && opt_e && !in_condition && !exit_flag) { exit_code = r; exit_flag = 1; }
       return r;
@@ -2527,10 +2815,10 @@ static int exec_node (struct node *n)
 	{
 	  int c;
 	  in_condition++; c = exec_node (n->a); in_condition--;
-	  if (exit_flag || ret_flag) break;
+	  if (exit_flag || ret_flag || broken_pipe) break;
 	  if ((n->type == N_WHILE) ? c != 0 : c == 0) break;
 	  r = exec_node (n->b);
-	  if (exit_flag || ret_flag) break;
+	  if (exit_flag || ret_flag || broken_pipe) break;
 	  if (brk_n) { brk_n--; break; }
 	  if (cont) { if (--cont) break; }
 	}

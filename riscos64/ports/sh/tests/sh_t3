@@ -1,0 +1,46 @@
+# new in the shell: [[ ]], ${v/p/r}, ${v:o:l}, ${v^^} ${v,,}, $'..', set -o pipefail
+v="Hello World, hello"
+echo "${v/ello/ELLO}"
+echo "${v//ello/ELLO}"
+echo "${v/#Hello/Bye}"
+echo "${v/%hello/bye}"
+echo "${v/#World/no}"
+echo "${v//o/}"
+echo "${v//[eo]/_}"
+echo "${v:6}"
+echo "${v:6:5}"
+echo "${v: -5}"
+echo "${v: -5:3}"
+echo "${v:0:5}x"
+echo "${v^^}"
+echo "${v,,}"
+echo "${v^}"
+w=abc
+echo "${w^}"
+echo "${w^^}${w^}"
+printf '%s\n' $'tab\there' $'nl\\n' $'q\'q' $'\x41\101\e[0m' | od -c | head -5
+if [[ $v == Hello* ]]; then echo glob-yes; else echo glob-no; fi
+if [[ $v == hello* ]]; then echo glob-yes; else echo glob-no; fi
+if [[ $v != *xyz ]]; then echo ne-yes; fi
+[[ -n $v && -z "" ]] && echo and-ok
+[[ -z $v || $w = abc ]] && echo or-ok
+[[ ! -e /nonexistent_zzz ]] && echo not-ok
+[[ ( $w == abc ) && ( 1 -lt 2 ) ]] && echo paren-ok
+[[ 10 -gt 9 ]] && echo int-ok
+[[ a < b ]] && echo lt-ok
+[[ $v =~ ^Hello\ W[a-z]+ ]] && echo re-ok
+[[ $v =~ ^xyz ]] || echo re-no
+e="a b"
+[[ $e == "a b" ]] && echo nosplit-ok
+[[ $e == a* ]] && echo pat-ok
+[[ $e == "a*" ]] || echo quoted-no
+[[ -f ./sh_t3 || -d . ]] && echo file-ok
+[[ -n "" ]]; echo rc=$?
+[[ x ]]; echo rc=$?
+false | true; echo "nopipefail rc=$?"
+set -o pipefail
+false | true; echo "pipefail rc=$?"
+true | false | true; echo "pipefail2 rc=$?"
+true | true; echo "pipefail3 rc=$?"
+set +o pipefail
+false | true; echo "off rc=$?"

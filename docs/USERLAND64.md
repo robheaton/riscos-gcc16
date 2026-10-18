@@ -17,7 +17,7 @@ This page is for people who **use** the programs in the two packages [`!GNU`](ht
 
 | Package | Contents |
 |---|---|
-| **`!GNU`** (`gnutools_2_aarch64.zip`, 5 MB) | `sh` (a POSIX shell written for this system), GNU `sed` 4.9, `grep` 3.11 (`egrep` and `fgrep` as aliases), `gawk` 5.3.1 (`awk`), `make` 4.4.1, `diff` `cmp` `diff3` `sdiff` (diffutils 3.10), `find` `xargs` (findutils 4.10.0), `patch` 2.7.6, `tar` 1.35, `gzip` 1.13 (`gunzip`, `zcat`), Lua 5.4.7, `bzip2` 1.0.8, `sqlite3` 3.47.2 |
+| **`!GNU`** (`gnutools_2_aarch64.zip`, 5 MB) | `sh` (a POSIX shell written for this system), GNU `sed` 4.9, `grep` 3.11 (`egrep` and `fgrep` as aliases), `gawk` 5.3.1 (`awk`), `make` 4.4.1, `diff` `cmp` `diff3` `sdiff` (diffutils 3.10), `find` `xargs` (findutils 4.10.0), `patch` 2.7.6, `tar` 1.35, `gzip` 1.13 (`gunzip`, `zcat`), `m4` 1.4.19, `which` 2.21, `bc`/`dc` 1.07.1, `xxd`, `xz` 5.4.7 (`unxz`, `xzcat`), Lua 5.4.7, `bzip2` 1.0.8, `sqlite3` 3.47.2 (`m4`, `which`, `bc`, `dc`, `xxd` and `xz` are in `!GNU` 3 and later) |
 | **`!CoreUtils`** (`coreutils_9.5-2_aarch64.zip`, 22 MB) | GNU coreutils 9.5: 102 programs, one file each, in the way of the 32-bit package `coreutils_8.30-2_arm.zip`: `ls cp mv rm mkdir cat sort uniq tr cut wc head tail tee seq expr date uname env printenv md5sum sha256sum cksum stat basename dirname fold nl od ...` (`install` is `ginstall`) |
 
 Each application is a folder `Apps.Utilities.!GNU` / `!CoreUtils` with one program per tool (file type &FF8, an AIF64 program), a `!Boot` that sets `GNU$Dir` / `CoreUtils$Dir` and one `Alias$NAME` per program, `!Run`, `!Help` and the licences. Both are meant to be used together: the shell finds both.
@@ -58,14 +58,14 @@ Things to know:
 * A name that has a suffix of the list in the **middle** (`zconf.h.in`, `foo.o.bar`) is taken for a RISC OS name already and left as it is: such a file cannot be opened by that name. This is the behaviour of UnixLib on 32-bit RISC OS too. Packages that have such names (zlib's `zconf.h.in`) need a change of the name, or `UnixEnv$...$sfix` without the suffix.
 * **Names are not case sensitive**, so `Makefile` and `makefile` are the same file, and `libtest64` and `LibTest64` too.
 * Directories are listed with the suffix folders merged (`c.main` is listed as `main.c`). `.` and `..` are not listed.
-* There are **no links**: `ln` makes a copy where it can, `ln -s` fails; `readlink` fails.
+* There are **no links**: `link ()` and `ln` (without `-s`) make a **copy** of the file (it does not follow later changes of the original); `ln -s` and `symlink ()` fail; `readlink` fails.
 * Inode numbers are made from the full name of the file (so two names of one file are the same inode); owner and group are always `user`/`root` (uid 1).
 
 ### 3.2 Programs that start programs
 
 RISC OS has no `fork`. A program that starts another (`system ()`, `popen ()`, `posix_spawn`, `vfork` and `exec`, `exec` alone) **runs it to its end** and then goes on: the caller's memory is saved in a dynamic area, the other program is loaded and run, and its exit puts the caller's memory back. This needs `UnixEnv$swap` set to 1 (the `!Boot` of both packages does that). The consequences:
 
-* **Everything is sequential.** `a | b` runs `a` to its end with its output in a scrap file, then `b` with that file as input. `cmd &` runs `cmd` to its end first. A program that never ends in a pipeline (`yes | head`) hangs. Programs that need two processes at once (a server and a client) do not work.
+* **Everything is sequential.** `a | b` runs `a` to its end with its output in a scrap file, then `b` with that file as input. `cmd &` runs `cmd` to its end first. A program that never ends in a pipeline hangs, except in front of `head` (see [6](#6-what-does-not-work)). Programs that need two processes at once (a server and a client) do not work.
 * A program started by another gets the **environment** of the caller (the variables it exported) and the **current directory** it had before; the directory is put back when the command has ended, so `cd` in a child never changes the parent's.
 * **Standard streams.** A program of this tool chain reads `Sh$Stdin`, `Sh$Stdout`, `Sh$Stderr` (file name, `null`, or for stderr `stdout`) at its first use of descriptor 0, 1 or 2; that is how the shell redirects them. A command of the operating system (`Cat`, `Copy` ...) can have its screen output redirected only with `{ > file }` on a RISC OS that takes it, or `*Spool`; its input cannot be redirected.
 * Each start of a program costs about 0.4 s on the Pyromaniac emulator (much less on a real machine); the shell and `make` are slower on it than they will be.
@@ -89,6 +89,8 @@ sh -n script          read the commands, do not run them (syntax check)
 
 **Language:** lists with `;` `&` `&&` `||`, pipelines, `!`, `if/elif/else`, `while`, `until`, `for`, `case` (with `|` and empty items), functions (`name () command`, with `local` and `return`), `{ ...; }` and `( ... )` (a subshell keeps its variables and directory to itself), here documents (`<<`, `<<-`, quoted or not), quoting (`'...'`, `"..."`, `\`), comments, line continuation, `$var`, `${var}` with all of `:-` `-` `:=` `=` `:+` `+` `:?` `?` `#` `##` `%` `%%` and `${#var}`, `$(...)`, `` `...` ``, `$((...))` (the C operators on integers, variables by name, `?:`, `=`), `$@ $* $# $? $$ $! $- $0 $1...`, `$LINENO`, tilde (`~`), pathname expansion (`*` `?` `[...]`, `set -f` switches it off), `IFS` splitting.
 
+**Also understood (from `bash`; the next `!GNU` release):** `[[ ... ]]` with `== != =~ < > -eq -ne -lt -le -gt -ge -z -n -e -f -d ...`, `&&`, `||`, `!` and parentheses (no word splitting inside; `==` and `!=` match a pattern; `=~` is an extended regular expression); `$'...'` with the C escapes (`\n \t \xHH \NNN \e` ...); `${v/pat/rep}`, `${v//pat/rep}`, `${v/#pat/rep}`, `${v/%pat/rep}`; `${v:off}`, `${v:off:len}` (negative values count from the end); `${v^}`, `${v^^}`, `${v,}`, `${v,,}`; and `set -o pipefail`, `set -o errexit|nounset|noglob|xtrace|noexec`.
+
 **Redirection:** `< > >> << <& >& <>`, with descriptors 0 to 19: `exec 5>file`, `echo x >&5`, `read a <&6`, `exec 6<&-`, `2>&1`, `>&2`, `2>/dev/null`, `exec >file` (stays for the rest of the script). Descriptors above 2 are for the shell's own commands and builtins; a program started by the shell gets descriptors 0, 1 and 2 only.
 
 **Builtins:** `: . source break continue cd command echo eval exec exit export false getopts hash local printf pwd read readonly return set shift test [ trap true type umask unset wait alias unalias ulimit` (`alias`, `hash`, `ulimit`, `umask`, `wait` and `chmod` do nothing useful). `trap '...' EXIT` runs a command at the end; other signals are ignored. `set` takes `-e -x -u -f -n`. `echo` takes `-n` and always reads backslash escapes, as `dash` does; `printf` takes `%s %b %c %d %i %o %x %X %e %f %g %%` with width and precision.
@@ -97,7 +99,7 @@ sh -n script          read the commands, do not run them (syntax check)
 
 **Finding a command:** a function, a builtin, a file in `PATH` (a program is run directly; a text file or a file that starts `#!` is run by the shell itself, as `sh file args`), and last a command of the operating system if its name is a RISC OS command (`Cat`, `Copy`, `Set`, `Obey` ... or a name that has an `Alias$` variable, or one that starts with `*`). Anything else is `sh: name: not found` (an unknown command given to RISC OS can hang it waiting for the keyboard, so the shell never does that).
 
-**Differences from `bash`/`dash` that scripts can trip over:** no job control and no `&` in the background (the command runs to its end at once), no aliases, no `[[ ]]`, no arrays, no `$'...'`, no `${var/a/b}`, no process substitution, `trap` only for `EXIT`, no `time`, `wait` and `kill` do nothing. `read` reads lines; `set -o` is not there.
+**Differences from `bash`/`dash` that scripts can trip over:** no job control and no `&` in the background (the command runs to its end at once), no aliases, no arrays, no process substitution, `trap` only for `EXIT`, no `time`, `wait` and `kill` do nothing. `read` reads lines.
 
 **Environment of the shell:** `PATH`, `HOME`, `IFS`, `PWD`, `OLDPWD`, `OPTIND`, `OPTARG`, `SH_TMPDIR` (where the scrap files go; default `/tmp`), `SH_PROFILE=1` (prints the commands that take more than 0.2 s). The variables it exports are given to programs as system variables for the time of the command, and `Unix$Environ` names them, so a program sees exactly those in its `environ`.
 
@@ -112,6 +114,8 @@ sh -n script          read the commands, do not run them (syntax check)
 | **tar** | creates, lists and extracts (the formats of GNU tar); file types are kept as `,xyz` only if you ask for them. A compressed archive (`-z`, `-j`) needs a pipe to another program running at once: use `gzip -c a.tar` and `gzip -d`, as two steps |
 | **gzip** | `gzip file`, `-c`, `-d`, `-1` ... `-9`; reads archives made on other systems; `gunzip` and `zcat` are aliases |
 | **find, xargs** | `find` with the usual tests; `-exec` and `-execdir` run the command to its end for each file; `xargs` runs the command once per batch, in sequence (`-P` makes no difference) |
+| **m4, which, bc, dc, xxd** | m4 1.4.19 (`syscmd` and `esyscmd` run the command with `system ()`/`popen ()`, so they use `sh -c` when there is an `sh`); which 2.21 (searches `PATH`); bc and dc 1.07.1 (arbitrary precision, `-l` maths library); xxd from Vim 9.1.0000 (`-p`, `-i`, `-r`). Output identical to the host versions on the tests |
+| **xz** | XZ Utils 5.4.7 (not the 5.6.0/5.6.1 releases): `xz`, `-d`, `-k`, `-t`, `-l`, levels `-0` to `-9e`; reads archives made on other systems; single thread |
 | **Lua** | 5.4.7 with its libraries; 16 of the 17 files of its test suite that were run pass (the 17th is too slow for the build service). Scripts need `.lua` names as the program `lua` sees them (`UnixEnv$lua$sfix`) |
 | **bzip2** | the library gives the bytes that the host's libbz2 gives; the program compresses, tests and decompresses |
 | **sqlite3** | 3.47.2 shell and library without WAL and without extensions; transactions, indexes and rollback work; the database file stays valid between runs |
@@ -120,8 +124,8 @@ sh -n script          read the commands, do not run them (syntax check)
 
 | What | Why | What to do |
 |---|---|---|
-| `ln -s`, `readlink`, symbolic links | RISC OS has none | copy the file |
-| `yes \| head`, any pipeline with a stage that does not end | the stages run one after the other | give the producer a limit (`yes \| head` becomes `seq 100`) |
+| `ln -s`, `readlink`, symbolic links | RISC OS has none (`ln` without `-s` makes a copy) | copy the file |
+| A pipeline with a stage that never ends, unless the next stage is `head` | the stages run one after the other; only for `head` (`head`, `head -n N`, `head -N`) does the shell tell the stage in front how many lines are wanted, and the stage stops after them (a program of this tool chain, or a shell loop or function) | `yes \| head -5` and `while :; do echo x; done \| head -3` work; for other readers give the producer a limit (`seq 100`) |
 | `cmd &` and waiting for it, `wait`, `kill`, job control, `wait` for several | one program at a time | run it in the foreground |
 | two programs talking at once (sockets, pipes, FIFOs between processes) | no processes | write the data to a file in between |
 | `make -j`, `xargs -P` | same | they run sequentially |

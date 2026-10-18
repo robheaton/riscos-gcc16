@@ -172,3 +172,9 @@ for hn in ("wchar.h", "wctype.h"):
         j = h.index("#define", h.index("#ifndef")) if "#ifndef" in h else 0
         j = h.index("\n", j) + 1
         open(hp, "w").write(h[:j] + "/* SDK: wint_t */\ntypedef __WINT_TYPE__ wint_t;\n" + h[j:])
+
+# CLOCK_MONOTONIC is wanted by plain C programs (glibc has it without _GNU_SOURCE); picolibc hides it unless _POSIX_MONOTONIC_CLOCK or _GNU_SOURCE
+tm = inc + "/time.h"
+t = open(tm).read()
+if "#if defined(_POSIX_MONOTONIC_CLOCK) || __GNU_VISIBLE\n\n/*  The identifier for the system-wide monotonic" in t:
+    open(tm, "w").write(t.replace("#if defined(_POSIX_MONOTONIC_CLOCK) || __GNU_VISIBLE\n\n/*  The identifier for the system-wide monotonic", "#if 1\t/* SDK: always */\n\n/*  The identifier for the system-wide monotonic", 1))

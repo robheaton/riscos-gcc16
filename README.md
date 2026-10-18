@@ -141,6 +141,7 @@ The test programs are in [tests/](tests/) and are described in [docs/TESTING.md]
 | [docs/AARCH64.md](docs/AARCH64.md) | the `aarch64-riscos` tool chain for RISC OS 64: build it, programs, C++, `-munixlib`, modules, what is tested and what is not |
 | [docs/MODULES64.md](docs/MODULES64.md) | writing modules for RISC OS 64 in C and C++: `aarch64-riscos-gcc -mmodule`, `cmunge64`, the C library, floating point, what is not supported |
 | [docs/UNIXLIB64.md](docs/UNIXLIB64.md) | a C library for programs on RISC OS 64: what UnixLib is (measured), three ways to port it, a component plan with hours, risks |
+| [docs/USERLAND64.md](docs/USERLAND64.md) | the shell and the GNU tools for RISC OS 64 (`!GNU`, `!CoreUtils`): setup, file names, the process model, the `sh` reference, tool notes, limits, a porting guide |
 | [docs/SHAREDULIB-FIX.md](docs/SHAREDULIB-FIX.md) | the optional fixed SharedUnixLibrary module: what it fixes, how to install it and go back |
 | [docs/UPSTREAM.md](docs/UPSTREAM.md) | the bugs found in UnixLib, SharedUnixLibrary, ARMEABISupport and RISC OS, with patches |
 | [docs/HISTORY.md](docs/HISTORY.md) | how the port was made |

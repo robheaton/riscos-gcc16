@@ -1,0 +1,42 @@
+HELLO World, hello
+HELLO World, hELLO
+Bye World, hello
+Hello World, bye
+Hello World, hello
+Hell Wrld, hell
+H_ll_ W_rld, h_ll_
+World, hello
+World
+hello
+hel
+Hellox
+HELLO WORLD, HELLO
+hello world, hello
+Hello World, hello
+Abc
+ABCAbc
+0000000   t   a   b  \t   h   e   r   e  \n   n   l   \   n  \n   q   '
+0000020   q  \n   A   A 033   [   0   m  \n
+0000031
+glob-yes
+glob-no
+ne-yes
+and-ok
+or-ok
+not-ok
+paren-ok
+int-ok
+lt-ok
+re-ok
+re-no
+nosplit-ok
+pat-ok
+quoted-no
+file-ok
+rc=1
+rc=0
+nopipefail rc=0
+pipefail rc=1
+pipefail2 rc=1
+pipefail3 rc=0
+off rc=0

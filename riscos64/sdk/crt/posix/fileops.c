@@ -186,7 +186,26 @@ int dup2 (int fd, int fd2)
   if (fd2 < 3 && __ul64_vfork_depth_get () > 0) { struct stat st; if (fd != fd2 && fstat (fd, &st) != 0) return -1; return fd2; }
   return __riscos_dup (fd, fd2);
 }
-int link (const char *a, const char *b) { (void) a; (void) b; __ul64_nosys ("link"); return -1; }
+/* RISC OS has no hard links: link () makes a copy (OS_FSControl 26), which is what "ln" needs for the files that are only read afterwards; the copy does not follow later changes of the original.  A directory is EPERM, a name
+   that is there EEXIST, as for the real call. */
+int link (const char *a, const char *b)
+{
+  char b1[PATHMAX], b2[PATHMAX];
+  const char *pa = __riscos_path (a, b1, 0), *pb;
+  unsigned long r[10];
+  if (!pa) return -1;
+  r[0] = 17; r[1] = (unsigned long) pa;
+  if (swi_x (OS_File, r)) { errno = os_err (r); return -1; }
+  if (r[0] == 0) { errno = ENOENT; return -1; }
+  if (r[0] != 1) { errno = EPERM; return -1; }
+  pb = __riscos_path (b, b2, 0);
+  if (!pb) return -1;
+  r[0] = 17; r[1] = (unsigned long) pb;
+  if (!swi_x (OS_File, r) && r[0] != 0) { errno = EEXIST; return -1; }
+  r[0] = 26; r[1] = (unsigned long) pa; r[2] = (unsigned long) pb; r[3] = 0;
+  if (swi_x (OS_FSControl, r)) { errno = os_err (r); return -1; }
+  return 0;
+}
 int symlink (const char *a, const char *b) { (void) a; (void) b; __ul64_nosys ("symlink"); return -1; }
 ssize_t readlink (const char *p, char *buf, size_t n) { (void) p; (void) buf; (void) n; errno = EINVAL; return -1; }
 char *ttyname (int fd) { (void) fd; errno = ENOTTY; return 0; }

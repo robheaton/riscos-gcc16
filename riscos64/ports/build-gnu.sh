@@ -35,6 +35,36 @@ for pkg in diffutils-3.10:diffutils findutils-4.10.0:findutils patch-2.7.6:patch
   (cd $n-build && ../$t/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS="$extra" --disable-nls --without-selinux --disable-acl --disable-xattr > conf.log 2>&1 && make -k -j"$(nproc)" > make.log 2>&1 || true)
 done
 
+# m4 1.4.19 (autoconf needs it): configured like the others; esyscmd and syscmd use popen / system () (patches/m4-1.4.19-riscos64.patch); -Wno-error=int-conversion for gnulib's uselocale (NULL)
+fetch m4 m4-1.4.19.tar.xz 63aede5c6d33b6d9b13511cd0be2cac046f2e70fd0a07aa9573a04a82783af96
+[ -d m4-1.4.19 ] || tar xf m4-1.4.19.tar.xz
+python3 "$HERE/patches/gnulib-riscos64.py" m4-1.4.19 > /dev/null
+[ -f .m4-patched ] || { patch -p0 < "$HERE/patches/m4-1.4.19-riscos64.patch" && touch .m4-patched; }
+mkdir -p m4-build
+(cd m4-build && ../m4-1.4.19/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS="-O2 -std=gnu17 -include stdbool.h -Wno-error=int-conversion" --disable-nls --disable-dependency-tracking > conf.log 2>&1 && make -k -j"$(nproc)" > make.log 2>&1 || true)
+cp m4-build/src/m4 "m4,ff8"
+
+# which 2.21, bc/dc 1.07.1 (libmath.h is made by a bc built for the host first: the build runs fbc), xxd (the single file src/xxd/xxd.c of Vim 9.1.0000)
+fetch which which-2.21.tar.gz f4a245b94124b377d8b49646bf421f9155d36aa7614b6ebf83705d3ffc76eaad
+fetch bc bc-1.07.1.tar.gz 62adfca89b0a1c0164c2cdca59ca210c1d44c3ffc46daf9931cf4942664cb02a
+[ -f xxd.c ] || curl -sSLo xxd.c https://raw.githubusercontent.com/vim/vim/v9.1.0000/src/xxd/xxd.c
+echo "081c52b38668bb1f68afbb9fef4d73eec88fc12f6ac0f8bef5abf4332d8a61d0  xxd.c" | sha256sum -c -
+for t in which-2.21 bc-1.07.1; do [ -d $t ] || tar xf $t.tar.gz; done
+mkdir -p which-build bc-build bc-host
+(cd which-build && ../which-2.21/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS="-O2 -std=gnu17 -include stdbool.h" > conf.log 2>&1 && make -j"$(nproc)" > make.log 2>&1 || true)
+cp which-build/which "which,ff8"
+(cd bc-host && ../bc-1.07.1/configure > conf.log 2>&1 && make -j"$(nproc)" > make.log 2>&1)
+(cd bc-build && ../bc-1.07.1/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS="-O2 -std=gnu17 -include stdbool.h" --without-readline > conf.log 2>&1 && { make -k -j"$(nproc)" > make1.log 2>&1 || true; } && cp ../bc-host/bc/libmath.h bc/libmath.h && touch bc/libmath.h && make -j"$(nproc)" > make.log 2>&1 || true)
+cp bc-build/bc/bc "bc,ff8"; cp bc-build/dc/dc "dc,ff8"
+$CC -O2 -std=gnu17 -o "xxd,ff8" xxd.c
+
+# xz 5.4.7 (XZ Utils; not 5.6.0/5.6.1): the tool only, no threads, no scripts, no shared library
+fetch xz xz-5.4.7.tar.xz 016182c70bb5c7c9eb3465030e3a7f6baa25e17b0e8c0afe92772e6021843ce2 2>/dev/null || { [ -f xz-5.4.7.tar.xz ] || curl -sSLO https://github.com/tukaani-project/xz/releases/download/v5.4.7/xz-5.4.7.tar.xz; echo "016182c70bb5c7c9eb3465030e3a7f6baa25e17b0e8c0afe92772e6021843ce2  xz-5.4.7.tar.xz" | sha256sum -c -; }
+[ -d xz-5.4.7 ] || tar xf xz-5.4.7.tar.xz
+mkdir -p xz-build
+(cd xz-build && ../xz-5.4.7/configure --host=aarch64-riscos --build=$BUILD CC="$CC" CFLAGS="-O2 -std=gnu17 -include stdbool.h" --disable-nls --disable-shared --disable-threads --disable-doc --disable-scripts --disable-lzmadec --disable-lzmainfo --disable-xzdec > conf.log 2>&1 && make -k -j"$(nproc)" > make.log 2>&1 || true)
+cp xz-build/src/xz/xz "xz,ff8"
+
 # coreutils: one program per utility (no --enable-single-binary), then the application
 fetch coreutils coreutils-9.5.tar.xz cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a
 [ -d coreutils-9.5 ] || tar xf coreutils-9.5.tar.xz

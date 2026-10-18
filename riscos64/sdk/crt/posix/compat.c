@@ -70,7 +70,7 @@ int renameat (int ofd, const char *o, int nfd, const char *n) { return (o = at_n
 
 int fchownat (int fd, const char *path, uid_t u, gid_t g, int flags) { (void) flags; return (path = at_name (fd, path)) ? chown (path, u, g) : -1; }
 int fchmodat (int fd, const char *path, mode_t mode, int flags) { (void) flags; return (path = at_name (fd, path)) ? chmod (path, mode) : -1; }
-int linkat (int ofd, const char *o, int nfd, const char *n, int flags) { (void) ofd; (void) o; (void) nfd; (void) n; (void) flags; errno = ENOSYS; return -1; }
+int linkat (int ofd, const char *o, int nfd, const char *n, int flags) { (void) flags; return (o = at_name (ofd, o)) && (n = at_name (nfd, n)) ? link (o, n) : -1; }	/* (a copy: see link ()) */
 int symlinkat (const char *target, int fd, const char *path) { (void) target; (void) fd; (void) path; errno = ENOSYS; return -1; }
 ssize_t readlinkat (int fd, const char *path, char *buf, size_t n) { (void) fd; (void) path; (void) buf; (void) n; errno = EINVAL; return -1; }
 int mkfifoat (int fd, const char *path, mode_t mode) { (void) fd; (void) path; (void) mode; errno = ENOSYS; return -1; }
