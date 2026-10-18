@@ -1,0 +1,7 @@
+; vec64.cmhg - Vec64: a probe of vector claims on a 64-bit kernel: Vec64_Claim claims WrchV with a veneer that counts the calls and passes them on, Vec64_Count says how many, Vec64_Release gives the vector back.
+title-string: Vec64
+help-string: Vec64 0.01
+date-string: 18 Oct 2026
+swi-chunk-base-number: 0x59C80
+swi-handler-code: vec_swi
+swi-decoding-table: Vec64 Claim Release Count

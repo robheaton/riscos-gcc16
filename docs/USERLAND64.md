@@ -176,6 +176,10 @@ What worked for the programs in the packages (all with `aarch64-riscos-gcc -muni
 * Jobs of `riscos64/tools/run_on_service.py` for the Pyromaniac build service: `port_sh`, `port_shconf`, `port_shcfg2` (the shell against `dash`), `port_cu2` (coreutils), `port_ux` (diff, patch, gzip, tar, find, xargs), `port_final` (everything from the package layout), `port_sed`, `port_grep`, `port_gawk`, `port_make_sh`, `port_bz2`, `port_sqlite`, `lua_*`.
 * To build everything: `ports/build-gnu.sh PREFIX WORKDIR` with the tool chain in `PREFIX` (see [CROSS-COMPILER.md](CROSS-COMPILER.md) and `riscos64/target/README.md`).
 
+### Crash reports and backtraces
+
+A program that has a handler for SIGSEGV, SIGILL, SIGBUS or SIGFPE and returns from it gets a report with the registers and the return addresses of the frame chain; without a handler the system's own report (with a disassembly) is shown. `backtrace ()`, `backtrace_symbols ()` and `backtrace_symbols_fd ()` of `<execinfo.h>` give the same chain at any point (compile with `-fno-omit-frame-pointer`; code without frame records is skipped). The addresses are in the program image; link with `-Wl,-Map=PROGRAM.map` and run `tools/crashsym.py PROGRAM.map` on the report (or `crashsym.py PROGRAM.map ADDRESS ...`) to get `function+0xoffset` for each one.
+
 ## 10. Troubleshooting
 
 | You see | Because |

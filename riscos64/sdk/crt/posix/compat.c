@@ -258,7 +258,54 @@ void openlog (const char *ident, int opt, int fac) { (void) ident; (void) opt; (
 void closelog (void) { }
 void syslog (int pri, const char *fmt, ...) { (void) pri; (void) fmt; }
 
-int backtrace (void **buf, int n) { (void) buf; (void) n; return 0; }
+/* backtrace: the return addresses on the chain of frame records (x29), innermost first.  Code compiled without -fno-omit-frame-pointer has no records, and the chain skips it.  The addresses are in the
+   program's image (the map file of the link, -Wl,-Map=NAME.map, or tools/crashsym.py names them). */
+extern unsigned long swi_x (unsigned long swi, unsigned long regs[10]);
+int backtrace (void **buf, int n)
+{
+  unsigned long fp = (unsigned long) __builtin_frame_address (0), limit = 0xFFFFFFFFUL, e[10] = { 0 };
+  int k = 0;
+  if (!swi_x (0x10, e) && e[1] > 0x8000) limit = e[1];				/* OS_GetEnv: the end of the memory of the program */
+  while (k < n && fp >= 0x8000 && !(fp & 15) && fp + 16 <= limit)
+    {
+      unsigned long *f = (unsigned long *) fp;
+      if (!f[1]) break;
+      buf[k++] = (void *) f[1];
+      if (f[0] <= fp) break;
+      fp = f[0];
+    }
+  return k;
+}
+char **backtrace_symbols (void *const *buf, int n)
+{
+  int i;
+  size_t total = (size_t) n * sizeof (char *);
+  char **r;
+  char *p;
+  for (i = 0; i < n; i++) total += 24;
+  r = (char **) malloc (total + 1);
+  if (!r) return 0;
+  p = (char *) (r + n);
+  for (i = 0; i < n; i++)
+    {
+      unsigned long v = (unsigned long) buf[i];
+      int j;
+      r[i] = p;
+      p[0] = '['; p[1] = '0'; p[2] = 'x';
+      for (j = 0; j < 16; j++) p[3 + j] = "0123456789abcdef"[(v >> (60 - 4 * j)) & 15];
+      p[19] = ']'; p[20] = 0;
+      p += 24;
+    }
+  return r;
+}
+void backtrace_symbols_fd (void *const *buf, int n, int fd)
+{
+  char **s = backtrace_symbols (buf, n);
+  int i;
+  if (!s) return;
+  for (i = 0; i < n; i++) { write (fd, s[i], strlen (s[i])); write (fd, "\n", 1); }
+  free (s);
+}
 
 ssize_t getrandom (void *buf, size_t n, unsigned flags)
 {

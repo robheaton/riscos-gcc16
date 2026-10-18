@@ -29,5 +29,7 @@ build Cxx64    cxx64    -mmodule     cxx64.cc
 build Fpmod64  fpmod64  -mmodule-fp  fpmod64.c
 build Libmod64 libmod64 -mmodule-fp  libmod64.c
 build Slot64   slot64   -mmodule     slot64.c
+build Kv64     kv64     -mmodule     kv64.c
+build Vec64    vec64    -mmodule     vec64.c vec64_veneer.S
 rm -rf "$T"
 ls -l "$O"/*,ffa

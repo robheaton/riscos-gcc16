@@ -1,0 +1,14 @@
+; kv64.cmhg - Kv64: a key/value store as a module: five SWIs (Kv64_Set Get Delete Count Enum, and Clear), four commands, the data in the RMA.  A worked example of a typical data module.
+title-string: Kv64
+help-string: Kv64 0.01
+date-string: 18 Oct 2026
+initialisation-code: kv_init
+finalisation-code: kv_final
+swi-chunk-base-number: 0x59C40
+swi-handler-code: kv_swi
+swi-decoding-table: Kv64 Set Get Delete Count Enum Clear
+command-keyword-table: kv_command
+  Kv_Set(min-args: 2, max-args: 2, help-text: "Kv_Set stores a value under a key.\r\n", invalid-syntax: "Syntax: *Kv_Set <key> <value>"),
+  Kv_Get(min-args: 1, max-args: 1, help-text: "Kv_Get prints the value of a key.\r\n", invalid-syntax: "Syntax: *Kv_Get <key>"),
+  Kv_List(min-args: 0, max-args: 0, help-text: "Kv_List prints all the keys and values.\r\n", invalid-syntax: "Syntax: *Kv_List"),
+  Kv_Clear(min-args: 0, max-args: 0, help-text: "Kv_Clear removes all the keys.\r\n", invalid-syntax: "Syntax: *Kv_Clear")
