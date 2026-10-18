@@ -30,6 +30,7 @@ cp -r "$R64/target/patches" "$R64/target/new-files" share/riscos64/source/
 cp "$R64/target/build-target.sh" "$R64/target/refresh-sdk.sh" "$R64/target/README.md" share/riscos64/source/ 2>/dev/null || true
 cp -r "$R64/sdk" share/riscos64/source/sdk-src && rm -rf share/riscos64/source/sdk-src/bin share/riscos64/source/sdk-src/lib
 cp -r "$R64/unixlib" share/riscos64/source/unixlib-src && rm -rf share/riscos64/source/unixlib-src/out
+cp "$R64/tools/crashsym.py" bin/riscos64-crashsym && chmod +x bin/riscos64-crashsym
 echo "$V" > VERSION
 cp "$HERE/README-release.txt" README.txt
 sed -i "s/@VERSION@/$V/g" README.txt
