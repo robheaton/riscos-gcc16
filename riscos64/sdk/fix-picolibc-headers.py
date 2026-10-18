@@ -69,3 +69,17 @@ t = open(sj).read()
 if "_longjmp" not in t:
     i = t.rindex("#endif")
     open(sj, "w").write(t[:i] + "#ifndef _setjmp\n#define _setjmp(env) setjmp (env)\n#define _longjmp(env, val) longjmp (env, val)\n#endif\n" + t[i:])
+
+# utime has a struct but no prototype in picolibc's header (the SDK defines it in crt/posix/fileops.c)
+ut = inc + "/sys/utime.h"
+t = open(ut).read()
+if "utime (const" not in t:
+    t = t.replace("_END_STD_C\n", "int utime (const char *, const struct utimbuf *);\n\n_END_STD_C\n", 1)
+    open(ut, "w").write(t)
+
+# getrusage, setpriority and getpriority are BSD calls too (glibc has them under _DEFAULT_SOURCE)
+rs = inc + "/sys/resource.h"
+t = open(rs).read()
+t2 = t.replace("#if __XSI_VISIBLE\nint getpriority", "#if __XSI_VISIBLE || __BSD_VISIBLE\nint getpriority").replace("#if __XSI_VISIBLE\nint getrusage", "#if __XSI_VISIBLE || __BSD_VISIBLE\nint getrusage")
+if t2 != t:
+    open(rs, "w").write(t2)

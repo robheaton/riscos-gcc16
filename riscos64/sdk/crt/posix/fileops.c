@@ -56,6 +56,8 @@ int fcntl (int fd, int cmd, ...)
     {
     case F_GETFD: case F_SETFD: case F_SETFL: return 0;
     case F_GETFL: return O_RDWR;
+    case F_SETLK: case F_SETLKW: return 0;			/* record locks: there is no other process to lock against */
+    case F_GETLK: { va_list ap; struct flock *fl; va_start (ap, cmd); fl = va_arg (ap, struct flock *); va_end (ap); if (fl) fl->l_type = F_UNLCK; return 0; }
     case F_DUPFD: return dup (fd);
     default: errno = EINVAL; return -1;
     }

@@ -72,12 +72,20 @@ size_t fread_unlocked (void *p, size_t s, size_t n, FILE *f) { return fread (p, 
 size_t fwrite_unlocked (const void *p, size_t s, size_t n, FILE *f) { return fwrite (p, s, n, f); }
 int fileno_unlocked (FILE *f) { return fileno (f); }
 
-struct __posix_spawnattr { int flags; };
+struct __posix_spawnattr { int flags; sigset_t sigmask, sigdefault; pid_t pgroup; };
 struct __posix_spawn_file_actions { int n; };
 int posix_spawnattr_init (posix_spawnattr_t *a) { *a = (posix_spawnattr_t) calloc (1, sizeof **a); return *a ? 0 : ENOMEM; }
 int posix_spawnattr_destroy (posix_spawnattr_t *a) { free (*a); *a = 0; return 0; }
 int posix_spawnattr_setflags (posix_spawnattr_t *a, short f) { (*a)->flags = f; return 0; }
-int posix_spawnattr_setsigmask (posix_spawnattr_t *a, const sigset_t *m) { (void) a; (void) m; return 0; }
+int posix_spawnattr_setsigmask (posix_spawnattr_t *a, const sigset_t *m) { (*a)->sigmask = *m; return 0; }
+int posix_spawnattr_getsigmask (const posix_spawnattr_t *a, sigset_t *m) { *m = (*a)->sigmask; return 0; }
+int posix_spawnattr_setsigdefault (posix_spawnattr_t *a, const sigset_t *m) { (*a)->sigdefault = *m; return 0; }
+int posix_spawnattr_getsigdefault (const posix_spawnattr_t *a, sigset_t *m) { *m = (*a)->sigdefault; return 0; }
+int posix_spawnattr_getflags (const posix_spawnattr_t *a, short *f) { *f = (short) (*a)->flags; return 0; }
+int posix_spawnattr_setpgroup (posix_spawnattr_t *a, pid_t p) { (*a)->pgroup = p; return 0; }
+int posix_spawnattr_getpgroup (const posix_spawnattr_t *a, pid_t *p) { *p = (*a)->pgroup; return 0; }
+int posix_spawn_file_actions_addopen (posix_spawn_file_actions_t *a, int fd, const char *path, int flags, mode_t mode) { (void) fd; (void) path; (void) flags; (void) mode; (*a)->n++; return 0; }
+int posix_spawn_file_actions_addchdir_np (posix_spawn_file_actions_t *a, const char *path) { (void) path; (*a)->n++; return 0; }
 int posix_spawn_file_actions_init (posix_spawn_file_actions_t *a) { *a = (posix_spawn_file_actions_t) calloc (1, sizeof **a); return *a ? 0 : ENOMEM; }
 int posix_spawn_file_actions_destroy (posix_spawn_file_actions_t *a) { free (*a); *a = 0; return 0; }
 int posix_spawn_file_actions_addclose (posix_spawn_file_actions_t *a, int fd) { (void) fd; (*a)->n++; return 0; }

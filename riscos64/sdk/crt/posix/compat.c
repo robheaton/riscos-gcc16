@@ -74,6 +74,25 @@ int futimens (int fd, const struct timespec ts[2]) { (void) fd; (void) ts; errno
 
 /* ---- files ---- */
 
+ssize_t pread (int fd, void *buf, size_t n, off_t off)
+{
+  off_t was = lseek (fd, 0, SEEK_CUR);
+  ssize_t r;
+  if (was < 0 || lseek (fd, off, SEEK_SET) < 0) return -1;
+  r = read (fd, buf, n);
+  lseek (fd, was, SEEK_SET);					/* (one process, one thread at a time: the position can be put back) */
+  return r;
+}
+ssize_t pwrite (int fd, const void *buf, size_t n, off_t off)
+{
+  off_t was = lseek (fd, 0, SEEK_CUR);
+  ssize_t r;
+  if (was < 0 || lseek (fd, off, SEEK_SET) < 0) return -1;
+  r = write (fd, buf, n);
+  lseek (fd, was, SEEK_SET);
+  return r;
+}
+
 int fdatasync (int fd) { return fsync (fd); }
 void sync (void) { }
 int lchown (const char *p, uid_t u, gid_t g) { return chown (p, u, g); }
