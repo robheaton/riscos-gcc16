@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #define NSIG_ 65
 static void (*handlers[NSIG_]) (int);
@@ -130,3 +131,58 @@ int pause (void)
     }
 }
 
+
+int sigpending (sigset_t *set) { if (!set) { errno = EFAULT; return -1; } *set = pending; return 0; }
+
+int sigsuspend (const sigset_t *mask)
+{
+  sigset_t old;
+  int r;
+  sigprocmask (SIG_SETMASK, mask, &old);		/* a signal that was pending runs here */
+  r = pause ();
+  sigprocmask (SIG_SETMASK, &old, 0);
+  return r;
+}
+
+int sigwait (const sigset_t *set, int *sig)
+{
+  int s;
+  for (;;)
+    {
+      __ul64_poll_signals ();
+      for (s = 1; s < NSIG_; s++)
+	if ((*set & BIT (s)) && (pending & BIT (s))) { pending &= ~BIT (s); *sig = s; return 0; }
+    }
+}
+
+int sigaltstack (const stack_t *ss, stack_t *old)	/* a handler runs on the stack of the program: nothing to set up */
+{
+  (void) ss;
+  if (old) { old->ss_sp = 0; old->ss_size = 0; old->ss_flags = SS_DISABLE; }
+  return 0;
+}
+
+/* ITIMER_REAL only, in centiseconds like alarm () */
+static void itimer_left (struct itimerval *o)
+{
+  long d = alarm_on ? (long) ((alarm_at - now_cs ()) & 0xFFFFFFFFUL) : 0;
+  if (d < 0 || d > 0x40000000L) d = 0;
+  o->it_interval.tv_sec = o->it_interval.tv_usec = 0;
+  o->it_value.tv_sec = d / 100; o->it_value.tv_usec = (d % 100) * 10000;
+}
+
+int setitimer (int which, const struct itimerval *__restrict n, struct itimerval *__restrict o)
+{
+  if (which != ITIMER_REAL) { errno = EINVAL; return -1; }
+  if (o) itimer_left (o);
+  alarm_on = n->it_value.tv_sec != 0 || n->it_value.tv_usec != 0;
+  alarm_at = now_cs () + (unsigned long) n->it_value.tv_sec * 100 + (unsigned long) (n->it_value.tv_usec / 10000);
+  return 0;
+}
+
+int getitimer (int which, struct itimerval *o)
+{
+  if (which != ITIMER_REAL) { errno = EINVAL; return -1; }
+  itimer_left (o);
+  return 0;
+}

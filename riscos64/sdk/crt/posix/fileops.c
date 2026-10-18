@@ -61,6 +61,16 @@ int ftruncate (int fd, off_t len)
   unsigned long r[10] = { 3, (unsigned long) h, (unsigned long) len };	/* OS_Args 3: set the extent */
   if (h < 0 || len < 0) { errno = h < 0 ? EBADF : EINVAL; return -1; }
   if (swi_x (OS_Args, r)) { errno = os_err (r); return -1; }
+  {
+    off_t end = lseek (fd, 0, SEEK_END);			/* a filing system that does not grow a file with OS_Args 3: write the last byte */
+    if (end >= 0 && end < len)
+      {
+	off_t was = lseek (fd, 0, SEEK_CUR);
+	char z = 0;
+	if (lseek (fd, len - 1, SEEK_SET) < 0 || write (fd, &z, 1) != 1) return -1;
+	lseek (fd, was, SEEK_SET);
+      }
+  }
   return 0;
 }
 

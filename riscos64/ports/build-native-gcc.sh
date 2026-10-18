@@ -1,11 +1,11 @@
 #!/bin/bash
 # build-native-gcc.sh PREFIX WORKDIR GMPDIR [SRC]: builds the GCC compiler proper (xgcc, cc1) as a PROGRAM FOR RISC OS 64 with the aarch64-riscos tool chain in PREFIX (--host=aarch64-riscos, -munixlib), in WORKDIR.
-# GMPDIR = where build-gmp-mpfr-mpc.sh installed GMP, MPFR and MPC for AArch64 RISC OS (WORKDIR/inst of that script).  SRC = the GCC source with the aarch64-riscos patch (default PREFIX/../target6-work/gcc-src).
+# GMPDIR = where build-gmp-mpfr-mpc.sh installed GMP, MPFR and MPC for AArch64 RISC OS (WORKDIR/inst of that script).  SRC = the GCC source with the aarch64-riscos patch (default PREFIX/../target7-work/gcc-src).
 # Only compiles and links: the programs are meant to run on Pyromaniac (cc1 is large).  Needs the native binutils too (build-native-binutils.sh) for a full native tool chain.
 set -e
 PREFIX=$(cd "${1:?PREFIX of the aarch64-riscos tool chain}" && pwd); W=${2:?WORKDIR}; mkdir -p "$W"; W=$(cd "$W" && pwd)
 GMP=$(cd "${3:?GMPDIR}" && pwd)
-SRC=${4:-$PREFIX/../target6-work/gcc-src}
+SRC=${4:-$PREFIX/../target7-work/gcc-src}
 [ -d "$SRC" ] || { echo "no source at $SRC"; exit 1; }
 export PATH=$PREFIX/bin:$PATH
 mkdir -p "$W/build" && cd "$W/build"

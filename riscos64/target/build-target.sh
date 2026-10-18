@@ -58,7 +58,7 @@ done
 cp "$SDK/aif64.ld" "$T/lib/"
 # libriscosstub.a: small POSIX functions (crt/posix) and ENOSYS stubs of functions that only UnixLib 64 provides (crt/stubs); one per object, so that libunixlib64.a, searched before it, wins
 mkdir -p "$W/stubs"
-for f in "$SDK"/crt/stubs/*.c "$SDK"/crt/posix/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -Wall -Wextra -I"$SDK/include" -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
+for f in "$SDK"/crt/stubs/*.c "$SDK"/crt/posix/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -fexceptions -Wall -Wextra -I"$SDK/include" -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done
 "$PREFIX/bin/aarch64-riscos-ar" rcs "$T/lib/libriscosstub.a" "$W"/stubs/*.o
 # UnixLib 64 (unixlib/): -munixlib links it
 UL=$SDK/../unixlib

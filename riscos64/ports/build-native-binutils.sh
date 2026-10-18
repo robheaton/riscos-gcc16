@@ -1,10 +1,10 @@
 #!/bin/bash
 # build-native-binutils.sh PREFIX WORKDIR [SRC]: builds binutils (readelf, objdump, ar, as, ld ... ) as PROGRAMS FOR RISC OS 64 with the aarch64-riscos tool chain in PREFIX (--host=aarch64-riscos, -munixlib), in WORKDIR.
-# SRC = the binutils source with the aarch64-riscos patch applied (default PREFIX/../target6-work/binutils-src as made by riscos64/target/build-target.sh).  The source is copied, and three small changes are made to the copy:
+# SRC = the binutils source with the aarch64-riscos patch applied (default PREFIX/../target7-work/binutils-src as made by riscos64/target/build-target.sh).  The source is copied, and three small changes are made to the copy:
 # O_BINARY is not wanted (RISC OS has one kind of file), a pointer difference in dwarf.c needs a cast for GCC 16, memrchr is declared by picolibc as a macro, and getrusage is left out (picolibc's struct rusage has only the times).  Only compiles and links; the programs run on Pyromaniac.
 set -e
 PREFIX=$(cd "${1:?PREFIX of the aarch64-riscos tool chain}" && pwd); W=${2:?WORKDIR}; mkdir -p "$W"; W=$(cd "$W" && pwd)
-SRC=${3:-$PREFIX/../target6-work/binutils-src}
+SRC=${3:-$PREFIX/../target7-work/binutils-src}
 [ -d "$SRC" ] || { echo "no source at $SRC"; exit 1; }
 export PATH=$PREFIX/bin:$PATH
 if [ ! -d "$W/src" ]; then

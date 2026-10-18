@@ -21,3 +21,30 @@ if "fputc_unlocked" not in t:
     t = t.replace(marker, marker + "\nint fputc_unlocked(int, FILE *) __picolibc_export;\nint fputs_unlocked(const char *, FILE *) __picolibc_export;\nsize_t fread_unlocked(void *, size_t, size_t, FILE *) __picolibc_export;\n"
                   "size_t fwrite_unlocked(const void *, size_t, size_t, FILE *) __picolibc_export;\nint fflush_unlocked(FILE *) __picolibc_export;\nint fileno_unlocked(FILE *) __picolibc_export;", 1)
 open(p, "w").write(t)
+
+def add_before_last_endif(path, marker, text):
+    """adds text before the last #endif of the header (once)"""
+    h = open(inc + "/" + path).read()
+    if marker in h:
+        return
+    i = h.rindex("#endif")
+    open(inc + "/" + path, "w").write(h[:i] + text + "\n" + h[i:])
+
+add_before_last_endif("unistd.h", "SDK: more POSIX", """/* SDK: more POSIX (crt/posix/compat.c, passwd.c) */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int renameat (int, const char *, int, const char *);
+int posix_fadvise (int, off_t, off_t, int);
+int posix_fallocate (int, off_t, off_t);
+int mlock (const void *, size_t);
+int pipe2 (int[2], int);
+int dup3 (int, int, int);
+int initgroups (const char *, gid_t);
+int getlogin_r (char *, size_t);
+#ifdef __cplusplus
+}
+#endif""")
+add_before_last_endif("poll.h", "ppoll", """#include <sys/_sigset.h>
+struct timespec;
+int ppoll (struct pollfd *, nfds_t, const struct timespec *, const __sigset_t *);""")

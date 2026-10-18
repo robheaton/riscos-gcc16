@@ -11,7 +11,7 @@ import argparse, os, shutil, sys
 SFIX = "c cc f h i ii l o p s y".split()
 ap = argparse.ArgumentParser()
 ap.add_argument("dest")
-ap.add_argument("--prefix", required=True, help="the installed aarch64-riscos tool chain (target6-inst)")
+ap.add_argument("--prefix", required=True, help="the installed aarch64-riscos tool chain (target7-inst)")
 ap.add_argument("--gcc", required=True, help="the build directory of build-native-gcc.sh (natgcc/build)")
 ap.add_argument("--binutils", required=True, help="the build directory of build-native-binutils.sh (nat2/build)")
 ap.add_argument("--hello", help="a C file for c/hello (default: native/hello.c next to this script)")

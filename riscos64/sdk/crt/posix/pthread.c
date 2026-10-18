@@ -395,12 +395,16 @@ int pthread_spin_unlock (pthread_spinlock_t *s) { *s = 0; return 0; }
 
 /* ---- once and keys ---- */
 
+static void once_failed (pthread_once_t **g) { if (*g) { **g = 0; wake_all (*g); } }
+
 int pthread_once (pthread_once_t *o, void (*f) (void))
 {
   if (*o == 2) return 0;
   if (*o == 1) { while (*o == 1) block_on (o, 1, now_cs () + 1); return 0; }	/* somebody is running it (and has yielded): wait */
   *o = 1;
-  f ();
+  { pthread_once_t *guard __attribute__ ((cleanup (once_failed))) = o;	/* f () throws (C++): the next caller tries again */
+    f ();
+    guard = 0; }
   *o = 2;
   wake_all (o);
   return 0;
