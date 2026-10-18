@@ -164,6 +164,12 @@ The documents cover both the **32-bit** tool chain (the main part of this projec
 | [docs/UNIXLIB64.md](docs/UNIXLIB64.md) | a C library for programs on RISC OS 64: what UnixLib is (measured), three ways to port it, a component plan with hours, risks |
 | [docs/USERLAND64.md](docs/USERLAND64.md) | the shell and the GNU tools for RISC OS 64 (`!GNU`, `!CoreUtils`): setup, file names, the process model, the `sh` reference, tool notes, limits, a porting guide |
 
+<br>
+
+---
+
+<br>
+
 ## Credits, licence, and how it was made
 
 This builds on the work of the **GCCSDK** project and its contributors: the GCC 10.2.0 EABI port that this one was forward-ported from, UnixLib, ARMEABISupport (written by Lee Noar), SharedUnixLibrary, the Shared Object Manager and the
@@ -171,7 +177,7 @@ autobuilder. The sources it is based on are GCCSDK's svn trunk at revision 7800 
 
 The **thread ticker** of the runtime (16.2.0-15 and later, UnixLib fix level 17) is the work of **Andrew Youll**, from his [riscos-unixlib](https://github.com/adyoull/riscos-unixlib), an unofficial fork of GCCSDK's UnixLib; it fixed programs that made other tasks abort.
 
+The 64-bit preview could not have been tested without **Gerph**'s **RISC OS Pyromaniac**, the RISC OS emulator on which every 64-bit program and module here was run, and the hosted [RISC OS Build service](https://build.riscos.online/), which runs it for anyone. Many thanks.
+
 The scripts, tools and documents of this repository are released under the **GNU General Public Licence, version 3 or later**; patches keep the licence of the files they change
 (GCC and binutils: GPL-3.0-or-later; UnixLib: mostly the revised BSD licence, some files LGPL; `modkit/include/swisnums.h`: Apache-2.0). The exact terms are in [LICENSES.md](LICENSES.md).
-
-The analysis, the patches and the drafting were done with the help of an AI assistant (Claude); every run on the machine was done by Rob Heaton.
