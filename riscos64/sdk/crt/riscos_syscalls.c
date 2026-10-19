@@ -177,6 +177,7 @@ static void rfd_report_pos (void)
     }
 }
 /* a standard descriptor stops being a file (close, or dup2 onto it): the handle goes if this was its last user */
+extern int __ul64_vfork_depth __attribute__ ((weak));		/* process.c: vfork calls waiting for their child */
 static void rfd_drop (int fd)
 {
   int h;
@@ -428,7 +429,11 @@ int close (int fd)
   if (__ul64_pipe_defer_close && __ul64_pipe_defer_close (fd)) return 0;
   if (SOCK (fd)) return __ul64_sock_close (fd);
   if (PIPE_R (fd)) return __ul64_pipe_close (fd);
-  if (fd >= 0 && fd < 3) { rfd_drop (fd); return 0; }
+  if (fd >= 0 && fd < 3)
+    {
+      if (&__ul64_vfork_depth && __ul64_vfork_depth > 0) return 0;	/* in a vfork child (it shares memory and handles with the parent) a close of a standard descriptor is the child's own: it must not close the parent's (xargs does close (0) and open ("/dev/null") before the exec) */
+      rfd_drop (fd); return 0;
+    }
   if (!isfile (fd)) return 0;
   rf = realfd (fd);
   h = rf - 3;
