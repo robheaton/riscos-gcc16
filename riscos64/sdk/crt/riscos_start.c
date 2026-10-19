@@ -116,6 +116,16 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
   init_environ ();
   run_init_arrays ();
   if (__ul64_init) __ul64_init (argc, argvec);				/* UnixLib 64, if it is linked in (riscos64/unixlib) */
+  {								/* the shell starts a program by its full path but the name it was given is argv[0] (Sh$Argv0, read once and removed; after UnixLib's init, which makes argv[0] a full path): error messages say "sed:", not "/work/sed/sed:" */
+    static char a0[256];
+    unsigned long q[10] = { (unsigned long) "Sh$Argv0", (unsigned long) a0, sizeof a0 - 1, 0, 3 };
+    if (argc > 0 && !swi_x (0x23, q) && q[2] > 0 && q[2] < sizeof a0 - 1)
+      {
+	unsigned long d[10] = { (unsigned long) "Sh$Argv0", (unsigned long) "", (unsigned long) -1, 0, 4, 0, 0, 0, 0, 0 };
+	a0[q[2]] = 0; argvec[0] = a0;
+	swi_x (0x24, d);					/* OS_SetVarVal: length -1 removes it */
+      }
+  }
   program_invocation_name = argc > 0 ? argvec[0] : (char *) "";
   program_invocation_short_name = program_invocation_name;
   { char *q; for (q = program_invocation_name; *q; q++) if (*q == '/' || *q == '.' || *q == ':') program_invocation_short_name = q + 1; }

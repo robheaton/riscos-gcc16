@@ -1,0 +1,12 @@
+--- a/src/libc/stdlib/getopt.c	2026-10-19 20:56:43.237690852 +0100
++++ b/src/libc/stdlib/getopt.c	2026-10-19 20:56:43.248285022 +0100
+@@ -145,7 +145,8 @@
+ static int
+ is_option(char *argv_element, int only)
+ {
+-    return ((argv_element == 0) || (argv_element[0] == '-') || (only && argv_element[0] == '+'));
++    /* a lone "-" is not an option (it means standard input): GNU getopt leaves it where it is */
++    return ((argv_element == 0) || (argv_element[0] == '-' && argv_element[1] != '\0') || (only && argv_element[0] == '+'));
+ }
+ 
+ /* read_globals: read the values from the globals into a getopt_data

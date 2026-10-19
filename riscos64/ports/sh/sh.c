@@ -746,6 +746,8 @@ static struct node *parse_compound_list (struct parser *p)
 enum { K_CONSOLE, K_BUF, K_PATH };
 struct sink { int kind; str *buf; char *path; int append; FILE *fp; };
 static struct sink cur_out = { K_CONSOLE }, cur_err = { K_CONSOLE };
+static int in_gen, pos_gen = -1;				/* standard input position shared by the commands of a group */
+static long in_pos;
 static char *cur_in_path;				/* standard input is this file, or the console */
 static FILE *cur_in_fp;
 static int err_null;					/* 2>/dev/null */
@@ -987,6 +989,16 @@ static char *saved_env (const char *name) { const char *v = getenv (name); retur
 static void restore_env (const char *name, char *old) { if (old) { setenv (name, old, 1); free (old); } else unsetenv (name); }
 static int same_sink (struct sink *a, struct sink *b) { return a->kind == b->kind && (a->kind == K_CONSOLE || (a->kind == K_BUF && a->buf == b->buf) || (a->kind == K_PATH && a->path && b->path && !strcmp (a->path, b->path))); }
 
+/* Standard input of a group ( a ; b ) < file is one file position for the commands of the group (as on Unix): a program is told where to start reading (Sh$StdinPos) and says where it stopped (Sh$StdinPosOut). */
+static int sys_num (const char *name, long *v)
+{
+  char b[24];
+  unsigned long q[10] = { (unsigned long) name, (unsigned long) b, sizeof b - 1, 0, 3 };
+  if (swi_x (0x23, q) || q[2] == 0 || q[2] >= sizeof b) return 0;
+  b[q[2]] = 0; *v = atol (b);
+  { unsigned long d[10] = { (unsigned long) name, (unsigned long) "", (unsigned long) -1, 0, 4, 0, 0, 0, 0, 0 }; swi_x (0x24, d); }	/* remove it */
+  return 1;
+}
 static int run_external (list *argv, struct sink *out, const char *in_path, struct sink *err)
 {
   char *prog = find_in_path (argv->v[0]);
@@ -1018,6 +1030,7 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
   {
     char *o_in = saved_env ("Sh$Stdin"), *o_out = saved_env ("Sh$Stdout"), *o_err = saved_env ("Sh$Stderr");
     char *scrap = 0;
+    int track = 0;
     ros (prog, rb, sizeof rb); sb_adds (&c, rb); free (prog);
     for (i = 1; i < argv->n; i++) quote_arg (&c, argv->v[i]);
     if (out->kind == K_PATH)
@@ -1027,6 +1040,14 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
       }
     else if (out->kind == K_BUF) { char t[1100]; scrap = scrap_name (); touch_file (scrap); ros (scrap, t, sizeof t); setenv ("Sh$Stdout", t, 1); }
     if (in_path) { char t[1100]; ros (in_path, t, sizeof t); setenv ("Sh$Stdin", t, 1); }
+    track = in_path && in_path == cur_in_path;
+    if (track)
+      {
+	char pb[24];
+	if (pos_gen != in_gen) { in_pos = cur_in_fp ? ftell (cur_in_fp) : 0; if (in_pos < 0) in_pos = 0; pos_gen = in_gen; }
+	snprintf (pb, sizeof pb, "%ld", in_pos);
+	setenv ("Sh$StdinPos", pb, 1);
+      }
     if (pipe_limit >= 0 && out->kind == K_PATH && pipe_limit_path && !strcmp (out->path, pipe_limit_path)) { char t[24]; snprintf (t, sizeof t, "%ld", pipe_limit); setenv ("Sh$StdoutLines", t, 1); }
     if (err_null) setenv ("Sh$Stderr", "null", 1);
     else if (err->kind == K_PATH && !same_sink (err, out))
@@ -1036,7 +1057,15 @@ static int run_external (list *argv, struct sink *out, const char *in_path, stru
       }
     else if (err->kind != K_CONSOLE && same_sink (err, out)) setenv ("Sh$Stderr", "stdout", 1);
     fflush (stdout); fflush (stderr);
+    setenv ("Sh$Argv0", argv->v[0], 1);				/* the program shows this name, not its full path */
     status = __ul64_system_raw (c.s);
+    if (track)
+      {
+	long np;
+	unsetenv ("Sh$StdinPos");
+	if (sys_num ("Sh$StdinPosOut", &np)) { in_pos = np; if (cur_in_fp) fseek (cur_in_fp, np, SEEK_SET); }
+      }
+    unsetenv ("Sh$Argv0");
     restore_env ("Sh$Stdin", o_in); restore_env ("Sh$Stdout", o_out); restore_env ("Sh$Stderr", o_err);
     unsetenv ("Sh$StdoutLines");
     if (scrap)
@@ -2720,6 +2749,7 @@ static void set_input_file (int n, char *path)
   memset (&e, 0, sizeof e);
   e.kind = 2; e.in_path = path;
   fd_install (n, &e);
+  if (n == 0) in_gen++;					/* a new input redirection: its file position starts at 0 */
   if (n >= 3) cur_in_fd = -1;
 }
 
@@ -3006,7 +3036,7 @@ static int exec_with_io (struct node *n, const char *out_path, const char *in_pa
   save_io (&s);
   if (out_path) { FILE *t = fopen (out_path, "w"); if (t) fclose (t); cur_out.kind = K_PATH; cur_out.path = (char *) out_path; cur_out.append = 0; cur_out.fp = 0; cur_out.buf = 0; }
   else if (outer_out) cur_out = *outer_out;
-  if (in_path) { cur_in_path = (char *) in_path; }
+  if (in_path) { cur_in_path = (char *) in_path; in_gen++; }
   r = exec_node (n);
   sink_close (&cur_out);
   if (cur_in_path != s.in_path) { if (cur_in_fp) fclose (cur_in_fp); cur_in_fp = s.in_fp; }

@@ -113,6 +113,7 @@ extern int __ul64_pipe_fstat (int, struct stat *) __attribute__ ((weak));
    the file.  The variables are inherited by the programs that a program starts (they are exported with the rest of the environment), as a redirection is. */
 static long rfd_lines = -1, rfd_written;		/* Sh$StdoutLines: the shell says the program after the pipe wants only this many lines of standard output */
 static struct { int state; int handle; int owned; } rfd[3];		/* owned: the handle was opened here for Sh$Stdout and the like (else it is a file of the program that dup2 put on the descriptor) */		/* state: 0 not looked at, 1 the console, 2 nowhere, 3 a file (handle), 4 (stderr) with standard output */
+static int rfd_pos_given;					/* Sh$StdinPos was given: tell the shell where this program stopped reading */
 static char rfd_saved[3][512];					/* the file names that Sh$Stdout and Sh$Stderr had when they were read (the variables may be changed afterwards, for a child) */
 static void rfd_init (int fd)
 {
@@ -146,14 +147,41 @@ static void rfd_init (int fd)
 	if (!swi_x (OS_Args, e)) { unsigned long p[10] = { 1, o[0], e[2] }; swi_x (OS_Args, p); }
       }
     rfd[fd].state = 3;
+    if (fd == 0)							/* the shell says where the earlier commands of this redirection stopped reading (they share one file position, as on Unix) */
+      {
+	char pb[24];
+	unsigned long pq[10] = { (unsigned long) "Sh$StdinPos", (unsigned long) pb, sizeof pb - 1, 0, 3 };
+	if (!swi_x (0x23, pq) && pq[2] > 0 && pq[2] < sizeof pb)
+	  {
+	    unsigned long sp[10] = { 1, o[0], (unsigned long) strtoul (pb, 0, 10) };	/* OS_Args 1: set the file pointer */
+	    pb[pq[2]] = 0; sp[2] = strtoul (pb, 0, 10);
+	    swi_x (OS_Args, sp);
+	    rfd_pos_given = 1;
+	  }
+      }
   }
 }
 static int rfd_state (int fd) { if (!rfd[fd].state) rfd_init (fd); return rfd[fd].state; }
+/* where this program stopped reading standard input (at exit, or when it closes it: head does): the shell gives it to the next command of the group */
+static void rfd_report_pos (void)
+{
+  unsigned long ap[10] = { 0, 0 };
+  if (!rfd_pos_given || rfd[0].state != 3) return;
+  ap[1] = (unsigned long) rfd[0].handle;						/* OS_Args 0: read the file pointer */
+  if (!swi_x (OS_Args, ap))
+    {
+      char pb[24];
+      unsigned long sv[10] = { (unsigned long) "Sh$StdinPosOut", (unsigned long) pb, 0, 0, 4, 0, 0, 0, 0, 0 };
+      sv[2] = (unsigned long) snprintf (pb, sizeof pb, "%lu", ap[2]);
+      swi_x (0x24, sv);								/* OS_SetVarVal, type 4: a string */
+    }
+}
 /* a standard descriptor stops being a file (close, or dup2 onto it): the handle goes if this was its last user */
 static void rfd_drop (int fd)
 {
   int h;
   if (rfd[fd].state != 3) return;
+  if (fd == 0) rfd_report_pos ();
   h = rfd[fd].handle;
   if (!rfd[fd].owned && refs[h & 255] > 1) refs[h & 255]--;
   else { unsigned long c[10] = { 0, (unsigned long) h }; swi_x (OS_Find, c); if (!rfd[fd].owned) { refs[h & 255] = 0; } }
@@ -448,10 +476,13 @@ off_t lseek (int fd, off_t off, int whence)
 {
   unsigned long r[10] = { 0 };
   long pos = off;
-  if (!isfile (fd)) { errno = ESPIPE; return -1; }
-  if (whence == SEEK_CUR) { r[0] = 0; r[1] = (unsigned long) fdhandle (fd); if (swi_x (OS_Args, r)) { errno = EIO; return -1; } pos = (long) r[2] + off; }
-  else if (whence == SEEK_END) { r[0] = 2; r[1] = (unsigned long) fdhandle (fd); if (swi_x (OS_Args, r)) { errno = EIO; return -1; } pos = (long) r[2] + off; }
-  { unsigned long q[10] = { 1, (unsigned long) fdhandle (fd), (unsigned long) pos }; if (swi_x (OS_Args, q)) { errno = EIO; return -1; } }
+  unsigned long h;
+  if (fd >= 0 && fd < 3 && rfd_state (fd) == 3) h = (unsigned long) rfd[fd].handle;	/* a standard stream redirected to a file can be seeked (head, tail and sed -n rely on it) */
+  else if (isfile (fd)) h = (unsigned long) fdhandle (fd);
+  else { errno = ESPIPE; return -1; }
+  if (whence == SEEK_CUR) { r[0] = 0; r[1] = h; if (swi_x (OS_Args, r)) { errno = EIO; return -1; } pos = (long) r[2] + off; }
+  else if (whence == SEEK_END) { r[0] = 2; r[1] = h; if (swi_x (OS_Args, r)) { errno = EIO; return -1; } pos = (long) r[2] + off; }
+  { unsigned long q[10] = { 1, h, (unsigned long) pos }; if (swi_x (OS_Args, q)) { errno = EIO; return -1; } }
   return (off_t) pos;
 }
 
@@ -568,6 +599,7 @@ void _exit (int code)
   static const struct { unsigned num; char msg[20]; } done = { 0, "Program finished" };
   unsigned long r[10] = { 0 };
   if (__ul64_vfork_exit) __ul64_vfork_exit (code);
+  rfd_report_pos ();
   rfd_close ();
   { int h; for (h = 1; h < 256; h++) if (fd_names[h]) { unsigned long c[10] = { 0, (unsigned long) h }; swi_x (OS_Find, c); } }	/* the files that were left open (RISC OS does not close them: the next program would find them in use, a pipe () file for one) */
   if (da_mode == 1) { unsigned long q[10] = { 1, da_number }; swi_x (OS_DynamicArea, q); }		/* remove the heap */

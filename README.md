@@ -125,8 +125,8 @@ What it cannot do yet: there is no `fork`, so programs that start several proces
 **To try it** (Linux x86-64 with glibc 2.38 or newer, the same as for the 32-bit cross compiler):
 
 ```bash
-tar -xf aarch64-riscos-gcc-16.2.0-0.7-linux-x86_64.tar.xz
-export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.7-linux-x86_64/bin:$PATH
+tar -xf aarch64-riscos-gcc-16.2.0-0.8-linux-x86_64.tar.xz
+export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.8-linux-x86_64/bin:$PATH
 aarch64-riscos-gcc -munixlib -O2 -o hello,ff8 hello.c      # ,ff8 is the RISC OS file type of a 64-bit program
 ```
 
@@ -134,9 +134,9 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the [RIS
 
 | Download (all pre-releases) | Size | Description |
 |---|---|---|
-| [`riscos64-toolchain-0.7`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.7) | 60 MB | the Linux cross compiler (x86-64) |
-| [`riscos64-gnu-tools-8`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-8) | 11 MB | `!GNU`: the shell and the tools |
-| [`riscos64-coreutils-9.5-5`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-5) | 22 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
+| [`riscos64-toolchain-0.8`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.8) | 60 MB | the Linux cross compiler (x86-64) |
+| [`riscos64-gnu-tools-9`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-9) | 11 MB | `!GNU`: the shell and the tools |
+| [`riscos64-coreutils-9.5-6`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-6) | 22 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |
 
 These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).
