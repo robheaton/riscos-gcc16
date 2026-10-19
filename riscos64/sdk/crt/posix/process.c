@@ -161,9 +161,13 @@ static int run_translated (const char *cmd)
   char csd[1100];
   unsigned long q[10] = { 37, (unsigned long) "@", (unsigned long) csd, 0, 0, sizeof csd };		/* OS_FSControl 37: the full name of @ */
   int have = !swi_x (0x29, q), st;
+  char *oldppid = getenv ("UnixEnv$ppid") ? strdup (getenv ("UnixEnv$ppid")) : 0, mypid[24];
+  snprintf (mypid, sizeof mypid, "%ld", (long) getpid ());
+  setenv ("UnixEnv$ppid", mypid, 1);						/* the child's getppid () is this program's pid */
   if (__ul64_stdio_suspend) __ul64_stdio_suspend ();
   st = run_cwd_kept (cmd);
   if (__ul64_stdio_resume) __ul64_stdio_resume ();
+  if (oldppid) { setenv ("UnixEnv$ppid", oldppid, 1); free (oldppid); } else unsetenv ("UnixEnv$ppid");
   if (have)
     {
       unsigned long r2[10] = { 37, (unsigned long) "@", (unsigned long) csd + 0, 0, 0, 0 };
@@ -249,7 +253,7 @@ static int run_user (const char *cmd)
 	  for (; *cmd; cmd++)
 	    {
 	      if (*cmd == '"') { if (brace) { *q++ = 127; *q++ = 'q'; continue; } *q++ = '"'; }
-	      if (*cmd == '\n' || *cmd == '\r' || *cmd == 127) { *q++ = 127; *q++ = *cmd == '\n' ? 'n' : *cmd == '\r' ? 'r' : 127; continue; }	/* as command_line: the start-up turns it back */
+	      if (*cmd == '\n' || *cmd == '\r' || *cmd == '\t' || *cmd == 127) { *q++ = 127; *q++ = *cmd == '\n' ? 'n' : *cmd == '\r' ? 'r' : *cmd == '\t' ? 't' : 127; continue; }	/* as command_line: the start-up turns it back */
 	      *q++ = *cmd;
 	    }
 	  *q++ = '"'; *q = 0;
@@ -293,7 +297,7 @@ static char *command_line (const char *prog, char *const argv[])
 	  for (; *a; a++)
 	    {
 	      if (*a == '"') { if (brace) { *p++ = 127; *p++ = 'q'; continue; } *p++ = '"'; }
-	      if (*a == '\n' || *a == '\r' || *a == 127) { *p++ = 127; *p++ = *a == '\n' ? 'n' : *a == '\r' ? 'r' : 127; continue; }
+	      if (*a == '\n' || *a == '\r' || *a == '\t' || *a == 127) { *p++ = 127; *p++ = *a == '\n' ? 'n' : *a == '\r' ? 'r' : *a == '\t' ? 't' : 127; continue; }
 	      *p++ = *a;
 	    }
 	  *p++ = '"';

@@ -469,6 +469,11 @@ int fstat (int fd, struct stat *st)
       r[0] = 2; r[1] = (unsigned long) rfd[fd].handle;
       st->st_mode = S_IFREG | 0644; st->st_dev = 1;
       if (!swi_x (OS_Args, r)) st->st_size = (off_t) r[2];
+      {
+	char nm[ROSPATH];
+	unsigned long n[10] = { 7, (unsigned long) rfd[fd].handle, (unsigned long) nm, 0, 0, sizeof nm };	/* OS_Args 7: the name of the file of a handle (the inode: tools compare standard input with standard output) */
+	if (!swi_x (OS_Args, n)) st->st_ino = (ino_t) name_ino (nm);
+      }
       return 0;
     }
   if (!isfile (fd)) { st->st_mode = S_IFCHR | 0600; return 0; }

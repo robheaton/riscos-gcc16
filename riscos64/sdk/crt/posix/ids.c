@@ -10,7 +10,7 @@ uid_t getuid (void) { return 1; }
 uid_t geteuid (void) { return 1; }
 gid_t getgid (void) { return 1; }
 gid_t getegid (void) { return 1; }
-pid_t getppid (void) { return 0; }
+pid_t getppid (void) { const char *p = getenv ("UnixEnv$ppid"); return p && *p ? (pid_t) atol (p) : 0; }	/* set by system (), popen () and posix_spawn () for the program they start: the process that started this one */
 
 int gethostname (char *name, size_t len)
 {

@@ -893,7 +893,7 @@ static void quote_arg (str *b, const char *a)
   for (; *a; a++)
     {
       if (*a == '"') { if (brace) { sb_addc (b, 127); sb_addc (b, 'q'); continue; } sb_addc (b, '"'); }
-      if (*a == '\n' || *a == '\r' || *a == 127) { sb_addc (b, 127); sb_addc (b, *a == '\n' ? 'n' : *a == '\r' ? 'r' : 127); continue; }
+      if (*a == '\n' || *a == '\r' || *a == '\t' || *a == 127) { sb_addc (b, 127); sb_addc (b, *a == '\n' ? 'n' : *a == '\r' ? 'r' : *a == '\t' ? 't' : 127); continue; }
       sb_addc (b, *a);
     }
   sb_addc (b, '"');

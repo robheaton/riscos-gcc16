@@ -94,11 +94,11 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 	      cmd++;
 	      for (;;)								/* up to the closing quote; "" inside is a quote (how system (), posix_spawn and the shell write an argument that has a quote in it) */
 		{
-		  if ((unsigned char) cmd[0] < 32) break;
+		  if ((unsigned char) cmd[0] < 32 && cmd[0] != 9) break;			/* (a tab inside quotes belongs to the argument) */
 		  if (cmd[0] == '"') { if (cmd[1] == '"') { if (i < sizeof argbuf - 1) argbuf[i++] = '"'; cmd += 2; continue; } cmd++; break; }
-		  if (cmd[0] == 127 && cmd[1])				/* a line feed or a carriage return cannot be in a command line: DEL n, DEL r (and DEL DEL for a DEL) stand for them; DEL q is a quote in an argument that has a { (the operating system looks for { > file } in the line and loses its way with "" there) */
+		  if (cmd[0] == 127 && cmd[1])				/* a line feed or a carriage return cannot be in a command line: DEL n, DEL r (and DEL DEL for a DEL) stand for them; DEL t is a tab; DEL q is a quote in an argument that has a { (the operating system looks for { > file } in the line and loses its way with "" there) */
 		    {
-		      if (i < sizeof argbuf - 1) argbuf[i++] = cmd[1] == 'n' ? '\n' : cmd[1] == 'r' ? '\r' : cmd[1] == 'q' ? '"' : cmd[1];
+		      if (i < sizeof argbuf - 1) argbuf[i++] = cmd[1] == 'n' ? '\n' : cmd[1] == 'r' ? '\r' : cmd[1] == 'q' ? '"' : cmd[1] == 't' ? '\t' : cmd[1];
 		      cmd += 2;
 		      continue;
 		    }
