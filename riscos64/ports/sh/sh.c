@@ -1742,6 +1742,7 @@ static int bi_printf (int argc, char **argv)
   const char *f;
   int ai = 2;
   str o; sb_init (&o); sb_adds (&o, "");
+  if (argc > 2 && !strcmp (argv[1], "--")) { argv++; argc--; }
   if (argc < 2) { errs ("printf: usage: printf format [argument...]\n"); return 2; }
   for (;;)
     {
@@ -2782,6 +2783,16 @@ static int apply_redirs (struct redir *r, struct saved_io *s)
 	  continue;
 	}
       t = expand_str (r->target);
+      if (t[0] != '/' && strcmp (t, "/dev/null") && r->type != R_DUPOUT && r->type != R_DUPIN)		/* a relative name is made absolute now: a cd inside the group ( cd d && cmd ) > out must not change which file out is */
+	{
+	  char cw[1024];
+	  if (getcwd (cw, sizeof cw))
+	    {
+	      size_t n = strlen (cw) + strlen (t) + 2;
+	      char *a = malloc (n);
+	      if (a) { snprintf (a, n, "%s/%s", cw, t); free (t); t = a; }
+	    }
+	}
       if (r->type == R_IN || r->type == R_RW)
 	{
 	  if (!strcmp (t, "/dev/null")) { char *e = scrap_name (); FILE *f = fopen (e, "w"); if (f) fclose (f); l_add (&s->tmp, e); free (t); t = strdup (e); }
@@ -2815,6 +2826,13 @@ static int apply_redirs (struct redir *r, struct saved_io *s)
       free (t);
     }
   return 0;
+}
+
+/* the end of a compound command: its own redirections end here; without any, an exec inside it that only redirects stays (as in other shells) */
+static void end_scope (struct saved_io *s, struct node *n)
+{
+  if (n->redirs) restore_io (s);
+  else { free (s->tmp.v); s->tmp.v = 0; s->tmp.n = 0; }
 }
 
 static int status_of_cmd (int st) { return st; }
@@ -2998,12 +3016,14 @@ static int exec_simple_ (struct node *n)
 	r = 0; keep_io = 1; goto restore;			/* exec with only redirections: they stay */
       }
     fn = find_func (argv.v[0]);
-    if (fn) { r = call_function (fn, argv.n, argv.v); goto restore; }
+    if (fn) { r = call_function (fn, argv.n, argv.v); if (!n->redirs) keep_io = 1;	/* an exec inside the function that only redirects stays after it returns */ goto restore; }
     b = find_builtin (argv.v[0]);
     if (b && b->special == 2 && program_exists (argv.v[0])) b = 0;	/* the real utility (GNU coreutils) is there */
     if (b && b->fn)
       {
-	sink_open (&cur_out);
+	/* eval, . and the like run other commands, which write to the output file themselves: the shell must not hold the file open (RISC OS lets a file be open for writing once); the builtins that write open it when they need it (out_write) */
+	if (strcmp (argv.v[0], "eval") && strcmp (argv.v[0], ".") && strcmp (argv.v[0], "source") && strcmp (argv.v[0], "command") && strcmp (argv.v[0], "exec") && strcmp (argv.v[0], "builtin"))
+	  sink_open (&cur_out);
 	r = b->fn (argv.n, argv.v);
 	goto restore;
       }
@@ -3287,7 +3307,7 @@ static int exec_node (struct node *n)
       save_io (&s);
       if (apply_redirs (n->redirs, &s)) { restore_io (&s); return 1; }
       r = n->type == N_GROUP ? exec_node (n->a) : exec_subshell (n);
-      restore_io (&s);
+      if (n->type == N_SUBSHELL) restore_io (&s); else end_scope (&s, n);
       last_status = r;
       if (r && n->type == N_SUBSHELL && trap_err && !in_condition) run_err_trap ();
       return r;
@@ -3299,7 +3319,7 @@ static int exec_node (struct node *n)
       if (r == 0) r = exec_node (n->b);
       else if (n->c) r = exec_node (n->c);
       else r = 0;
-      restore_io (&s);
+      end_scope (&s, n);
       last_status = r;
       return r;
     case N_WHILE:
@@ -3318,7 +3338,7 @@ static int exec_node (struct node *n)
 	  if (brk_n) { brk_n--; break; }
 	  if (cont) { if (--cont) break; }
 	}
-      restore_io (&s);
+      end_scope (&s, n);
       last_status = r;
       return r;
     case N_FOR:
@@ -3338,7 +3358,7 @@ static int exec_node (struct node *n)
 	    if (brk_n) { brk_n--; break; }
 	    if (cont) { if (--cont) break; }
 	  }
-	restore_io (&s);
+	end_scope (&s, n);
 	last_status = r;
 	return r;
       }
@@ -3350,7 +3370,7 @@ static int exec_node (struct node *n)
 	r = match_case (n, word);
 	r = r < 0 ? 0 : r - 1000000;
 	free (word);
-	restore_io (&s);
+	end_scope (&s, n);
 	last_status = r;
 	return r;
       }

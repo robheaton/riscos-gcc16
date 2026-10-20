@@ -2,18 +2,23 @@
 
 **The question:** what would it take to give programs for RISC OS 64 the C library that programs for 32-bit RISC OS have (UnixLib: POSIX, threads, signals, sockets, RISC OS file-name translation), and in what order, testing on Pyromaniac.
 
-## 0. Status (17 October 2026)
+## 0. Status (20 October 2026)
 
-The first release has been started, in [`riscos64/unixlib/`](../riscos64/unixlib) (`-munixlib`):
+UnixLib 64 is in [`riscos64/unixlib/`](../riscos64/unixlib) (`-munixlib`) and in the SDK's POSIX glue ([`riscos64/sdk/crt/posix/`](../riscos64/sdk/crt/posix)), on top of picolibc. About 40 ported programs run on it (the GNU tools, gawk, sed, grep, Lua, SQLite, jq and the compression libraries), see [PORTS-TESTS.md](PORTS-TESTS.md). Everything below was tested on RISC OS Pyromaniac, not yet on a real RISC OS 64 machine.
 
 | Component | State |
 |---|---|
-| 1. File-name translation and directories | **done for the common cases**: UnixLib's `__riscosify`/`__unixify` ported (Unix names to RISC OS names and back, suffix swapping, `,xyz` file types, the special directories), `opendir`/`readdir`/`closedir`, `chdir`/`getcwd`/`rmdir`, `statvfs`, new files get a file type; not yet: the merging of suffix directories into the listing of the parent, `.` and `..` |
-| 2. Process and memory model | **started**: the heap is a dynamic area (grows to 1 GB), `getenv` sees what `setenv` set, `clearenv`, ids, `uname`, `gethostname`, `umask`, sleeping, `getrusage`, `getrlimit`, anonymous `mmap`, `ftruncate`, `chmod`, `utime`, `realpath`; `argv[0]` as a Unix path; not yet: `environ` from the system variables, exit handlers for a killed program, the Wimp slot |
-| 3. Terminal and console | **started** (written, test pending): `tcgetattr`/`tcsetattr`, `cfmakeraw`, `tcflush`, speeds; `read` on the keyboard without `ICANON` returns keys as they come (`ECHO`, `VMIN` honoured); `poll` and `select` (files always ready, keyboard by its buffer, timeouts); not yet `ioctl`, `kbhit`, `VTIME`, signals from `ISIG` |
-| 4. errno, locale, wide characters, iconv | not started (picolibc's own for now) |
-| 11. Tests | `riscos64/unixlib/tests` (translation, files, POSIX calls); and GMP, MPFR and MPC (`riscos64/ports`) built with `-munixlib`, whose tests use Unix file names, run on Pyromaniac |
-
+| 1. File-name translation and directories | **done for the common cases**: UnixLib's `__riscosify`/`__unixify` (Unix names to RISC OS names and back, suffix swapping, `,xyz` file types, the special directories), `opendir`/`readdir`/`closedir` with the suffix directories merged into the listing of their parent, `telldir` and a forward `seekdir`, `chdir`/`getcwd`/`rmdir`, `statvfs`, `stat` (with the blocks of a file), `link` as a copy; new files get a file type. Not yet: `.` and `..` in a listing; no symbolic links (RISC OS has none) |
+| 2. Process and memory model | **done for the common cases**: the heap is a dynamic area (grows to 1 GB), `environ`, `getenv`/`setenv`/`clearenv`, ids, `uname`, `gethostname`, `umask`, sleeping, `getrusage`, `getrlimit`, anonymous `mmap`, `ftruncate`, `chmod`, `utime`, `realpath`, `argv[0]` as typed, `getppid`. Not yet: exit handlers for a killed program |
+| 3. Terminal and console | `termios`, `isatty`, `read` of the keyboard without `ICANON`, `poll` and `select`, termcap (`libtermcap.a`) |
+| 4. errno, locale, wide characters | the "C" locale and picolibc's wide characters; `setlocale` accepts only the installed names. **Not yet:** other locales, collation (`strcoll`), `iconv` (the tests of grep and gawk that need `en_US` are skipped) |
+| 5. Signals | `signal`, `raise`, `sigaction`, `kill` of the process itself, `sigprocmask`, `sigsuspend`, `alarm`, and SIGSEGV, SIGBUS, SIGILL and SIGFPE from the kernel's fault handlers with a backtrace; Escape is SIGINT. They arrive at the places where the program polls, not at any instruction. Not yet: `sigsetjmp`/`siglongjmp` as separate functions, real events from the kernel |
+| 6. Threads | `pthread_create`, mutexes, condition variables, thread-local storage, C++ `std::thread` and `std::mutex`; `pthread_cancel`; not yet: some thread attributes (stack address, guard size, scheduling, process-shared) |
+| 7. `fork`, `vfork`, `exec`, `system`, `popen` | **done** with `UnixEnv$swap=1`: the parent's image and stack are saved in a dynamic area and put back by an exit handler (`system`, `popen`, `posix_spawn`, `vfork` with `exec*` or `_exit`, `wait*`, pipes between commands); `fork` stays `ENOSYS` |
+| 8. Sockets and the resolver | written to the documented Internet module interface, **never run** (Pyromaniac has no Internet module); `getaddrinfo` and the DNS resolver functions are not there |
+| 9. Wimp support | not started |
+| 10. `dlopen` | not started |
+| 11. Tests | `riscos64/unixlib/tests` (the translation, files, POSIX calls, processes, signals, threads, `wordexp`, timers); the test suites of the ports (gawk, sed, grep, Lua, ...) |
 
 ## 1. What UnixLib is (measured on the sources of fix level 17, `libunixlib`)
 

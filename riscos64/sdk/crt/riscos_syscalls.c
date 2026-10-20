@@ -482,6 +482,7 @@ off_t lseek (int fd, off_t off, int whence)
   unsigned long r[10] = { 0 };
   long pos = off;
   unsigned long h;
+  if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END) { errno = EINVAL; return -1; }	/* SEEK_DATA and SEEK_HOLE: not supported (a file that answered them as SEEK_SET looked sparse, so binary, to grep) */
   if (fd >= 0 && fd < 3 && rfd_state (fd) == 3) h = (unsigned long) rfd[fd].handle;	/* a standard stream redirected to a file can be seeked (head, tail and sed -n rely on it) */
   else if (isfile (fd)) h = (unsigned long) fdhandle (fd);
   else { errno = ESPIPE; return -1; }
@@ -505,6 +506,7 @@ int fstat (int fd, struct stat *st)
       r[0] = 2; r[1] = (unsigned long) rfd[fd].handle;
       st->st_mode = S_IFREG | 0644; st->st_dev = 1;
       if (!swi_x (OS_Args, r)) st->st_size = (off_t) r[2];
+      st->st_blksize = 4096; st->st_blocks = (st->st_size + 511) / 512;	/* not zero: grep takes a regular file with fewer blocks than bytes for a sparse file, so a binary one */
       {
 	char nm[ROSPATH];
 	unsigned long n[10] = { 7, (unsigned long) rfd[fd].handle, (unsigned long) nm, 0, 0, sizeof nm };	/* OS_Args 7: the name of the file of a handle (the inode: tools compare standard input with standard output) */
@@ -516,6 +518,7 @@ int fstat (int fd, struct stat *st)
   {
     const char *nm = fd_names[fdhandle (fd) & 255];		/* the name it was opened with: the type of the object (a folder), the date ... */
     struct stat s2;
+    if (nm && !strncmp (nm, "/tmp/devnull", 12)) { st->st_mode = S_IFCHR | 0666; st->st_dev = 1; st->st_ino = 3; return 0; }	/* a file opened as /dev/null: the same answer as stat ("/dev/null") (cp checks that the file it opened is the one it examined) */
     if (nm && stat (nm, &s2) == 0) { *st = s2; return 0; }
   }
   r[0] = 2; r[1] = (unsigned long) fdhandle (fd);
@@ -523,6 +526,7 @@ int fstat (int fd, struct stat *st)
   st->st_mode = S_IFREG | 0644;
   st->st_size = (off_t) r[2];
   st->st_dev = 1;
+  st->st_blksize = 4096; st->st_blocks = (st->st_size + 511) / 512;
   {
     char nm[ROSPATH];
     unsigned long n[10] = { 7, (unsigned long) fdhandle (fd), (unsigned long) nm, 0, 0, sizeof nm };	/* OS_Args 7: the name of the file of a handle */
@@ -700,6 +704,7 @@ int stat (const char *path, struct stat *st)
   else st->st_mode = S_IFREG | ((r[5] & 1) ? 0444 : 0) | ((r[5] & 2) ? 0222 : 0);
   st->st_size = (off_t) (r[4] & 0xFFFFFFFF);
   st->st_nlink = 1;
+  st->st_blksize = 4096; st->st_blocks = (st->st_size + 511) / 512;
   st->st_dev = 1;
   st->st_ino = (ino_t) name_ino (path);
   if ((r[2] & 0xFFF00000UL) == 0xFFF00000UL)					/* a date stamp: the load address top 12 bits are &FFF, then 40 bits of centiseconds since 1900 */

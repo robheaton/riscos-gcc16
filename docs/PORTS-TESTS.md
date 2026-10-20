@@ -20,7 +20,7 @@ Date: 18 October 2026. The programs and libraries of [USERLAND64.md](USERLAND64.
 | zstd 1.5.6 | round trips, levels 1, 3, 9, `-T1`, a pipe | 0 failures | |
 | libjpeg-turbo 3.0.4 | 21 of its md5 tests | All 21 give its official md5 | `cjpeg`, `djpeg` (PPM, BMP, 565, grey, progressive) and `jpegtran`; the float DCT and arithmetic coding tests were not run |
 
-Not run: PCRE2's locale, 16-bit, 32-bit, JIT and POSIX-interface tests (3, 10 to 26); the zstd and lz4 `make check` suites (long shell scripts); SQLite's Tcl suite; the tests of GNU sed, grep and gawk (the next step).
+Not run: PCRE2's locale, 16-bit, 32-bit, JIT and POSIX-interface tests (3, 10 to 26); the zstd and lz4 `make check` suites (long shell scripts); SQLite's Tcl suite; the tests of GNU sed, grep and gawk are in the section below.
 
 ## What the runs found
 
@@ -42,3 +42,23 @@ The scripts are in [`riscos64/ports/userland-tests/b1`](../riscos64/ports/userla
 
 Found by these tests and fixed in the SDK and UnixLib 64: `dup2` onto descriptors 0 to 2; a child program's output into a file the parent has redirected to; standard output redirected to a file is a regular file (with its own inode, so `cat < a > b` works) and fully buffered (one write per line made gawk about six times slower); a newline, a quote or a tab in the command of `system ()` or `popen ()` or in an argument; `getppid ()`; and the exit status of `pclose` through gawk's simulated pipes.; the commands of a group `( a ; b ) < file` share one file position, as on Unix (a program says where it stopped reading, the shell hands that on); `lseek` on a redirected standard stream; the name a program was started with is its `argv[0]` (`sed: ...`, not `/work/sed/sed: ...`); a lone `-` argument (standard input) in the C library's `getopt`; `getppid ()`.
 
+## gawk, sed, grep and Lua again, with tool chain 0.10 (20 October 2026)
+
+The same suites were run again on Pyromaniac without the 60 second limit of the build service (so the long tests finish and the jobs run ten at a time), with the tools of GNU tools 11 and the C library of tool chain 0.10.
+
+| Suite | Result |
+|---|---|
+| **gawk** `test/` (81 chunks of the tests that need no locale) | **282 pass, 2 do not**: `printf-corners` (the C library's `printf` has no `%a` and loses the sign of NaN and infinity), `poundbang` (the interpreter of a `#!` line is ignored) |
+| **sed 4.9** `testsuite/` (67) | **47 pass**, 16 skipped by the suite (multibyte locale, `valgrind`, SELinux, text and binary modes), 4 do not: `in-place-suffix-backup` and `temp-file-cleanup` (reasons of the file system, as above), `follow-symlinks` and `panic-tests` (no symbolic links, no `mkfifo`). The seven tests that were too long for the service (`binary`, `bsd`, `bsd-wrapper`, `command-endings`, `compile-errors`, `dc`, `sandbox`) all pass. |
+| **grep 3.11** `tests/` (126 jobs) | **50 pass**, 71 skipped by the suite (locale, PCRE, tools that are not here), 4 do not: `symlink` (no symbolic links); `stack-overflow` (a very deep recursion: it needs a machine with the real stack and time); `spencer1-run` and `spencer1-locale-run` (two cases of Henry Spencer's list put a control character, code 1 to 3, into a command line argument, which a RISC OS command line cannot hold) |
+| **Lua 5.4.7** `locals.lua`, before and after `overflow` | both parts pass; `overflow` itself does not finish in 20 minutes |
+
+Found by these runs and fixed in the shell and the library:
+
+* **`exec` with only redirections, inside a function, a group (`{ ...; }`), an `if`, a loop or a `case`, stays in force after it** (it was undone when the compound command ended, so the rest of the output went to the console). `sed`'s `bsd-wrapper` test needed it.
+* **`printf -- format ...`** printed the `--`.
+* **A relative name in a redirection is made absolute when the redirection is set up**, so that `( cd d && cmd ) > out` writes `out` where it was meant; `2>&1` and the other duplications are not touched by that.
+* **`eval cmd > file`**: the shell no longer holds the file open (RISC OS lets a file be open for writing once), so the command it runs can write it.
+* **`cp /dev/null file`** is no longer refused (the descriptor of `/dev/null` answers `fstat` as a character device).
+* **`stat` and `fstat` give `st_blksize` and `st_blocks`** (the blocks were always 0, which GNU `grep` reads as a sparse file) and **`lseek` returns `EINVAL` for `SEEK_HOLE` and `SEEK_DATA`** (it took them for `SEEK_SET`, so `grep` found a "hole" in every file): a file with a NUL byte after the first buffer was reported as "binary file matches" instead of printing its matching lines.
+* Earlier the same day: a `close ()` of a standard descriptor in a `vfork` child no longer closes the parent's (`xargs` stopped the emulator).
