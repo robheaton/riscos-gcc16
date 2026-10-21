@@ -11,7 +11,7 @@ progs=()
 for f in "$B"/src/*; do
   n=$(basename "$f")
   [ -f "$f" ] && [ -x "$f" ] || continue
-  case "$n" in *.so|*.a|*.o|*.sh|*.c|*.h|*.in|*.log|stdbuf|make-prime-list.dSYM) continue;; esac
+  case "$n" in *.so|*.a|*.o|*.sh|*.c|*.h|*.in|*.log|stdbuf|chroot|make-prime-list.dSYM) continue;; esac
   [ "$(stat -c %s "$f")" -gt 100000 ] || continue
   cp "$f" "$D/$n,ff8"
   progs+=("$n")

@@ -63,11 +63,11 @@ Found by these runs and fixed in the shell and the library:
 * **`stat` and `fstat` give `st_blksize` and `st_blocks`** (the blocks were always 0, which GNU `grep` reads as a sparse file) and **`lseek` returns `EINVAL` for `SEEK_HOLE` and `SEEK_DATA`** (it took them for `SEEK_SET`, so `grep` found a "hole" in every file): a file with a NUL byte after the first buffer was reported as "binary file matches" instead of printing its matching lines.
 * Earlier the same day: a `close ()` of a standard descriptor in a `vfork` child no longer closes the parent's (`xargs` stopped the emulator).
 
-## After release 0.10 (21 October 2026; in the repository, not yet in a release)
+## Releases 0.11, GNU tools 12 and CoreUtils 9.5-9 (21 October 2026)
 
-Tool chain and tools rebuilt with the next library (the SDK of `riscos64/sdk` as it is on the main branch). The locale-dependent tests were skipped until now because the helper `get-mb-cur-max` of the test suites was not built; with it they run.
+Tool chain 0.11 and tools built with it. The locale-dependent tests were skipped until now because the helper `get-mb-cur-max` of the test suites was not built; with it they run.
 
-| Suite | 0.10 | Now |
+| Suite | 0.10 | 0.11 |
 |---|---|---|
 | gawk (81 chunks) | 282 items, 2 not passing | the same |
 | sed 4.9 | 46 pass, 16 skipped, 4 not passing | **54 pass**, 9 skipped, the same 4 not passing |

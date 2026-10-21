@@ -357,3 +357,12 @@ int getgrouplist (const char *, gid_t, gid_t *, int *);
 }
 #endif
 """)
+
+add_before_last_endif("sys/types.h", "SDK: off64_t", """/* SDK: off64_t is a type, as in glibc (off_t is 64 bits here): programs and gnulib test for it with <sys/types.h> only */
+#if defined _LARGEFILE64_SOURCE || defined _GNU_SOURCE || defined _DEFAULT_SOURCE
+#ifndef _SDK_OFF64_T
+#define _SDK_OFF64_T
+typedef off_t off64_t;
+#endif
+#endif
+""")

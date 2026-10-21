@@ -1,11 +1,9 @@
 /* sys/lfs64.h - the large file names (open64, stat64, fopen64 ...): off_t is 64 bits here, so they are the plain functions (SDK of RISC OS 64) */
 #ifndef _SYS_LFS64_H
 #define _SYS_LFS64_H
+#include <sys/types.h>
 #if !defined _SDK_NO_LFS64_MACROS && (defined _LARGEFILE64_SOURCE || defined _GNU_SOURCE || defined _DEFAULT_SOURCE)
-#define off64_t off_t
-#define ino64_t ino_t
-#define blkcnt64_t blkcnt_t
-#define fpos64_t fpos_t
+/* off64_t itself is a type in <sys/types.h> (as in glibc: gnulib and other programs test for it there) */
 #define open64 open
 #define openat64 openat
 #define creat64 creat
