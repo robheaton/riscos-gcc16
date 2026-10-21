@@ -16,8 +16,9 @@ UnixLib 64 is in [`riscos64/unixlib/`](../riscos64/unixlib) (`-munixlib`) and in
 | 6. Threads | `pthread_create`, mutexes, condition variables, thread-local storage, C++ `std::thread` and `std::mutex`; `pthread_cancel`; not yet: some thread attributes (stack address, guard size, scheduling, process-shared) |
 | 7. `fork`, `vfork`, `exec`, `system`, `popen` | **done** with `UnixEnv$swap=1`: the parent's image and stack are saved in a dynamic area and put back by an exit handler (`system`, `popen`, `posix_spawn`, `vfork` with `exec*` or `_exit`, `wait*`, pipes between commands); `fork` stays `ENOSYS` |
 | 8. Sockets and the resolver | written to the documented Internet module interface, **never run** (Pyromaniac has no Internet module); `getaddrinfo` and the DNS resolver functions are not there |
-| 9. Wimp support | not started |
+| 9. Wimp support | not started. Added after 17 October: `kernel.h` (the `_kernel_*` calls) and `swis.h` (the SWI numbers, `_swi` and `_swix`) for programs written for the RISC OS C library |
 | 10. `dlopen` | not started |
+| 12. BSD and UnixLib extras | `err.h`, `readv`/`writev`, `readdir_r`, `lsearch`, `insque`, `ftime`, `wait3`/`wait4`, `getgrouplist`, `strsep` (fixed), `b64_ntop`/`b64_pton`, the large file names (`open64`, `stat64` ...); the 70 resolver names (`res_*`, `dn_*`) are not there (they need the Internet module). The gap check is `tools/gapcheck.sh` |
 | 11. Tests | `riscos64/unixlib/tests` (the translation, files, POSIX calls, processes, signals, threads, `wordexp`, timers); the test suites of the ports (gawk, sed, grep, Lua, ...) |
 
 ## 1. What UnixLib is (measured on the sources of fix level 17, `libunixlib`)

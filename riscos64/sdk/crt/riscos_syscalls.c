@@ -677,16 +677,27 @@ int mkdir (const char *path, mode_t mode)
 
 /* An inode number does not exist on RISC OS: a hash of the full name of the file stands for it (so that two names of one file are one inode, and two files are two: programs such as sed -i and mv
    compare inodes to see whether a rename would be of a file onto itself). */
+static unsigned long hash_ino (const char *full)
+{
+  unsigned long long h = 1469598103934665603ULL;
+  const unsigned char *p = (const unsigned char *) full;
+  for (; *p; p++) { h ^= (*p >= 'A' && *p <= 'Z') ? (unsigned char) (*p + 32) : *p; h *= 1099511628211ULL; }	/* (the names are not case sensitive) */
+  return (unsigned long) (h & 0x7FFFFFFFFFFFFFFFULL) | 1;
+}
 static unsigned long name_ino (const char *name)
 {
   char full[ROSPATH];
   unsigned long r[10] = { 37, (unsigned long) name, (unsigned long) full, 0, 0, sizeof full };	/* OS_FSControl 37: the canonical name */
-  unsigned long long h = 1469598103934665603ULL;
-  const unsigned char *p = (const unsigned char *) name;
-  if (!swi_x (OS_FSControl, r)) p = (const unsigned char *) full;
-  for (; *p; p++) { h ^= (*p >= 'A' && *p <= 'Z') ? (unsigned char) (*p + 32) : *p; h *= 1099511628211ULL; }	/* (the names are not case sensitive) */
-  return (unsigned long) (h & 0x7FFFFFFFFFFFFFFFULL) | 1;
+  if (swi_x (OS_FSControl, r)) return hash_ino (name);
+  return hash_ino (full);
 }
+/* for readdir: the canonical name of a directory is found once (a SWI), then d_ino of each entry is the hash of "canonical.leaf" without one */
+int __ul64_canon (const char *name, char *out, unsigned size)
+{
+  unsigned long r[10] = { 37, (unsigned long) name, (unsigned long) out, 0, 0, size };
+  return swi_x (OS_FSControl, r) ? -1 : 0;
+}
+unsigned long __ul64_hash_ino (const char *canonical) { return hash_ino (canonical); }
 
 int stat (const char *path, struct stat *st)
 {
@@ -735,16 +746,20 @@ static int rtc (long long *sec, int *cs)
   *cs = (int) (v % 100);
   return 0;
 }
+extern void __ul64_timeslice (void) __attribute__ ((weak));	/* pthread.c, when threads are used: other threads get a turn while this one polls the clock */
+#define TIMESLICE() do { if (__ul64_timeslice) __ul64_timeslice (); } while (0)
 int gettimeofday (struct timeval *tv, void *tz)
 {
   long long sec; int cs;
   (void) tz;
+  TIMESLICE ();
   if (rtc (&sec, &cs)) { errno = EIO; return -1; }
   if (tv) { tv->tv_sec = (time_t) sec; tv->tv_usec = cs * 10000; }
   return 0;
 }
 int clock_gettime (clockid_t id, struct timespec *ts)
 {
+  TIMESLICE ();
   if (id == CLOCK_MONOTONIC || id == CLOCK_PROCESS_CPUTIME_ID)
     {
       unsigned long r[10] = { 0 };
@@ -765,6 +780,7 @@ clock_t times (struct tms *t)							/* microseconds (picolibc's CLK_TCK is CLOCK
 {
   unsigned long r[10] = { 0 };
   clock_t now;
+  TIMESLICE ();
   swi_x (OS_ReadMonotonicTime, r);
   now = (clock_t) (r[0] & 0xFFFFFFFFUL) * 10000;
   if (t) { t->tms_utime = now; t->tms_stime = 0; t->tms_cutime = 0; t->tms_cstime = 0; }

@@ -13,6 +13,8 @@ mkdir -p "$W"
 [ -d "$W/src" ] || { git clone -q https://github.com/picolibc/picolibc.git "$W/src"; git -C "$W/src" checkout -q $COMMIT; }
 [ -e "$W/patched2" ] || { git -C "$W/src" apply "$(dirname "$0")/picolibc-getopt-dash.patch" && touch "$W/patched2"; }   # a lone - is not an option (getopt)
 [ -e "$W/patched" ] || { git -C "$W/src" apply "$(dirname "$0")/picolibc-freopen-close.patch" && touch "$W/patched"; }   # fclose () of a stream that freopen () gave a file now closes it
+[ -e "$W/patched3" ] || { git -C "$W/src" apply "$(dirname "$0")/picolibc-printf-alt-octal.patch" && touch "$W/patched3"; }   # %#.0o of 0 prints "0"
+[ -e "$W/patched4" ] || { git -C "$W/src" apply "$(dirname "$0")/picolibc-ldtoa-rounding.patch" && touch "$W/patched4"; }   # long double printf rounds to nearest (it truncated), a tie to even
 mkdir -p "$W/build"
 # -ffixed-x18: x18 is reserved on RISC OS 64.  -mstrict-align as in the tests.  No semihosting, our own crt (picocrt off), the console through read/write (posix-console), no thread local storage, a plain
 # global errno, one thread, long long and long double in printf and scanf, positional arguments (%1$d) and %n, wide characters in printf and scanf (%ls, %lc), UTF-8 multibyte and the extra charsets

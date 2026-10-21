@@ -17,6 +17,7 @@ if "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q ' [TW] 
 if "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q ' [TW] sysconf$'; then "$PREFIX/bin/aarch64-riscos-objcopy" --redefine-sym sysconf=__pico_sysconf "$T/lib/libc.a"; fi
 # <limits.h>: GCC's own header is found first and (installed by a compiler built without headers) does not go on to the C library's: NAME_MAX, PATH_MAX, the _POSIX_ limits ... come from <sys/syslimits.h>, added to its end
 GCCLIM=$PREFIX/lib/gcc/aarch64-riscos/$("$PREFIX/bin/aarch64-riscos-gcc" -dumpversion)/include/limits.h
+sed -i 's|^#define MB_LEN_MAX 1$|#define MB_LEN_MAX 16|' "$GCCLIM"	# MB_LEN_MAX must be at least MB_CUR_MAX (6) of the UTF-8 locales (wcrtomb into a buffer of MB_LEN_MAX bytes)
 grep -q 'SDK: syslimits' "$GCCLIM" || printf '\n/* SDK: syslimits */\n#include <sys/syslimits.h>\n#ifndef SSIZE_MAX\n#define SSIZE_MAX __LONG_MAX__\n#endif\n' >> "$GCCLIM"
 rm -f "$W"/stubs/*.o "$T/lib/libriscosstub.a"
 for f in "$SDK"/crt/stubs/*.c "$SDK"/crt/posix/*.c; do $CC -O2 -ffreestanding -fno-pic -fno-pie -fexceptions -Wall -Wextra -I"$SDK/include" -c "$f" -o "$W/stubs/$(basename "${f%.c}").o"; done

@@ -1,0 +1,140 @@
+diff --git a/libc/stdio/ldtoa_engine.c b/libc/stdio/ldtoa_engine.c
+index cbbd716af3..1d88c46478 100644
+--- a/libc/stdio/ldtoa_engine.c
++++ b/libc/stdio/ldtoa_engine.c
+@@ -53,6 +53,34 @@
+         _a < _b ? _a : _b;  \
+     })
+ 
++
++/* Is x exactly half a unit of the last of d decimals (a tie)?  x = m * 2^e with m an
++ * integer of 113 bits: it has k = -(e + trailing zero bits of m) decimals, the last of
++ * them a 5, so it is a tie at d decimals when k == d + 1.  (A value that is an integer
++ * is a tie at a position left of the decimal point: the caller's digits say.) */
++static int
++ld_tie_exact(long double x, int d)
++{
++#if __LDBL_MANT_DIG__ == 113
++    int e;
++    long double f = frexpl(x, &e);
++    unsigned __int128 m = (unsigned __int128) ldexpl(f, 113);
++    int tz = 0;
++
++    if (m == 0)
++        return 0;
++    while (!(m & 1)) {
++        m >>= 1;
++        tz++;
++    }
++    return (113 - e - tz) == d + 1;
++#else
++    (void) x;
++    (void) d;
++    return 0;
++#endif
++}
++
+ int
+ __ldtoa_engine(long double x, struct dtoa *dtoa, int max_digits, bool fmode, int max_decimals)
+ {
+@@ -74,6 +102,7 @@ __ldtoa_engine(long double x, struct dtoa *dtoa, int max_digits, bool fmode, int
+ 
+     int expo;
+     int decexp = 0;
++    const long double x0 = x;
+ 
+     x = frexpl(x, &expo);
+ 
+@@ -121,30 +150,73 @@ __ldtoa_engine(long double x, struct dtoa *dtoa, int max_digits, bool fmode, int
+ 
+     int save_max_digits = max_digits;
+ 
+-    if (fmode)
+-        max_digits = min(max_digits, max(1, max_decimals + decexp + 1));
+-
+-    int         decimals = max_digits;
+-
+-    long double round = 0.5l;
+-    while (decimals--) {
+-        round *= 0.1l;
+-    }
+-    x += round;
+-
+-    if (x >= 10.0l) {
+-        x *= 0.1l;
+-        decexp++;
+-        max_digits = min(save_max_digits, max(1, max_decimals + decexp + 1));
++    if (fmode) {
++        int n = max_decimals + decexp + 1;      /* digits that are kept (before rounding) */
++
++        if (n <= 0) {
++            /* The value is below one unit of the last decimal that is wanted:
++             * it rounds to 0, or (n == 0 and x >= 5) to one unit of that decimal. */
++            if (n == 0 && x > 5.0l && !(x < 5.0l + 5e-31l && ld_tie_exact(x0, max_decimals))) {
++                dtoa->digits[0] = '1';
++                dtoa->exp = decexp + 1;
++            } else {
++                dtoa->digits[0] = '0';
++                dtoa->exp = decexp;
++            }
++            return 1;
++        }
++        max_digits = min(max_digits, n);
+     }
+ 
+-    /* convert to decimal */
++    /* convert max_digits digits; y is then ten times what was not converted,
++     * in units of the last digit */
++    long double y = x;
+ 
+     for (i = 0; i < max_digits; i++) {
+-        int digit = (int)x;
++        int digit = (int)y;
+         dtoa->digits[i] = '0' + digit;
+-        x -= digit;
+-        x *= 10.0l;
++        y -= digit;
++        y *= 10.0l;
++    }
++
++    /* Round to nearest, a tie to even (as glibc does). The arithmetic above
++     * is not exact, so "a tie" is within a few ulps of one half. */
++    {
++        const long double eps = 5e-31l;
++        int up;
++
++        /* decimals that are kept: for %f max_decimals, else all the digits after the first
++         * (decexp is the exponent of the first one) */
++        int kept = fmode ? max_decimals : max_digits - 1 - decexp;
++
++        if (y > 5.0l + eps)
++            up = 1;
++        else if (y < 5.0l - eps)
++            up = 0;
++        else if (ld_tie_exact(x0, kept) || ((kept <= 0) && (x0 == floorl(x0))))
++            up = (dtoa->digits[max_digits - 1] - '0') & 1;     /* a tie: to even */
++        else
++            up = y > 5.0l;                                        /* too close to tell by arithmetic: as it came out */
++
++        if (up) {
++            for (i = max_digits - 1; i >= 0; i--) {
++                if (dtoa->digits[i] == '9')
++                    dtoa->digits[i] = '0';
++                else {
++                    dtoa->digits[i]++;
++                    break;
++                }
++            }
++            if (i < 0) {
++                /* 9.99... rounded up to 10.0 */
++                decexp++;
++                if (fmode)
++                    max_digits = min(save_max_digits, max(1, max_decimals + decexp + 1));
++                dtoa->digits[0] = '1';
++                for (i = 1; i < max_digits; i++)
++                    dtoa->digits[i] = '0';
++            }
++        }
+     }
+ 
+     dtoa->exp = decexp;

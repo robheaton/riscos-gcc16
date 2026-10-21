@@ -62,3 +62,16 @@ Found by these runs and fixed in the shell and the library:
 * **`cp /dev/null file`** is no longer refused (the descriptor of `/dev/null` answers `fstat` as a character device).
 * **`stat` and `fstat` give `st_blksize` and `st_blocks`** (the blocks were always 0, which GNU `grep` reads as a sparse file) and **`lseek` returns `EINVAL` for `SEEK_HOLE` and `SEEK_DATA`** (it took them for `SEEK_SET`, so `grep` found a "hole" in every file): a file with a NUL byte after the first buffer was reported as "binary file matches" instead of printing its matching lines.
 * Earlier the same day: a `close ()` of a standard descriptor in a `vfork` child no longer closes the parent's (`xargs` stopped the emulator).
+
+## After release 0.10 (21 October 2026; in the repository, not yet in a release)
+
+Tool chain and tools rebuilt with the next library (the SDK of `riscos64/sdk` as it is on the main branch). The locale-dependent tests were skipped until now because the helper `get-mb-cur-max` of the test suites was not built; with it they run.
+
+| Suite | 0.10 | Now |
+|---|---|---|
+| gawk (81 chunks) | 282 items, 2 not passing | the same |
+| sed 4.9 | 46 pass, 16 skipped, 4 not passing | **54 pass**, 9 skipped, the same 4 not passing |
+| grep 3.11 | 50 pass, 71 skipped, 4 not passing | **74 pass**, 46 skipped, 5 not passing: `symlink`, `stack-overflow`, `equiv-classes` (needs glibc's collation tables), the two Spencer tests |
+| UnixLib's own tests ([`riscos64/unixlib/oracle`](../riscos64/unixlib/oracle)) | 30 pass of 41 that build | **45 pass** of 57 that build |
+
+Found by these runs and fixed: `MB_LEN_MAX` was 1 while `MB_CUR_MAX` is 6 in the UTF-8 locales (`sed` with `\b` ended with "overflow detected"); a program started by another (`env sed`) was given its parent's name; `readdir` gave inode numbers that were not those of `stat`; `strsep` lost the empty field after a final delimiter; picolibc printed nothing for `%#.0o` of 0 and truncated instead of rounding in `long double` conversions (patches in `tools/`); with threads, a loop that waits by polling the clock stopped the other threads; in the shell, `local` and `declare` expanded their values a second time and `printf` had no `\xHH`. Not fixed: `printf` of a `double` gives at most 17 significant digits (glibc gives the exact expansion).

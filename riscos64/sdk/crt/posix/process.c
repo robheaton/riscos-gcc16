@@ -322,7 +322,9 @@ int posix_spawn (pid_t *pid, const char *path, const posix_spawn_file_actions_t 
   if (!p) return errno;
   cmd = command_line (p, argv);
   if (!cmd) return ENOMEM;
+  if (argv && argv[0]) setenv ("Sh$Argv0", argv[0], 1);		/* the program shows the name it was given (error messages: "sed: ..."), not its full path */
   status = run_translated (cmd);
+  if (argv && argv[0]) unsetenv ("Sh$Argv0");
   free (cmd);
   if (status == (127 << 8)) return ENOENT;
   for (i = 0; i < NCHILD; i++) if (!children[i].pid) break;
@@ -409,7 +411,9 @@ int execv (const char *path, char *const argv[])
   if (!p) return -1;
   cmd = command_line (p, argv);
   if (!cmd) { errno = ENOMEM; return -1; }
+  if (argv && argv[0]) setenv ("Sh$Argv0", argv[0], 1);		/* the name it was given (see posix_spawn) */
   status = run (cmd);
+  if (argv && argv[0]) unsetenv ("Sh$Argv0");
   if (status == (127 << 8)) { free (cmd); errno = ENOENT; return -1; }
   if (vfork_depth > 0) { free (cmd); vfork_finish (status); }	/* the parent goes on after its vfork */
   _exit (status >> 8);						/* exec does not return: the program that was started has run, and this one ends with its result */

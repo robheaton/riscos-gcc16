@@ -12,6 +12,7 @@
 struct ul_dir
 {
   char *path;				/* the RISC OS name of the directory */
+  char *canon;				/* its canonical name (for d_ino), found at the first readdir */
   long offset;				/* the next entry to ask OS_GBPB for (-1: none left) */
   char *buf;				/* the entries that OS_GBPB gave */
   int count, index;			/* how many, and how many were returned */
@@ -38,7 +39,7 @@ static void free_stream (struct ul_dir *u)
 {
   if (!u) return;
   free_stream (u->suffix);
-  free (u->path); free (u->buf); free (u->upath); free (u);
+  free (u->path); free (u->canon); free (u->buf); free (u->upath); free (u);
 }
 
 DIR *opendir (const char *name)
@@ -100,6 +101,8 @@ static int fetch (struct ul_dir *u, const unsigned char **name, unsigned *objtyp
 }
 
 /* A directory with the name of a suffix (c, h, o ...) holds the files that Unix calls name.c: they are listed as such, in the place of the directory (UnixLib: "reverse suffix swapping").  */
+extern int __ul64_canon (const char *, char *, unsigned);
+extern unsigned long __ul64_hash_ino (const char *);
 struct dirent *readdir (DIR *d)
 {
   struct ul_dir *u;
@@ -113,6 +116,7 @@ struct dirent *readdir (DIR *d)
       unsigned objtype, filetype;
       struct ul_dir *from = u->suffix ? u->suffix : u;
       char *o = d->dirent.d_name, *end = d->dirent.d_name + sizeof d->dirent.d_name - 1;
+      const unsigned char *rname;
       if (!fetch (from, &name, &objtype, &filetype))
 	{
 	  if (u->suffix) { free_stream (u->suffix); u->suffix = NULL; continue; }	/* the suffix directory is finished: go on in the main one */
@@ -129,6 +133,7 @@ struct dirent *readdir (DIR *d)
 	    }
 	}
       if (u->suffix && objtype == 2) continue;				/* directories inside a suffix directory are not shown */
+      rname = name;
       while (*name && o < end) *o++ = __filename_char_map[*name++];
       if (u->suffix) { size_t n = strlen (u->suffix_name); if (o + 1 + n <= end) { *o++ = '.'; memcpy (o, u->suffix_name, n); o += n; } }
       /* the file type as ",xyz", for a file whose type is not Text */
@@ -137,7 +142,10 @@ struct dirent *readdir (DIR *d)
 	  if ((filetype != 0xFFF || (ctl & __RISCOSIFY_FILETYPE_FFF_EXT)) && o + 4 <= end) o += sprintf (o, ",%03x", filetype);
 	}
       *o = 0;
-      d->dirent.d_ino = ++u->ino;
+      { char full[MAXPATHLEN]; (void) ++u->ino;			/* d_ino = the inode that stat gives for the file (a hash of its canonical RISC OS name), not a counter; the directory is canonicalised once per stream */
+	if (!from->canon) { char c[MAXPATHLEN]; if (__ul64_canon (from->path, c, sizeof c) == 0) from->canon = strdup (c); else from->canon = strdup (from->path); }
+	if (from->canon && strlen (from->canon) + strlen ((const char *) rname) + 2 < sizeof full) { sprintf (full, "%s.%s", from->canon, rname); d->dirent.d_ino = __ul64_hash_ino (full); }
+	else d->dirent.d_ino = u->ino; }
       u->pos++;
       d->dirent.d_type = objtype == 2 ? DT_DIR : DT_REG;
       return &d->dirent;

@@ -1170,6 +1170,7 @@ static const char *special_param (char c, char *buf, size_t size)
 static char *expand_str (const char *raw);		/* no splitting, no pattern matching: assignments, redirections */
 static char *expand_pattern (const char *raw);
 static int do_assign (const char *raw);
+static int assign_literal;				/* the value is already expanded (local and declare get their words expanded): do not expand it again */
 
 /* the value of a parameter reference name; *set tells if it is set */
 static const char *param_value (const char *name, int *set, char *buf, size_t size)
@@ -1762,6 +1763,7 @@ static int bi_printf (int argc, char **argv)
 		case 'f': sb_addc (&o, '\f'); break;
 		case 'v': sb_addc (&o, '\v'); break;
 		case '\\': sb_addc (&o, '\\'); break;
+		case 'x': { int v = 0, k = 0; while (k < 2 && isxdigit ((unsigned char) f[1])) { f++; v = v * 16 + (isdigit ((unsigned char) *f) ? *f - '0' : (tolower ((unsigned char) *f) - 'a' + 10)); k++; } if (k) sb_addc (&o, (char) v); else { sb_addc (&o, '\\'); sb_addc (&o, 'x'); } break; }	/* \xHH (bash, GNU printf) */
 		case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': { int v = 0, k; for (k = 0; k < 3 && *f >= '0' && *f <= '7'; k++, f++) v = v * 8 + (*f - '0'); f--; sb_addc (&o, (char) v); break; }
 		case 0: f--; break;
 		default: sb_addc (&o, '\\'); sb_addc (&o, *f);
@@ -2099,7 +2101,7 @@ static int bi_declare (int argc, char **argv)
 	  free (nm);
 	  continue;
 	}
-      if (eq && do_assign (argv[i])) r = 1;
+      if (eq) { int rc; assign_literal = 1; rc = do_assign (argv[i]); assign_literal = 0; if (rc) r = 1; }
       else if (!eq && isarr) make_arr (nm);
       if (ro) { struct var *v = find_var (nm); if (v) v->readonly = 1; }
       if (ex) export_var (nm, 0);
@@ -2219,7 +2221,7 @@ static int bi_local (int argc, char **argv)
       old = get_var (argv[i]);
       l->name = strdup (argv[i]); l->had = old != 0; l->old = old ? strdup (old) : 0;
       l->next = locals; locals = l;
-      if (eq) { *eq = '='; do_assign (argv[i]); } else unset_var (argv[i]);
+      if (eq) { *eq = '='; assign_literal = 1; do_assign (argv[i]); assign_literal = 0; } else unset_var (argv[i]);
     }
   return 0;
 }
@@ -2893,6 +2895,7 @@ static void arr_literal (struct arr *a, const char *inner, int append)
     }
   arr_sync (a);
 }
+static char *aval (const char *v) { return assign_literal ? strdup (v) : expand_str (v); }
 static int do_assign (const char *raw)
 {
   const char *e = raw;
@@ -2915,7 +2918,7 @@ static int do_assign (const char *raw)
   e++;
   if (idx)
     {
-      char *ex = expand_str (idx), *val = expand_str (e);
+      char *ex = expand_str (idx), *val = aval (e);
       struct arr *a = make_arr (name);
       long i = arith (ex);
       if (plus && i >= 0 && i < a->n && a->v[i]) { char *t = malloc (strlen (a->v[i]) + strlen (val) + 1); strcpy (t, a->v[i]); strcat (t, val); arr_set (a, (int) i, t); free (t); }
@@ -2933,7 +2936,7 @@ static int do_assign (const char *raw)
       return 0;
     }
   {
-    char *val = expand_str (e);
+    char *val = aval (e);
     if (plus)
       {
         const char *old = get_var (name);

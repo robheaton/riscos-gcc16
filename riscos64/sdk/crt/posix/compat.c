@@ -257,6 +257,7 @@ int getlogin_r (char *buf, size_t len)
 void openlog (const char *ident, int opt, int fac) { (void) ident; (void) opt; (void) fac; }
 void closelog (void) { }
 void syslog (int pri, const char *fmt, ...) { (void) pri; (void) fmt; }
+void vsyslog (int pri, const char *fmt, va_list ap) { (void) pri; (void) fmt; (void) ap; }
 
 /* backtrace: the return addresses on the chain of frame records (x29), innermost first.  Code compiled without -fno-omit-frame-pointer has no records, and the chain skips it.  The addresses are in the
    program's image (the map file of the link, -Wl,-Map=NAME.map, or tools/crashsym.py names them). */

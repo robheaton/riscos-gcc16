@@ -1,0 +1,21 @@
+diff --git a/libc/stdio/vfprintf_int.c b/libc/stdio/vfprintf_int.c
+index c81bd364ae..995fcd7d74 100644
+--- a/libc/stdio/vfprintf_int.c
++++ b/libc/stdio/vfprintf_int.c
+@@ -81,9 +81,14 @@
+ 
+         arg_to_unsigned(ap, flags, x);
+ 
+-        /* Zero gets no special alternate treatment */
+-        if (x == 0)
++        /* Zero gets no special alternate treatment, except that %#.0o of 0 is "0" (C11 7.21.6.1: the precision is raised to force a first 0) */
++        if (x == 0) {
++#ifndef _NEED_IO_SHRINK
++            if (base == 8 && (flags & FL_ALT) && (flags & FL_PREC) && prec == 0)
++                prec = 1;
++#endif
+             flags &= ~FL_ALT;
++        }
+ 
+ #ifndef _NEED_IO_SHRINK
+         if (x == 0 && (flags & FL_PREC) && prec == 0)

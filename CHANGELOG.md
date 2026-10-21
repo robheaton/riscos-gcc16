@@ -13,6 +13,8 @@ The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac, no
 
 See [docs/USERLAND64.md](docs/USERLAND64.md) and [docs/AARCH64.md](docs/AARCH64.md).
 
+On the main branch after 0.10 (21 October 2026, in the next release): `kernel.h`, `swis.h`, `err.h` and about 60 more functions and headers in UnixLib 64; `MB_LEN_MAX` 16; `readdir` inodes equal to `stat`; the program name of a started program; picolibc patches for `%#.0o` and `long double` rounding; shell: `local` and `declare` no longer expand twice, `printf \xHH`; more of the test suites run (grep 74 pass, sed 54). See [docs/PORTS-TESTS.md](docs/PORTS-TESTS.md).
+
 ## v16.2.0-24: 2026-10-14, UnixLib with the thread ticker of Andrew Youll's riscos-unixlib: a threaded program no longer makes other tasks abort
 
 | Asset | Version |

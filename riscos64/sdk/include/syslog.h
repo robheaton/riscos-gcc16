@@ -17,12 +17,19 @@
 #define LOG_LOCAL0 (16 << 3)
 #define LOG_MASK(p) (1 << (p))
 #define LOG_UPTO(p) ((1 << ((p) + 1)) - 1)
+#include <stdarg.h>
+#define LOG_PERROR 0x20
+#define LOG_AUTH (4 << 3)
+#define LOG_MAIL (2 << 3)
+#define LOG_LOCAL1 (17 << 3)
 #ifdef __cplusplus
 extern "C" {
 #endif
 void openlog (const char *, int, int);
 void closelog (void);
 void syslog (int, const char *, ...);
+void vsyslog (int, const char *, va_list);
+int setlogmask (int);
 #ifdef __cplusplus
 }
 #endif

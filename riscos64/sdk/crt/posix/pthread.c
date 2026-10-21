@@ -48,6 +48,7 @@ typedef struct thr
 static thr main_thr = { .state = T_RUN };
 static thr *head = &main_thr, *tail = &main_thr, *cur = &main_thr;
 int __ul64_nthreads = 1;			/* threads that have not ended (zombies are not counted) */
+extern int __pthread_num_running_threads __attribute__ ((alias ("__ul64_nthreads")));	/* the name UnixLib uses (its tests read it) */
 static unsigned long wait_seq;
 static unsigned char key_used[NKEYS];
 static void (*key_destructor[NKEYS]) (void *);
@@ -156,6 +157,19 @@ static void wake_all (const void *obj) { thr *t; for (t = head; t; t = t->next) 
 void __ul64_thread_yield (void)
 {
   if (__ul64_nthreads > 1) { cur->state = T_RUN; schedule (); }
+}
+/* Threads are switched only at calls that block.  A thread that waits by polling the clock (a busy loop on clock (), times (), gettimeofday () or clock_gettime ())
+   would never let the others run, and the signals of a condition variable that it sends meanwhile would be lost (UnixLib's pthread/cond test).  So the calls that read
+   the time give the others a turn, at most once for each centisecond of the clock (a loop that polls a million times yields about a hundred times a second). */
+void __ul64_timeslice (void)
+{
+  static unsigned long last;
+  unsigned long r[10] = { 0 };
+  if (__ul64_nthreads <= 1) return;
+  swi_x (0x42, r);						/* OS_ReadMonotonicTime */
+  if ((r[0] & 0xFFFFFFFFUL) == last) return;
+  last = r[0] & 0xFFFFFFFFUL;
+  __ul64_thread_yield ();
 }
 int sched_yield (void) { __ul64_thread_yield (); return 0; }
 int pthread_yield (void) { __ul64_thread_yield (); return 0; }

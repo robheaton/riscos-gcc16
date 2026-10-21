@@ -125,6 +125,7 @@ void __riscos_start (const char *cmd, unsigned long ramlimit)
 	a0[q[2]] = 0; argvec[0] = a0;
 	swi_x (0x24, d);					/* OS_SetVarVal: length -1 removes it */
       }
+    { extern int unsetenv (const char *); unsetenv ("Sh$Argv0"); }					/* and from environ: a program that this one starts (env sed ...) would be given it again as its name */
   }
   program_invocation_name = argc > 0 ? argvec[0] : (char *) "";
   program_invocation_short_name = program_invocation_name;

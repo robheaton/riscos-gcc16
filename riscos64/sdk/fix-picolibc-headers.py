@@ -24,10 +24,16 @@ open(p, "w").write(t)
 
 def add_before_last_endif(path, marker, text):
     """adds text before the last #endif of the header (once)"""
-    h = open(inc + "/" + path).read()
+    try:
+        h = open(inc + "/" + path).read()
+    except IOError:
+        return					# no such header in this installation
     if marker in h:
         return
-    i = h.rindex("#endif")
+    i = h.rfind("#endif")
+    if i < 0:
+        open(inc + "/" + path, "w").write(h + "\n" + text + "\n")
+        return
     open(inc + "/" + path, "w").write(h[:i] + text + "\n" + h[i:])
 
 add_before_last_endif("unistd.h", "SDK: more POSIX", """/* SDK: more POSIX (crt/posix/compat.c, passwd.c) */
@@ -178,3 +184,176 @@ tm = inc + "/time.h"
 t = open(tm).read()
 if "#if defined(_POSIX_MONOTONIC_CLOCK) || __GNU_VISIBLE\n\n/*  The identifier for the system-wide monotonic" in t:
     open(tm, "w").write(t.replace("#if defined(_POSIX_MONOTONIC_CLOCK) || __GNU_VISIBLE\n\n/*  The identifier for the system-wide monotonic", "#if 1\t/* SDK: always */\n\n/*  The identifier for the system-wide monotonic", 1))
+
+# SDK: environ under _GNU_SOURCE, the long double constants of <math.h>
+add_before_last_endif("unistd.h", "SDK: environ", """/* SDK: environ */
+#if defined _GNU_SOURCE || defined _DEFAULT_SOURCE
+extern char **environ;
+#endif
+""")
+add_before_last_endif("math.h", "SDK: M_xxxl", """/* SDK: M_xxxl: the long double constants of glibc's <math.h> */
+#if defined _GNU_SOURCE || defined _DEFAULT_SOURCE || defined _XOPEN_SOURCE
+#ifndef M_El
+#define M_El        2.718281828459045235360287471352662498L
+#endif
+#ifndef M_LOG2El
+#define M_LOG2El    1.442695040888963407359924681001892137L
+#endif
+#ifndef M_LOG10El
+#define M_LOG10El   0.434294481903251827651128918916605082L
+#endif
+#ifndef M_LN2l
+#define M_LN2l      0.693147180559945309417232121458176568L
+#endif
+#ifndef M_LN10l
+#define M_LN10l     2.302585092994045684017991454684364208L
+#endif
+#ifndef M_PI_2l
+#define M_PI_2l     1.570796326794896619231321691639751442L
+#endif
+#ifndef M_PI_4l
+#define M_PI_4l     0.785398163397448309615660845819875721L
+#endif
+#ifndef M_1_PIl
+#define M_1_PIl     0.318309886183790671537767526745028724L
+#endif
+#ifndef M_2_PIl
+#define M_2_PIl     0.636619772367581343075535053490057448L
+#endif
+#ifndef M_2_SQRTPIl
+#define M_2_SQRTPIl 1.128379167095512573896158903121545172L
+#endif
+#ifndef M_SQRT2l
+#define M_SQRT2l    1.414213562373095048801688724209698079L
+#endif
+#ifndef M_SQRT1_2l
+#define M_SQRT1_2l  0.707106781186547524400844362104849039L
+#endif
+#endif
+""")
+
+add_before_last_endif("string.h", "SDK: UnixLib string", """/* SDK: UnixLib string extras (crt/posix/bsdcompat.c) */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int stricmp (const char *, const char *);
+int strnicmp (const char *, const char *, size_t);
+char *strichr (const char *, int);
+char *strrichr (const char *, int);
+#ifdef __cplusplus
+}
+#endif
+""")
+
+# SDK: the large file names, and the prototypes of the small functions of crt/posix/bsdcompat.c
+for h in ("stdio.h", "fcntl.h", "unistd.h", "sys/stat.h", "dirent.h", "sys/mman.h"):
+    add_before_last_endif(h, "SDK: lfs64", "/* SDK: lfs64 */\n#include <sys/lfs64.h>\n")
+add_before_last_endif("stdio.h", "SDK: ctermid", """/* SDK: ctermid */
+#ifdef __cplusplus
+extern "C" {
+#endif
+char *ctermid (char *);
+char *cuserid (char *);
+#ifdef __cplusplus
+}
+#endif
+""")
+add_before_last_endif("unistd.h", "SDK: setpgrp", """/* SDK: setpgrp */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int setpgrp (void);
+useconds_t ualarm (useconds_t, useconds_t);
+#ifdef __cplusplus
+}
+#endif
+""")
+add_before_last_endif("sys/time.h", "SDK: settimeofday", """/* SDK: settimeofday */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int settimeofday (const struct timeval *, const struct timezone *);
+int adjtime (const struct timeval *, struct timeval *);
+#ifdef __cplusplus
+}
+#endif
+""")
+add_before_last_endif("sys/stat.h", "SDK: mknod", """/* SDK: mknod */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int mknod (const char *, mode_t, dev_t);
+#ifdef __cplusplus
+}
+#endif
+""")
+add_before_last_endif("sys/mman.h", "SDK: shm_open", """/* SDK: shm_open */
+#include <sys/types.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+int shm_open (const char *, int, mode_t);
+int shm_unlink (const char *);
+#ifdef __cplusplus
+}
+#endif
+""")
+add_before_last_endif("malloc.h", "SDK: malloc_trim", """/* SDK: malloc_trim */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int malloc_trim (size_t);
+#ifdef __cplusplus
+}
+#endif
+""")
+
+add_before_last_endif("unistd.h", "SDK: dysize", """/* SDK: dysize */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int getdomainname (char *, size_t);
+int setdomainname (const char *, size_t);
+int brk (void *);
+#ifdef __cplusplus
+}
+#endif
+""")
+add_before_last_endif("time.h", "SDK: dysize", """/* SDK: dysize */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int dysize (int);
+#ifdef __cplusplus
+}
+#endif
+""")
+
+add_before_last_endif("stdlib.h", "SDK: b64_ntop", """/* SDK: b64_ntop (crt/posix/bsdcompat.c) */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int b64_ntop (const unsigned char *, size_t, char *, size_t);
+int b64_pton (const char *, unsigned char *, size_t);
+#ifdef __cplusplus
+}
+#endif
+""")
+
+# SDK: MB_LEN_MAX must be at least MB_CUR_MAX of the UTF-8 locales (6 here): a program that has a buffer of MB_LEN_MAX bytes for wcrtomb () would overflow it (the fortified
+# check says "overflow detected" and the program ends).  glibc has 16.
+_l = open(inc + "/limits.h").read()
+if "SDK: MB_LEN_MAX" not in _l:
+    import re
+    _l2 = re.sub(r"#define __MB_LEN_MAX\s+\d+", "#define __MB_LEN_MAX 16\t/* SDK: MB_LEN_MAX */", _l)
+    open(inc + "/limits.h", "w").write(_l2)
+
+add_before_last_endif("grp.h", "SDK: getgrouplist", """/* SDK: getgrouplist (crt/posix/bsdcompat.c) */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int getgrouplist (const char *, gid_t, gid_t *, int *);
+#ifdef __cplusplus
+}
+#endif
+""")
