@@ -76,7 +76,7 @@ Tool chain 0.11 and tools built with it. The locale-dependent tests were skipped
 
 Found by these runs and fixed: `MB_LEN_MAX` was 1 while `MB_CUR_MAX` is 6 in the UTF-8 locales (`sed` with `\b` ended with "overflow detected"); a program started by another (`env sed`) was given its parent's name; `readdir` gave inode numbers that were not those of `stat`; `strsep` lost the empty field after a final delimiter; picolibc printed nothing for `%#.0o` of 0 and truncated instead of rounding in `long double` conversions (patches in `tools/`); with threads, a loop that waits by polling the clock stopped the other threads; in the shell, `local` and `declare` expanded their values a second time and `printf` had no `\xHH`. Not fixed: `printf` of a `double` gives at most 17 significant digits (glibc gives the exact expansion).
 
-## Locales, `iconv` and `printf` (22 October 2026, source tree; the next release)
+## Locales, `iconv` and `printf` (22 October 2026, tool chain 0.12)
 
 Tested on Pyromaniac with the C library as it is in the source tree after the work on `iconv`, locales, collation and `printf`. The gawk tests that need `en_US.UTF-8` (29 of them) could not run before; they do now.
 

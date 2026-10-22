@@ -134,9 +134,9 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the [RIS
 
 | Download (all pre-releases) | Size | Description |
 |---|---|---|
-| [`riscos64-toolchain-0.11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.11) | 60 MB | the Linux cross compiler (x86-64) |
-| [`riscos64-gnu-tools-12`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-12) | 11 MB | `!GNU`: the shell and the tools |
-| [`riscos64-coreutils-9.5-9`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-9) | 22 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
+| [`riscos64-toolchain-0.12`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.12) | 60 MB | the Linux cross compiler (x86-64) |
+| [`riscos64-gnu-tools-13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-13) | 13 MB | `!GNU`: the shell and the tools |
+| [`riscos64-coreutils-9.5-10`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-10) | 26 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |
 
 These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).

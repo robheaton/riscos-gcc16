@@ -20,6 +20,7 @@ add "$W/which-build/which" which
 add "$W/bc-build/bc/bc" bc
 add "$W/bc-build/dc/dc" dc
 add "$W/xxd,ff8" xxd
+[ -f "$W/iconv,ff8" ] && add "$W/iconv,ff8" iconv
 add "$W/xz-build/src/xz/xz" xz
 for n in less lessecho zstd lz4 tree unzip zip jq pcre2grep pcre2test cjpeg djpeg jpegtran pngfix xmlwf; do [ -f "$W/more/$n,ff8" ] && add "$W/more/$n,ff8" $n; done
 add "$( [ -f "$W/lua-run/luax,ff8" ] && echo "$W/lua-run/luax,ff8" || echo "$W/lua-5.4.7/lua,ff8" )" lua

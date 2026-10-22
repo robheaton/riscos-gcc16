@@ -7,12 +7,12 @@
 
 ## Use the release (no build needed)
 
-Download `aarch64-riscos-gcc-16.2.0-0.11-linux-x86_64.tar.xz` (or a newer one) from the [releases page](https://github.com/robheaton/riscos-gcc16/releases) (the names start `riscos64-toolchain-`); you need Linux x86-64 with glibc 2.38 or newer.
+Download `aarch64-riscos-gcc-16.2.0-0.12-linux-x86_64.tar.xz` (or a newer one) from the [releases page](https://github.com/robheaton/riscos-gcc16/releases) (the names start `riscos64-toolchain-`); you need Linux x86-64 with glibc 2.38 or newer.
 
 ```
-tar -xf aarch64-riscos-gcc-16.2.0-0.11-linux-x86_64.tar.xz
-export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.11-linux-x86_64/bin:$PATH
-./aarch64-riscos-gcc-16.2.0-0.11-linux-x86_64/selftest.sh                 # builds three small programs and checks them
+tar -xf aarch64-riscos-gcc-16.2.0-0.12-linux-x86_64.tar.xz
+export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.12-linux-x86_64/bin:$PATH
+./aarch64-riscos-gcc-16.2.0-0.12-linux-x86_64/selftest.sh                 # builds three small programs and checks them
 aarch64-riscos-gcc -O2 -o hello,ff8 hello.c                              # the SDK C library (picolibc): small programs
 aarch64-riscos-gcc -munixlib -O2 -o prog,ff8 prog.c                      # UnixLib 64: Unix file names, vfork/exec, signals, threads, sockets
 aarch64-riscos-g++ -munixlib -pthread -O2 -o prog,ff8 prog.cc           # C++20 with the standard library and std::thread
