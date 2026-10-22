@@ -75,3 +75,17 @@ Tool chain 0.11 and tools built with it. The locale-dependent tests were skipped
 | UnixLib's own tests ([`riscos64/unixlib/oracle`](../riscos64/unixlib/oracle)) | 30 pass of 41 that build | **45 pass** of 57 that build |
 
 Found by these runs and fixed: `MB_LEN_MAX` was 1 while `MB_CUR_MAX` is 6 in the UTF-8 locales (`sed` with `\b` ended with "overflow detected"); a program started by another (`env sed`) was given its parent's name; `readdir` gave inode numbers that were not those of `stat`; `strsep` lost the empty field after a final delimiter; picolibc printed nothing for `%#.0o` of 0 and truncated instead of rounding in `long double` conversions (patches in `tools/`); with threads, a loop that waits by polling the clock stopped the other threads; in the shell, `local` and `declare` expanded their values a second time and `printf` had no `\xHH`. Not fixed: `printf` of a `double` gives at most 17 significant digits (glibc gives the exact expansion).
+
+## Locales, `iconv` and `printf` (22 October 2026, source tree; the next release)
+
+Tested on Pyromaniac with the C library as it is in the source tree after the work on `iconv`, locales, collation and `printf`. The gawk tests that need `en_US.UTF-8` (29 of them) could not run before; they do now.
+
+| Suite | 0.11 | now |
+|---|---|---|
+| gawk, normal run (68 chunks) | 282 items, 2 not passing | the same: `poundbang`, `printf-corners` |
+| gawk, tests that need `en_US.UTF-8` | not run | **29 of 29 pass** (`mbstr1`, `wideidx`, `mbprintf*`, `backsmalls*`, `dfamb1`, `lc_num1`, `unicode1`, `commas` ...) |
+| sed 4.9 | 54 pass, 9 skipped, 4 not passing | the same |
+| grep 3.11 | 74 pass, 46 skipped, 5 not passing | 74 pass, 46 skipped; not passing: `symlink`, `stack-overflow`, `equiv-classes`, `spencer1-run`, and `c-locale` which takes longer than the 15 minutes of the job |
+| Lua `l1`, `l3` | pass | pass |
+
+The new functions are compared with glibc by programs that print the same text on both ([`riscos64/unixlib/tests/glibc`](../riscos64/unixlib/tests/glibc)): 1.4 million `iconv` conversions, every item of `nl_langinfo` and `localeconv` in 9 locales, 190 strings sorted by `strcoll`, 23 `strftime` formats, 49 `printf` lines in 6 locales. The differences that remain are in the results file ([`unixlib/oracle/RESULTS-2026-10-21.md`](../riscos64/unixlib/oracle/RESULTS-2026-10-21.md), last section).

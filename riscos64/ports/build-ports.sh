@@ -25,4 +25,6 @@ fetch https://sourceware.org/pub/bzip2 bzip2-1.0.8.tar.gz ab5a03176ee106d3f0fa90
 (cd sqlite-amalgamation-3470200 && $CC -O2 -DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_OMIT_WAL -DSQLITE_MAX_MMAP_SIZE=0 -DSQLITE_DEFAULT_MEMSTATUS=0 shell.c sqlite3.c -o "$W/sqlite3,ff8" -lm)
 # the shell
 $CC -O2 -o "$W/sh,ff8" "$(dirname "$(readlink -f "$0")")/sh/sh.c"
+# iconv (our own: the command of POSIX over the iconv of UnixLib 64)
+$CC -O2 -o "$W/iconv,ff8" "$(dirname "$(readlink -f "$0")")/iconv/iconv.c"
 ls -l "$W"/*,ff8

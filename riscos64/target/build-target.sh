@@ -56,8 +56,16 @@ for f in aifhdr.S crt0.S swi.S riscos_start.c riscos_syscalls.c; do
   $CC -O2 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -Wall -Wextra -c "$SDK/crt/$f" -o "$T/lib/${f%.*}.o"
 done
 cp "$SDK/aif64.ld" "$T/lib/"
-# picolibc's setlocale takes any name: it becomes __pico_setlocale and crt/posix/locale.c has the setlocale that the programs see (once: the rename is not done again)
-if "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q ' [TW] setlocale$'; then "$PREFIX/bin/aarch64-riscos-objcopy" --redefine-sym setlocale=__pico_setlocale "$T/lib/libc.a"; fi
+# picolibc's locale functions know only the "C" locale: they become __pico_<name> and crt/posix/locale.c has the ones that the programs see (once: a name that is renamed already is not renamed again)
+for n in setlocale nl_langinfo nl_langinfo_l localeconv strftime strftime_l strptime strcoll strcoll_l strxfrm strxfrm_l wcscoll wcsxfrm; do
+  if "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q " [TW] $n\$"; then "$PREFIX/bin/aarch64-riscos-objcopy" --redefine-sym $n=__pico_$n "$T/lib/libc.a"; fi
+done
+# picolibc's vfprintf (every printf function ends in it) becomes __pico_vfprintf and crt/libc-patch/numfmt.c has the vfprintf that the programs see (LC_NUMERIC): the member is renamed and the new one is
+# put into libc.a itself (libc.a comes after libriscosstub.a on the link line, so printf.o's reference to vfprintf is found there); a library that has been done already is not done again
+if ! "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q ' [TW] __pico_vfprintf$'; then
+  VW=$(mktemp -d); (cd "$VW" && "$PREFIX/bin/aarch64-riscos-ar" x "$T/lib/libc.a" libc_stdio_vfprintf.c.o && "$PREFIX/bin/aarch64-riscos-objcopy" --redefine-sym vfprintf=__pico_vfprintf libc_stdio_vfprintf.c.o && "$PREFIX/bin/aarch64-riscos-ar" r "$T/lib/libc.a" libc_stdio_vfprintf.c.o); rm -rf "$VW"
+fi
+VO=$(mktemp -d); $CC -O2 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -c "$SDK/crt/libc-patch/numfmt.c" -o "$VO/ul64_numfmt.o" && "$PREFIX/bin/aarch64-riscos-ar" r "$T/lib/libc.a" "$VO/ul64_numfmt.o"; rm -rf "$VO"
 if "$PREFIX/bin/aarch64-riscos-nm" "$T/lib/libc.a" 2>/dev/null | grep -q ' [TW] sysconf$'; then "$PREFIX/bin/aarch64-riscos-objcopy" --redefine-sym sysconf=__pico_sysconf "$T/lib/libc.a"; fi
 # <limits.h>: GCC's own header is found first and (installed by a compiler built without headers) does not go on to the C library's: NAME_MAX, PATH_MAX, the _POSIX_ limits ... come from <sys/syslimits.h>, added to its end
 GCCLIM=$PREFIX/lib/gcc/aarch64-riscos/$("$PREFIX/bin/aarch64-riscos-gcc" -dumpversion)/include/limits.h

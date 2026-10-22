@@ -11,6 +11,8 @@ The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac, no
 | `riscos64-coreutils-9.5-1` to `-9` | `!CoreUtils`: the 102 programs of GNU coreutils 9.5 |
 | `riscos64-libs-1` | static zlib, expat, PCRE2, libpng and libjpeg-turbo |
 
+**In the source tree, not in a release yet (22 October 2026):** `iconv` and the `iconv` command, `setlocale` per category with 36 locales (`nl_langinfo`, `localeconv`, `strftime`, `strptime`), `strcoll`/`strxfrm` in glibc's order, `printf` with the locale's decimal point and the `'` flag, the glibc flags of `strftime` (`%-d` and so on, which failed before), all compared with glibc; the 29 gawk tests that need `en_US.UTF-8` now run and pass. See [docs/PORTS-TESTS.md](docs/PORTS-TESTS.md).
+
 See [docs/USERLAND64.md](docs/USERLAND64.md) and [docs/AARCH64.md](docs/AARCH64.md).
 
 More of the test suites run with these releases (grep 74 of 126 jobs pass, sed 54 of 67; the locale-dependent tests were skipped before because the test helper `get-mb-cur-max` was not built). See [docs/PORTS-TESTS.md](docs/PORTS-TESTS.md).

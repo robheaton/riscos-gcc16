@@ -47,7 +47,7 @@ The heap is a dynamic area (it grows to 1 GB). `printf` handles `long double`, `
 aarch64-riscos-g++ -O2 hello.cc -o hello,ff8
 ```
 
-C++ with libstdc++: containers, strings, iostream, exceptions, static constructors and destructors, `atexit`. No threads, no `std::filesystem` (its calls fail with `ENOSYS`), no locale but "C".
+C++ with libstdc++: containers, strings, iostream, exceptions, static constructors and destructors, `atexit`. No threads, no `std::filesystem` (its calls fail with `ENOSYS`), `std::locale` accepts only "C" (the C library has locales: see [UNIXLIB64.md](UNIXLIB64.md)).
 
 ## Unix file names: `-munixlib`
 
