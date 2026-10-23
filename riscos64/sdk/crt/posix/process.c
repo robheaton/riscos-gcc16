@@ -526,6 +526,33 @@ static int is_program (const char *cmd)
   return stat (first, &st) == 0 && S_ISREG (st.st_mode);
 }
 
+/* A command may end every line that it writes with LF CR (OS_NewLine), so the text captured by *Spool or { > file } can have "\n\r" at the end of its lines.  The text that a command substitution or popen reads should have "\n": the file is rewritten without the CR that follows an LF. */
+static void fix_lfcr (const char *path)
+{
+  FILE *f = fopen (path, "r");
+  char *buf, *o;
+  long n, i;
+  int found = 0;
+  if (!f) return;
+  fseek (f, 0, SEEK_END); n = ftell (f); fseek (f, 0, SEEK_SET);
+  if (n <= 0 || !(buf = (char *) malloc ((size_t) n))) { fclose (f); return; }
+  n = (long) fread (buf, 1, (size_t) n, f);
+  fclose (f);
+  for (i = 0; i + 1 < n; i++) if (buf[i] == '\n' && buf[i + 1] == '\r') { found = 1; break; }
+  if (found)
+    {
+      o = buf;
+      for (i = 0; i < n; i++)
+	{
+	  *o++ = buf[i];
+	  if (buf[i] == '\n' && i + 1 < n && buf[i + 1] == '\r') i++;
+	}
+      f = fopen (path, "w");
+      if (f) { fwrite (buf, 1, (size_t) (o - buf), f); fclose (f); }
+    }
+  free (buf);
+}
+
 FILE *popen (const char *cmd, const char *type)
 {
   int i, write = type && type[0] == 'w';
@@ -553,7 +580,12 @@ FILE *popen (const char *cmd, const char *type)
     {
       if (can_redirect ())						/* the operating system redirects the output of the command itself: a Spool file that the program that runs this one has open is left alone */
 	{
-	  snprintf (line, sizeof line, "%s { > %s }", cmd, pipes[i].file);
+	  {
+	    /* no space before the brace: a space in front of { > file } can become part of the last argument (*Echo prints it) */
+	    size_t cl = strlen (cmd);
+	    while (cl > 0 && cmd[cl - 1] == ' ') cl--;
+	    snprintf (line, sizeof line, "%.*s{ > %s }", (int) cl, cmd, pipes[i].file);
+	  }
 	  pipes[i].status = run_user (line);
 	}
       else
@@ -564,6 +596,7 @@ FILE *popen (const char *cmd, const char *type)
 	  run ("Spool");						/* (this ends any Spool file that was open: there is only one) */
 	}
     }
+  if (!write) fix_lfcr (pipes[i].file);
   pipes[i].f = fopen (pipes[i].file, write ? "w" : "r");
   if (!pipes[i].f) return 0;
   pipes[i].cmd = strdup (cmd);

@@ -12,3 +12,10 @@ LC_ALL=C comm -23 "$O/names32.txt" "$O/names64.txt" | grep -v '^\(DRender\|gmon\
 { echo '#include <stdio.h>'; awk '{printf "extern void %s(void);\n",$1}' "$O/missing.txt"; echo 'void *tab[] = {'; awk '{printf "(void*)%s,\n",$1}' "$O/missing.txt"; echo '}; int main(void){ return tab[0]==0; }'; } > "$O/chk.c"
 "$P/bin/aarch64-riscos-gcc" -munixlib -O0 -w -D_SDK_NO_LFS64_MACROS "$O/chk.c" -o "$O/chk,ff8" 2>&1 | grep -o "undefined reference to \`[A-Za-z0-9_]*'" | sed "s/.*\`//; s/'//" | sort -u > "$O/unresolved.txt"
 echo "32-bit public names: $(wc -l < "$O/names32.txt");  not defined in the 64-bit libraries: $(wc -l < "$O/missing.txt");  not found by the linker: $(wc -l < "$O/unresolved.txt")"
+
+# names that are macros in the headers (open64, fopen64, assert, sigemptyset ...) are there for a program that includes the headers: they do not count as missing
+HDRS="stdio.h stdlib.h string.h unistd.h fcntl.h sys/stat.h sys/types.h signal.h setjmp.h assert.h pthread.h semaphore.h sys/mman.h dirent.h time.h locale.h wchar.h math.h netdb.h arpa/inet.h sys/socket.h"
+{ echo '#define _GNU_SOURCE'; for h in $HDRS; do echo "#include <$h>"; done; awk '{printf "#ifdef %s\nMACRO_%s\n#endif\n",$1,$1}' "$O/unresolved.txt"; } > "$O/macros.c"
+"$P/bin/aarch64-riscos-gcc" -munixlib -E -P "$O/macros.c" 2>/dev/null | sed -n "s/^MACRO_//p" | sort -u > "$O/macros.txt"
+LC_ALL=C sort -u "$O/unresolved.txt" -o "$O/unresolved.txt"; LC_ALL=C comm -23 "$O/unresolved.txt" "$O/macros.txt" > "$O/really-missing.txt"
+echo "of those, macros in the headers (not missing): $(wc -l < "$O/macros.txt");  really missing: $(wc -l < "$O/really-missing.txt")  (list: $O/really-missing.txt)"

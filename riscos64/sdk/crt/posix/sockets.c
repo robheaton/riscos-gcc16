@@ -115,7 +115,7 @@ static void from_bsd (const unsigned char *in, socklen_t inlen, struct sockaddr 
   unsigned char tmp[128];
   socklen_t n = inlen > sizeof tmp ? (socklen_t) sizeof tmp : inlen;
   memcpy (tmp, in, n);
-  if (n >= 2) { tmp[0] = in[1]; tmp[1] = 0; }				/* family: one byte to two bytes (little endian) */
+  if (n >= 2) { tmp[0] = AF_INET; tmp[1] = 0; }				/* family: two bytes, little endian.  The Internet module can leave the length and family bytes of the address it returns (Getsockname, Getpeername, Accept, Recvfrom) at 0, so the family is set here: AF_INET is the only family */
   if (a && alen) { socklen_t k = *alen < n ? *alen : n; memcpy (a, tmp, k); *alen = n; }
 }
 

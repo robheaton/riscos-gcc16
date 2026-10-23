@@ -922,13 +922,13 @@ static int run_command_line (const char *cmdline, struct sink *out, const char *
   if (outpath)
     {
       ros (outpath, rb, sizeof rb);
-      if (use_redirect) { snprintf (tmp, sizeof tmp, " { > %s }", rb); sb_adds (&c, tmp); }
+      if (use_redirect) { while (c.n && c.s[c.n - 1] == ' ') c.s[--c.n] = 0; snprintf (tmp, sizeof tmp, "{ > %s }", rb); sb_adds (&c, tmp); }	/* (no space before the brace: a space would become part of the last argument) */
       else { snprintf (tmp, sizeof tmp, "Spool %s", rb); __ul64_system_raw (tmp); spool = 1; }
     }
   if (in_path)
     {
       ros (in_path, rb, sizeof rb);
-      if (use_redirect) { snprintf (tmp, sizeof tmp, " { < %s }", rb); sb_adds (&c, tmp); }
+      if (use_redirect) { snprintf (tmp, sizeof tmp, "%s{ < %s }", c.n && c.s[c.n - 1] == '}' ? " " : "", rb); sb_adds (&c, tmp); }
       else { snprintf (tmp, sizeof tmp, "Exec %s", rb); __ul64_system_raw (tmp); exec_in = 1; }
     }
   status = __ul64_system_raw (c.s);
@@ -939,8 +939,14 @@ static int run_command_line (const char *cmdline, struct sink *out, const char *
       FILE *f = fopen (scrap, "r");
       if (f)
 	{
-	  char buf[4096]; size_t n;
-	  while ((n = fread (buf, 1, sizeof buf, f)) > 0) out_write (out, buf, n);
+	  char buf[4096]; size_t n; int lf = 0;
+	  while ((n = fread (buf, 1, sizeof buf, f)) > 0)
+	    {
+	      /* a command can end its lines with LF CR (OS_NewLine): the CR after an LF is dropped */
+	      size_t i, m = 0;
+	      for (i = 0; i < n; i++) { if (lf && buf[i] == '\r') { lf = 0; continue; } lf = buf[i] == '\n'; buf[m++] = buf[i]; }
+	      if (m) out_write (out, buf, m);
+	    }
 	  fclose (f);
 	}
     }

@@ -6,6 +6,7 @@
 #include <netdb.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <strings.h>
 
 extern unsigned long swi_x (unsigned long swi, unsigned long regs[10]);
@@ -53,12 +54,25 @@ static int resolve (const char *name, unsigned char out[4])
   unsigned long r[10] = { (unsigned long) name };
   if (inet_pton (AF_INET, name, a) == 1) { memcpy (out, a, 4); return 0; }
   if (!strcasecmp (name, "localhost")) { out[0] = 127; out[1] = out[2] = 0; out[3] = 1; return 0; }
-  if (swi_x (0x46001, r)) return TRY_AGAIN;				/* Resolver_GetHost */
-  if (r[0] != 0 || !r[1]) return r[0] ? (int) r[0] : HOST_NOT_FOUND;
   {
-    const struct hostent *h = (const struct hostent *) r[1];
-    if (h->h_addrtype != AF_INET || h->h_length != 4 || !h->h_addr_list || !h->h_addr_list[0]) return NO_DATA;
-    memcpy (out, h->h_addr_list[0], 4);
+    int tries;
+    /* Resolver_GetHost: R0 = 0 and R1 = a hostent when it knows the answer; an error number in R0 (36, EINPROGRESS) when the lookup is going on: ask again (up to about 10 seconds) */
+    for (tries = 0; tries < 100; tries++)
+      {
+	unsigned long q[10] = { (unsigned long) name };
+	if (swi_x (0x46001, q)) return TRY_AGAIN;
+	if (q[0] == 0 && q[1]) { r[1] = q[1]; r[0] = 0; break; }
+	if (q[0] != 36) return q[0] ? HOST_NOT_FOUND : NO_DATA;
+	usleep (100000);
+      }
+    if (tries == 100) return TRY_AGAIN;
+  }
+  {
+    /* the module's hostent has 32 bit pointers on RISC OS 64: h_name, h_aliases (4 bytes each), h_addrtype, h_length (4 bytes each), h_addr_list (4 bytes), which points to 4 byte pointers to the addresses */
+    const unsigned int *h = (const unsigned int *) r[1];
+    const unsigned int *list = (const unsigned int *) (unsigned long) h[4];
+    if ((int) h[2] != AF_INET || h[3] != 4 || !list || !list[0]) return NO_DATA;
+    memcpy (out, (const void *) (unsigned long) list[0], 4);
   }
   return 0;
 }

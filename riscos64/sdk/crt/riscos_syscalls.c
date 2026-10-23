@@ -246,6 +246,7 @@ ssize_t write (int fd, const void *buf, size_t n)
 	}
     }
   if (fd == 1 || fd == 2) { __ul64_poll_signals (); put_text ((const char *) buf, n); return (ssize_t) n; }
+  if (SOCK (fd)) return __ul64_sock_write (fd, buf, n);		/* (a write () on a socket: read, close and fstat had this check, write did not) */
   if (!isfile (fd)) { errno = EBADF; return -1; }
   r[0] = 2; r[1] = (unsigned long) fdhandle (fd); r[2] = (unsigned long) buf; r[3] = n;
   if (swi_x (OS_GBPB, r)) { errno = EIO; return -1; }
@@ -399,6 +400,20 @@ int open (const char *path, int flags, ...)
       if (!swi_x (OS_File, q) && q[0] == 1) { errno = ENOTDIR; return -1; }
     }
   path = rospath;
+  char dirbuf[ROSPATH];
+  if (acc == O_RDONLY)								/* a folder opened for reading (find, tar, fchdir, fdopendir): some file systems refuse it in OS_Find (an error, or no handle), so the descriptor is a handle of an empty placeholder file and carries the name of the folder (fstat, fchdir and the *at calls go by the name) */
+    {
+      unsigned long q[10] = { 17, (unsigned long) rospath };
+      if (!swi_x (OS_File, q) && q[0] == 2)
+	{
+	  int t = open ("/tmp/devnull", O_WRONLY | O_CREAT, 0666);
+	  if (t >= 0) close (t);
+	  int ft;
+	  const char *np = ros_path ("/tmp/devnull", dirbuf, 0, &ft);
+	  if (!np) return -1;
+	  path = np;
+	}
+    }
   r[1] = (unsigned long) path;
   if (acc == O_RDONLY) r[0] = 0x40;						/* OPENIN */
   else if (isnew || (flags & O_TRUNC)) r[0] = 0x80;				/* OPENOUT: makes the file or empties it; it can be read as well */
@@ -409,6 +424,12 @@ int open (const char *path, int flags, ...)
     {
       unsigned long q[10] = { 18, (unsigned long) path, filetype < 0 ? 0xFFF : (unsigned long) filetype };	/* OS_File 18: set the file type */
       swi_x (OS_File, q);
+    }
+  if ((flags & O_TRUNC) && !isnew && acc != O_RDONLY)
+    {
+      /* OS_Find 0x80 is meant to empty the file, but some file systems leave an existing file as long as it was (or empty it only at close): set the length to 0 ourselves (OS_Args 3) */
+      unsigned long q[10] = { 3, r[0], 0 };
+      swi_x (OS_Args, q);
     }
   if (flags & O_APPEND)
     {
@@ -554,10 +575,10 @@ static char *da_base, *da_cur;
 
 static void da_create (void)
 {
-  static const unsigned long max[3] = { 1UL << 30, 256UL << 20, 64UL << 20 };
+  static const unsigned long max[7] = { 128UL << 20, 96UL << 20, 64UL << 20, 32UL << 20, 16UL << 20, 8UL << 20, 4UL << 20 };	/* each dynamic area reserves its whole maximum size of the 4 GB logical space that all areas share in the kernel: only a few hundred MB are free, so a heap of 0xFFFFFFFF or 512 MB or more leaves no room for the swap area of a nested run (system () fell back to OS_CLI and the parent vanished); the first size that fits is taken, a nested program gets a smaller one (128 MB first: with 256 MB the third program of a chain agent, sh, xz had only 32 MB; xz -6 needs 94 MB).  Pyromaniac takes every size */
   int i;
   da_mode = 2;
-  for (i = 0; i < 3; i++)
+  for (i = 0; i < 7; i++)
     {
       unsigned long r[10] = { 0 };
       r[0] = 0; r[1] = (unsigned long) -1; r[2] = 4096; r[3] = (unsigned long) -1; r[4] = 0x80; r[5] = max[i]; r[8] = (unsigned long) "SDK heap";
@@ -709,7 +730,12 @@ int stat (const char *path, struct stat *st)
   if (!(path = ros_path (path, b, 0, NULL))) return -1;
   r[1] = (unsigned long) path;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;
-  if (swi_x (OS_File, r)) { errno = os_errno_of (r); return -1; }
+  if (swi_x (OS_File, r))
+    {
+      if (!strcmp (path, "$"))			/* the root of a file system that has no root to ask about (*Cat $ can be an error): a folder that is there (rm -r looks at / before it starts) */
+	{ st->st_mode = S_IFDIR | 0755; st->st_nlink = 1; st->st_dev = 1; st->st_ino = 2; st->st_blksize = 4096; return 0; }
+      errno = os_errno_of (r); return -1;
+    }
   if (r[0] == 0) { errno = ENOENT; return -1; }
   if (r[0] == 2) st->st_mode = S_IFDIR | 0755;
   else st->st_mode = S_IFREG | ((r[5] & 1) ? 0444 : 0) | ((r[5] & 2) ? 0222 : 0);

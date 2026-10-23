@@ -530,3 +530,9 @@ int __ul64_numeric (const char **radix, const char **thousep, const char **group
   *grouping = n->grouping;
   return n->radix[0] != '.' || n->radix[1] || n->thousep[0];
 }
+
+/* 1 if setlocale would accept the name (for the C++ library: std::locale ("en_US.UTF-8")) */
+int __ul64_locale_valid (const char *name)
+{
+  return kind_of (name) != 0;
+}
