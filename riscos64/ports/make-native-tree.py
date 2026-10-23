@@ -5,7 +5,7 @@ Lays out a folder with the native tool chain for RISC OS 64 (the programs of bui
 names the way UnixLib 64 looks for them: a file called  x.h  is  h/x  on RISC OS (the suffixes c, cc, f, h, i, ii, l, o, p, s, y are swapped into directories).  Programs get the type suffix ,ff8.  The tree is meant to be
 zipped and run on RISC OS 64 (the build service for Pyromaniac takes such a zip as it is).
 
-  DEST/xgcc,ff8  bin/{cc1,as,collect2,ld,objcopy},ff8  lib/{o/*, libc.a, libm.a, libgcc.a, libriscosstub.a, aif64.ld}  include/**  c/hello  s/hello  o/ out/"""
+  DEST/xgcc,ff8  bin/{cc1,as,collect2,ld,objcopy},ff8  lib/{o/*, libc.a, libm.a, libgcc.a, libriscosstub.a, libunixlib64.a, aif64.ld}  include/**  c/hello  s/hello  o/ out/"""
 import argparse, os, shutil, sys
 
 SFIX = "c cc f h i ii l o p s y".split()
@@ -46,7 +46,7 @@ for f in ("aifhdr", "crt0", "riscos_start", "riscos_syscalls", "swi"):
     put(os.path.join(T, "lib", f + ".o"), "lib/o/" + f)
 for f in ("crti", "crtbegin", "crtend", "crtn"):
     put(os.path.join(G, f + ".o"), "lib/o/" + f)
-for f, src in (("libc.a", T), ("libm.a", T), ("libriscosstub.a", T), ("aif64.ld", T), ("libgcc.a", G)):
+for f, src in (("libc.a", T), ("libm.a", T), ("libriscosstub.a", T), ("libunixlib64.a", T), ("aif64.ld", T), ("libgcc.a", G)):
     put(os.path.join(src, "lib" if src == T else "", f), "lib/" + f)
 # the C headers: picolibc's and the SDK's (no C++), and GCC's own (stddef.h, stdarg.h ...)
 for root, dirs, files in os.walk(os.path.join(T, "include")):
@@ -57,9 +57,17 @@ for root, dirs, files in os.walk(os.path.join(T, "include")):
     for f in files:
         r = os.path.normpath(os.path.join(rel, f))
         put(os.path.join(root, f), os.path.join("include", swapped(r)))
+# GCC's own headers.  Two of them have the name of a header of the C library and use #include_next to reach it, which cannot work in a flat tree: the C library's stdint.h stays (GCC's is not needed), and GCC's limits.h
+# is installed as gcclimits.h, which the C library's limits.h includes in place of #include_next <limits.h>.
 for f in sorted(os.listdir(os.path.join(G, "include"))):
     if os.path.isfile(os.path.join(G, "include", f)):
-        put(os.path.join(G, "include", f), os.path.join("include", swapped(f)))
+        if f == "stdint.h": continue
+        dst = "gcclimits.h" if f == "limits.h" else f
+        put(os.path.join(G, "include", f), os.path.join("include", swapped(dst)))
+lim = os.path.join(D, "include", swapped("limits.h"))
+txt = open(lim, encoding="latin-1").read()
+if "#include_next <limits.h>" in txt:
+    open(lim, "w", encoding="latin-1").write(txt.replace("#include_next <limits.h>", "#include <gcclimits.h>"))
 hello = a.hello or os.path.join(os.path.dirname(os.path.abspath(__file__)), "native", "hello.c")
 put(hello, "c/hello")
 if a.asm:
