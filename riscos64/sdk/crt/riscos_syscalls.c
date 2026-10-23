@@ -571,6 +571,7 @@ __attribute__ ((constructor (102))) static void stdout_buffering (void)
 #define OS_DynamicArea 0x66
 static int da_mode;				/* 0 = not tried, 1 = a dynamic area, 2 = the application space */
 static unsigned long da_number, da_size, da_max;
+extern char __ul64_heap_max __attribute__ ((weak));
 static char *da_base, *da_cur;
 
 static void da_create (void)
@@ -581,10 +582,12 @@ static void da_create (void)
   for (i = 0; i < 7; i++)
     {
       unsigned long r[10] = { 0 };
-      r[0] = 0; r[1] = (unsigned long) -1; r[2] = 4096; r[3] = (unsigned long) -1; r[4] = 0x80; r[5] = max[i]; r[8] = (unsigned long) "SDK heap";
+      unsigned long want = max[i];
+      if (&__ul64_heap_max && (unsigned long) &__ul64_heap_max < want) want = (unsigned long) &__ul64_heap_max;	/* a program that waits for others (a shell, a compiler driver) is linked with -Wl,--defsym=__ul64_heap_max=16M: its heap must not use up the logical address space that the program it starts needs */
+      r[0] = 0; r[1] = (unsigned long) -1; r[2] = 4096; r[3] = (unsigned long) -1; r[4] = 0x80; r[5] = want; r[8] = (unsigned long) "SDK heap";
       if (!swi_x (OS_DynamicArea, r))
 	{
-	  da_number = r[1] & 0xFFFFFFFF; da_base = da_cur = (char *) r[3]; da_size = 4096; da_max = max[i]; da_mode = 1;
+	  da_number = r[1] & 0xFFFFFFFF; da_base = da_cur = (char *) r[3]; da_size = 4096; da_max = want; da_mode = 1;
 	  return;
 	}
     }
@@ -727,6 +730,7 @@ int stat (const char *path, struct stat *st)
   unsigned long r[10] = { 17 };
   char *p = (char *) st;
   size_t i;
+  if (!path || !*path) { errno = ENOENT; return -1; }			/* POSIX: an empty name is no file (libiberty's temporary directory search stats P_tmpdir, which is "") */
   if (!(path = ros_path (path, b, 0, NULL))) return -1;
   r[1] = (unsigned long) path;
   for (i = 0; i < sizeof *st; i++) p[i] = 0;
@@ -734,7 +738,9 @@ int stat (const char *path, struct stat *st)
     {
       if (!strcmp (path, "$"))			/* the root of a file system that has no root to ask about (*Cat $ can be an error): a folder that is there (rm -r looks at / before it starts) */
 	{ st->st_mode = S_IFDIR | 0755; st->st_nlink = 1; st->st_dev = 1; st->st_ino = 2; st->st_blksize = 4096; return 0; }
-      errno = os_errno_of (r); return -1;
+      errno = os_errno_of (r);
+      if (errno == EIO && !strncmp (path, "$.", 2)) errno = ENOENT;		/* a name directly under the root of a file system that cannot be asked about (some give an I/O error, not "not found"): /usr/include, /usr/local/include ... are not there */
+      return -1;
     }
   if (r[0] == 0) { errno = ENOENT; return -1; }
   if (r[0] == 2) st->st_mode = S_IFDIR | 0755;

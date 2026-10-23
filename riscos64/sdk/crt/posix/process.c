@@ -178,7 +178,44 @@ static int run_translated (const char *cmd)
     }
   return st;
 }
+static int run_cwd_kept_1 (const char *cmd);
+/* A file system or the kernel may refuse a command of more than 255 characters ("Buffer overflow"): a long command goes in a scrap file that the child reads at its start (riscos_start.c, UL64$ArgFile); only the program's name (and a trailing { > file } redirection, which OS_CLI itself reads) stays on the command line. */
 static int run_cwd_kept (const char *cmd)
+{
+  static unsigned seq;
+  size_t n = strlen (cmd), plen, body;
+  char name[96], var[2] = { 0, 0 }, *shortcmd;
+  const char *redir = 0;
+  unsigned long q[10];
+  int st;
+  (void) var;
+  if (n <= 235) return run_cwd_kept_1 (cmd);
+  if (n > 0 && cmd[n - 1] == '}')						/* a redirection at the end: { > file }, { < file }, { 2> ... } */
+    {
+      const char *b = strrchr (cmd, '{');
+      if (b && b[1] == ' ' && (b[2] == '>' || b[2] == '<' || b[2] == '2' || b[2] == '&')) redir = b;
+    }
+  body = redir ? (size_t) (redir - cmd) : n;
+  if (cmd[0] == '"') { const char *e = strchr (cmd + 1, '"'); plen = e ? (size_t) (e - cmd) + 1 : body; }
+  else { const char *e = strchr (cmd, ' '); plen = e && (size_t) (e - cmd) < body ? (size_t) (e - cmd) : body; }
+  snprintf (name, sizeof name, "<Wimp$ScrapDir>.ul64a%ld_%u", (long) getpid (), ++seq);
+  q[0] = 10; q[1] = (unsigned long) name; q[2] = 0xFFF; q[3] = 0; q[4] = (unsigned long) cmd; q[5] = (unsigned long) cmd + body;	/* OS_File 10: save a file */
+  if (swi_x (0x08, q)) return run_cwd_kept_1 (cmd);				/* no scrap directory: as before */
+  q[0] = (unsigned long) "UL64$ArgFile"; q[1] = (unsigned long) name; q[2] = strlen (name); q[3] = 0; q[4] = 0;	/* OS_SetVarVal */
+  swi_x (0x24, q);
+  shortcmd = (char *) malloc (plen + (redir ? strlen (redir) + 2 : 1));
+  if (!shortcmd) return run_cwd_kept_1 (cmd);
+  memcpy (shortcmd, cmd, plen);
+  shortcmd[plen] = 0;
+  if (redir) { strcat (shortcmd, " "); strcat (shortcmd, redir); }
+  st = run_cwd_kept_1 (shortcmd);
+  free (shortcmd);
+  q[0] = (unsigned long) "UL64$ArgFile"; q[1] = 0; q[2] = (unsigned long) -1; q[3] = 0; q[4] = 0;	/* the child removes both; if it did not start they are still here */
+  swi_x (0x24, q);
+  q[0] = 6; q[1] = (unsigned long) name; swi_x (0x08, q);
+  return st;
+}
+static int run_cwd_kept_1 (const char *cmd)
 {
   unsigned long r[10] = { (unsigned long) cmd };
   export_environ ();

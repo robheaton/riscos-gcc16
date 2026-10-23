@@ -1,5 +1,6 @@
 #!/bin/bash
 # build-libtestmod.sh [OUTDIR]: the module LibTest64,ffa: the C library of the kit (modkit/lib, compiled for AArch64 as for libtest64, with the AArch64 branches of heap.c, exit.c and setjmp64.S) and libtest.c in a module.
+# HW=1: the machine variant (-DT_HW): the sections that need Pyromaniac's test SWI &5AB07 (faults of the file model, huge sparse files) are left out: on a machine that SWI number can be another module's.
 # The library is compiled with floating point allowed (the maths needs it; Pyromaniac keeps the caller's floating point state across a module's SWI).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -28,7 +29,7 @@ $P-gcc $FL -c "$K/lib/setjmp64.S" -o "$OUT/o/setjmp64.o"
 $P-gcc $FL -Wall -Wextra -nostdinc -I"$K/include" -I"$GCCINC" -DSWIS=1 -DREALVARS=1 -DREALRAISE=1 -c "$HERE/a64hooks.c" -o "$OUT/o/a64hooks.o"
 $P-gcc $FL -c "$HERE/a64swi.S" -o "$OUT/o/a64swi.o"
 $P-gcc $FL -c "$HERE/libtestmod.S" -o "$OUT/o/libtestmod_s.o"
-$P-gcc $FL -Wall -Wno-unused-function -DT_HOSTLIB -DMK_NO_VARS -DT_FSDIR="\"${FSDIR:-MK}\"" -DSCALE="${SCALE:-1}" -Dmain=libtest_main -nostdinc -I"$OUT" -I"$K/include" -I"$GCCINC" -I"$K/tests/libtest" \
+$P-gcc $FL -Wall -Wno-unused-function -DT_HOSTLIB ${HW:+-DT_HW} -DMK_NO_VARS -DT_FSDIR="\"${FSDIR:-MK}\"" -DSCALE="${SCALE:-1}" -Dmain=libtest_main -nostdinc -I"$OUT" -I"$K/include" -I"$GCCINC" -I"$K/tests/libtest" \
     -c "$K/tests/libtest/libtest.c" -o "$OUT/o/libtest.o" 2> "$OUT/o/libtest.log" || { echo "FAILED libtest.c"; head -40 "$OUT/o/libtest.log"; exit 1; }
 # the module: the header from the CMHG file, the module's own code, the kit's runtime
 python3 "$KIT/cmunge64.py" -d "$OUT/libtestmodh.h" -o "$OUT/o/libtestmod_hdr.o" "$HERE/libtestmod.cmhg"

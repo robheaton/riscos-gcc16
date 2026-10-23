@@ -100,6 +100,12 @@ void __ul64_fault_update (int active)
   static void (*const entries[6]) (void) = { 0, __ul64_fault_entry1, __ul64_fault_entry2, __ul64_fault_entry3, __ul64_fault_entry4, __ul64_fault_entry5 };
   int i;
   if (active == installed) return;
+  if (active)									/* Set UL64$NoFault 1: the program's handlers for SIGSEGV and friends are not connected, so a fault ends in the operating system's own report (the Wimp's error box has the address of the instruction and of the data) */
+    {
+      char v[8];
+      unsigned long q[10] = { (unsigned long) "UL64$NoFault", (unsigned long) v, sizeof v - 1, 0, 0 };
+      if (!swi_x (0x23, q) && q[2] > 0) return;
+    }
   for (i = 1; i <= 5; i++)
     {
       unsigned long r[10] = { (unsigned long) i, 0, 0, 0 };			/* R1 = 0: read the handler that is set (the old ones, before they are changed) */

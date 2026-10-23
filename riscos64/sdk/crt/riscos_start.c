@@ -39,8 +39,9 @@ static void init_tls (void)
 unsigned long __riscos_ramlimit;
 char *__riscos_heap_end;				/* sbrk may not go beyond it */
 char *program_invocation_name, *program_invocation_short_name;	/* glibc's names for argv[0] and its last part (gnulib's getprogname and error () use them) */
-static char argbuf[4096];
-static char *argvec[256];
+static char argbuf[32768];
+static char *argvec[2048];
+static char longcmd[32768];
 static char *envvec[130];
 extern char **environ;
 /* The environment: the variables that the program which started this one exported (process.c sets the system variables, and Unix$Environ with their names). */
@@ -76,19 +77,40 @@ static void init_environ (void)
 }
 #define STACK_RESERVE (128 * 1024)			/* the stack grows down from the RAM limit; the heap leaves this much for it */
 
+/* A command line that is too long for OS_CLI (255 characters) is passed in a file: the parent (process.c) writes the whole line to a scrap file, sets UL64$ArgFile to its name and starts the program with only its name.  Read the line here, remove the variable and the file. */
+static const char *take_argfile (const char *cmd)
+{
+  char name[300];
+  unsigned long r[10] = { (unsigned long) "UL64$ArgFile", (unsigned long) name, sizeof name - 1, 0, 3 };
+  unsigned long d[10] = { (unsigned long) "UL64$ArgFile", 0, (unsigned long) -1, 0, 0 };
+  unsigned long q[10], l[10], len;
+  if (swi_x (0x23, r) || r[2] == 0 || r[2] >= sizeof name) return cmd;		/* OS_ReadVarVal */
+  name[r[2]] = 0;
+  swi_x (0x24, d);									/* OS_SetVarVal: delete the variable (a program that this one starts must not see it) */
+  q[0] = 17; q[1] = (unsigned long) name;					/* OS_File 17: the length of the file */
+  if (swi_x (0x08, q) || q[0] != 1 || q[4] >= sizeof longcmd - 1) return cmd;
+  len = q[4];
+  l[0] = 16; l[1] = (unsigned long) name; l[2] = (unsigned long) longcmd; l[3] = 0;	/* OS_File 16: load the file at an address */
+  if (swi_x (0x08, l)) return cmd;
+  longcmd[len] = 0;
+  q[0] = 6; q[1] = (unsigned long) name; swi_x (0x08, q);			/* OS_File 6: delete it */
+  return longcmd;
+}
+
 void __riscos_start (const char *cmd, unsigned long ramlimit)
 {
   int argc = 0;
   unsigned i = 0;
   __riscos_ramlimit = ramlimit;
   __riscos_heap_end = (char *) ((ramlimit - STACK_RESERVE) & ~15UL);
+  if (cmd) cmd = take_argfile (cmd);
   if (cmd)
     {
       for (;;)
 	{
 	  while (cmd[0] == ' ') cmd++;
 	  if ((unsigned char) cmd[0] < 32) break;
-	  if (argc < 255) argvec[argc++] = &argbuf[i];
+	  if (argc < (int) (sizeof argvec / sizeof *argvec) - 1) argvec[argc++] = &argbuf[i];
 	  if (cmd[0] == '"')
 	    {
 	      cmd++;
