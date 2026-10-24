@@ -1,7 +1,7 @@
 /* mod64d.ld - the linker script of Mod64D, a 64-bit module with writable data, a zero-initialised area and pointers that the module relocates itself ("the published way": flags bit 2).
    The layout follows the one that the 64-bit modules of riscos64-clib have (riscos64-clib/clib/linker/rmf.lnk): linked at address 4 (the module is loaded at a page boundary plus 4, so that
-   ADRP / ADD addressing keeps working), code, read-only data, the pointers that need relocating, the read-write data on a page boundary, then the zero-initialised area, which is NOT in the file:
-   the kernel allocates it after the module (the size is a word after the flags word of the header).  Everything the module can refer to is reached PC-relative; the only things that need fixing when
+   ADRP / ADD addressing keeps working), code, read-only data, the pointers that need relocating, the read-write data on a page boundary, then the zero-initialised area, which is not in the linked image (modreloc64.py writes it into the file as zeros after the image: a kernel is not required to allocate an area after a module):
+   the header has its size (a word after the flags word) for a kernel that does allocate it.  Everything the module can refer to is reached PC-relative; the only things that need fixing when
    the module is loaded somewhere else are the 64-bit words that hold an address (R_AARCH64_ABS64): tools/modreloc64.py lists them in a table that the module header reserves. */
 OUTPUT_FORMAT("elf64-littleaarch64")
 ENTRY(_mod_start)

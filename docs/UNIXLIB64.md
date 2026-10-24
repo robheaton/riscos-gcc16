@@ -4,7 +4,7 @@
 
 ## 0. Status (20 October 2026)
 
-UnixLib 64 is in [`riscos64/unixlib/`](../riscos64/unixlib) (`-munixlib`) and in the SDK's POSIX glue ([`riscos64/sdk/crt/posix/`](../riscos64/sdk/crt/posix)), on top of picolibc. About 40 ported programs run on it (the GNU tools, gawk, sed, grep, Lua, SQLite, jq and the compression libraries), see [PORTS-TESTS.md](PORTS-TESTS.md). Everything below was tested on RISC OS Pyromaniac, not yet on a real RISC OS 64 machine.
+UnixLib 64 is in [`riscos64/unixlib/`](../riscos64/unixlib) (`-munixlib`) and in the SDK's POSIX glue ([`riscos64/sdk/crt/posix/`](../riscos64/sdk/crt/posix)), on top of picolibc. About 40 ported programs run on it (the GNU tools, gawk, sed, grep, Lua, SQLite, jq and the compression libraries), see [PORTS-TESTS.md](PORTS-TESTS.md). Everything below was tested on the RISC OS Pyromaniac emulator.
 
 | Component | State |
 |---|---|

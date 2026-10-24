@@ -10,13 +10,13 @@ Makes the flat image of a 64-bit module (an AArch64 module that relocates itself
    to each of them when the module starts;
  * a module that needs anything else is refused, with the reason: a GOT entry (position independent code that reaches an extern symbol through the GOT), a MOVZ/MOVK address, a 32-bit address word,
    a TLS relocation.  An absolute symbol (SHN_ABS) is a number, not an address: a word that holds one is left alone (the size of the zero-initialised area in the header is one).
-The output file is the image: the part of the module that is in the file.  The zero-initialised area (.zi, NOLOAD) is not in it: the kernel allocates it after the module, as the header says.
+The output file is the image followed by the zero-initialised area (.zi, NOLOAD) written as zeros: the header still says that the kernel allocates the area after the module, but a kernel is not required to, so it is in the file as well (MOD64_NO_ZI_PAD=1 leaves it out).
 
   ELF OUT     write the image to OUT
   --info ELF  print what the tool found (sections, the relocations, the symbols) and write nothing
   -q          no message
 Stdlib only (a small ELF64 reader)."""
-import struct, sys
+import os, struct, sys
 
 SHF_ALLOC = 2
 SHN_ABS = 0xFFF1
@@ -181,8 +181,12 @@ def main(argv):
     if e.syms["link_addr"][0] - base not in offs: sys.exit("modreloc64: link_addr is not in the list of relocations: the header was not linked as expected")
     struct.pack_into("<I", data, rc, len(offs))
     for k, o in enumerate(offs): struct.pack_into("<I", data, rtab + 4 * k, o)
-    open(pos[1], "wb").write(data)
-    if not quiet: print("%s: %d bytes (image at &%X, %d relocations, zero-initialised area %d bytes)" % (pos[1], len(data), base, len(offs), zi))
+    # The zero-initialised area is written into the file as zeros (set MOD64_NO_ZI_PAD to leave it out).  The module addresses it as "right after the image".  A kernel is not required to
+    # allocate an area after a module (variables in memory that nobody allocated can be overwritten by other users of it): inside the file it is always part of the memory that the kernel
+    # allocated for the module.  A kernel that does allocate the area as well just gets a second one that nothing uses.
+    pad = 0 if os.environ.get("MOD64_NO_ZI_PAD") else zi
+    open(pos[1], "wb").write(bytes(data) + bytes(pad))
+    if not quiet: print("%s: %d bytes (image at &%X, %d relocations, zero-initialised area %d bytes%s)" % (pos[1], len(data) + pad, base, len(offs), zi, " in the file" if pad else ""))
     return 0
 
 if __name__ == "__main__":

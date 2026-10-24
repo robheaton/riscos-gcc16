@@ -16,7 +16,7 @@
   `module-is-runnable`, `module-is-c-plus-plus`, `pdriver-handler`. Of the 26 CMHG files in `modkit/tests` and `modkit/examples`, 12 are accepted and assemble; the other 14 use one of those.
   `examples/dec64` tests the two new features. **Pyromaniac ignores the SWI decoding code** (it decodes names with the table only), so the module's own entry is tested by calling it from the module (`Dec64_SelfTest`): both
   forms pass; a kernel may call it differently.
-* `module64.ld` (the layout: linked at 4, loaded at a page plus 4, a read-write region on a page boundary, the zero-initialised area after the image), `modflags.sh` (the compiler options: position independent
+* `module64.ld` (the layout: linked at 4, loaded at a page plus 4, a read-write region on a page boundary, the zero-initialised area after the image, written into the file as zeros by `modreloc64.py`: a kernel is not required to allocate it), `modflags.sh` (the compiler options: position independent
   without a GOT, hidden symbols, no floating point or vector registers, x18 reserved), `../tools/modreloc64.py` (lists the 64-bit words that hold an address in a table that the module relocates itself with,
   refuses what cannot be relocated, checks the header, writes the image).
 * `-mmodule-fp` (instead of `-mmodule`) allows hardware floating point and vector registers in the module: Pyromaniac keeps the caller's v0-v31 and FPCR across a SWI of a module. `examples/fpmod64` computes in double precision in a module and passes on Pyromaniac; interrupt handlers and the other entries were not tested for this. The default stays `-mgeneral-regs-only`.

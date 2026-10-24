@@ -75,7 +75,7 @@ Documentation: docs/USERLAND64.md in https://github.com/robheaton/riscos-gcc16 (
 Run !GNU (or its !Boot) once: it sets GNU\$Dir and an alias for each program. The shell finds the programs through GNU\$Dir and CoreUtils\$Dir.
 Built with the GCC 16.2.0 tool chain for RISC OS 64 and UnixLib 64: https://github.com/robheaton/riscos-gcc16 (ports/, riscos64/). The programs are the unmodified releases except for the patches in ports/patches
 (make: \$(shell) uses popen; gawk: pipes and system () use popen / system; coreutils is in its own package). Licences: Licences/ (sed, gawk, make GPL-3+; grep GPL-3+; Lua MIT; bzip2 BSD-style; SQLite public domain; sh BSD-style).
-Tested on RISC OS Pyromaniac, not yet on a real RISC OS 64 machine. Not possible: a pipeline whose first stage never ends, ln -s.
+Tested on the RISC OS Pyromaniac emulator. Not possible: a pipeline whose first stage never ends, ln -s.
 E
 cat > "$O/RiscPkg/Control" <<E
 Package: GNU

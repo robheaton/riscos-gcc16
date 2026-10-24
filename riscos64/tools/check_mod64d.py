@@ -12,6 +12,10 @@ elf_path, img_path = sys.argv[1], sys.argv[2]
 e, img, data0, offs = modreloc64.analyse(elf_path)
 d = open(img_path, "rb").read()
 base = img["addr"]
+zi_elf = e.syms["__ZIEnd"][0] - e.syms["__ZIStart"][0]
+full = d
+if len(d) == img["size"] + zi_elf and not any(d[img["size"]:]): d = d[:img["size"]]	# the zero-initialised area is in the file as zeros (modreloc64.py): check the image itself
+elif len(d) != img["size"]: sys.exit("check_mod64d: %s is %d bytes: the image is %d and the zero-initialised area %d" % (img_path, len(d), img["size"], zi_elf))
 errs = []
 def need(c, msg):
     if not c: errs.append(msg)
