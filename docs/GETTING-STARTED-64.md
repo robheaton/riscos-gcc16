@@ -19,6 +19,7 @@ Download from the [releases page](https://github.com/robheaton/riscos-gcc16/rele
 | [`riscos64-gnu-tools-14`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-14) (13 MB) | `!GNU`: the shell, `sed`, `grep`, `gawk`, `make`, `tar`, `gzip`, `xz`, `zstd`, `zip`, `jq`, `less`, `m4`, `bc` ... | scripts and tools on RISC OS 64 |
 | [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) (26 MB) | `!CoreUtils`: the 102 GNU coreutils programs (`ls`, `cp`, `sort` ...) | the same |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) (0.7 MB) | zlib, libpng, libjpeg-turbo, expat, PCRE2 | linking against them |
+| [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) (21 KB) | four sample projects with Makefiles: C, C++, a command-line tool, a module | copying a working start |
 
 On Linux:
 
@@ -73,7 +74,7 @@ aarch64-riscos-gcc -mmodule -O2 -I. $E/kv64.c kv64_hdr.o -o Kv64,ffa
 aarch64-riscos-gcc -munixlib -O2 $E/kv64test.c -o kv64test,ff8
 ```
 
-Copy both to the machine, `*RMLoad Kv64`, run `kv64test`: it prints `SUMMARY 0 failed`. [docs/MODULES64.md](MODULES64.md) describes the module kit.
+(The [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) release has a smaller module, with a Makefile, to copy.) Copy both to the target, `*RMLoad Kv64`, run `kv64test`: it prints `SUMMARY 0 failed`. [docs/MODULES64.md](MODULES64.md) describes the module kit.
 
 ## The shell and the tools
 

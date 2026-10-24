@@ -138,6 +138,7 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the [RIS
 | [`riscos64-gnu-tools-14`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-14) | 13 MB | `!GNU`: the shell and the tools |
 | [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) | 26 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |
+| [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) | 21 KB | four sample projects to copy: C, C++, a command-line tool and a module, each with a Makefile |
 
 These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).
 
