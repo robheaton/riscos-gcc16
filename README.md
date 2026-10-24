@@ -119,7 +119,7 @@ There is also a separate, early preview of the same idea for **64-bit RISC OS (A
 * **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
 * **Use a command-line toolbox**, built with the same compiler: a shell (`sh`), GNU `sed`, `grep`, `awk`, `make`, `diff`, `find`, `tar`, `gzip`, `xz` and `zstd`, `zip`/`unzip`, `less`, `jq`, `m4` and more (the `!GNU` application), and the GNU coreutils (`!CoreUtils`, 102 programs, laid out like the 32-bit package).
 * **Link against ready-made libraries**: zlib, libpng, libjpeg-turbo, expat and PCRE2.
-* **Write desktop (Wimp) applications** with [DeskLib64](https://github.com/robheaton/riscos-desklib64), a port of [DeskLib](https://github.com/riscos-dot-info/desklib) to RISC OS 64 (a separate repository, with a source release).
+* **Write desktop (Wimp) applications** with [DeskLib64](https://github.com/robheaton/riscos-desklib64), a port of [DeskLib](https://github.com/riscos-dot-info/desklib) to RISC OS 64 (a separate repository, with source releases).
 
 What it cannot do yet: there is no `fork`, so programs that start several processes at once, and `bash`, do not work (the included `sh` covers most scripts); there is no Fortran, no shared-library layer and no Toolbox or OSLib yet (for desktop applications see DeskLib64, above); and the modules cannot yet be Wimp tasks.
 

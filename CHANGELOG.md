@@ -11,6 +11,8 @@ The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac); t
 | `riscos64-coreutils-9.5-1` to `-11` | `!CoreUtils`: the 102 programs of GNU coreutils 9.5 |
 | `riscos64-libs-1` | static zlib, expat, PCRE2, libpng and libjpeg-turbo |
 
+**DeskLib64 0.2 to 0.4 (24 October 2026, a separate repository):** more of the library run and fixed (22 test programs and applications, a coverage report, 13 further fixes), a script that builds the example applications of upstream DeskLib, and a rewritten porting guide: [releases](https://github.com/robheaton/riscos-desklib64/releases). Still early; see its docs/STATUS.md.
+
 **DeskLib64 0.1 (24 October 2026, a separate repository):** [DeskLib](https://github.com/riscos-dot-info/desklib) for RISC OS 64 (AArch64), built with this tool chain: [github.com/robheaton/riscos-desklib64](https://github.com/robheaton/riscos-desklib64) (the modified source, an assembler-to-C translator, a build script and two demonstration applications; a source release). Early: see its docs/STATUS.md.
 
 **GNU tools 15 (24 October 2026):** the same programs and files as GNU tools 14; only the text in `!Help` (tested on the RISC OS Pyromaniac emulator) and the package version change.
