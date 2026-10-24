@@ -16,7 +16,7 @@ Download from the [releases page](https://github.com/robheaton/riscos-gcc16/rele
 | Download | What it is | You need it to |
 |---|---|---|
 | [`riscos64-toolchain-0.14`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.14) (60 MB) | the cross compiler for Linux | build programs and modules |
-| [`riscos64-gnu-tools-14`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-14) (13 MB) | `!GNU`: the shell, `sed`, `grep`, `gawk`, `make`, `tar`, `gzip`, `xz`, `zstd`, `zip`, `jq`, `less`, `m4`, `bc` ... | scripts and tools on RISC OS 64 |
+| [`riscos64-gnu-tools-15`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-15) (13 MB) | `!GNU`: the shell, `sed`, `grep`, `gawk`, `make`, `tar`, `gzip`, `xz`, `zstd`, `zip`, `jq`, `less`, `m4`, `bc` ... | scripts and tools on RISC OS 64 |
 | [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) (26 MB) | `!CoreUtils`: the 102 GNU coreutils programs (`ls`, `cp`, `sort` ...) | the same |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) (0.7 MB) | zlib, libpng, libjpeg-turbo, expat, PCRE2 | linking against them |
 | [`riscos64-native-0.13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.13) (26 MB) | **preview:** the compiler running on the target itself (C only), with `Build` and four larger examples (zlib, Lua, make, sed) | compiling on the target |
@@ -79,7 +79,7 @@ aarch64-riscos-gcc -munixlib -O2 $E/kv64test.c -o kv64test,ff8
 
 ## The shell and the tools
 
-Unzip `riscos64-gnu-tools-14` and `riscos64-coreutils-9.5-11` so that `Apps/Utilities/!GNU` and `Apps/Utilities/!CoreUtils` are in your Apps directory, and run each application's `!Boot` (or double-click the application): that sets the variables and one alias for each program, so `sh`, `sed`, `grep`, `ls`, `sort` ... are commands. For example:
+Unzip `riscos64-gnu-tools-15` and `riscos64-coreutils-9.5-11` so that `Apps/Utilities/!GNU` and `Apps/Utilities/!CoreUtils` are in your Apps directory, and run each application's `!Boot` (or double-click the application): that sets the variables and one alias for each program, so `sh`, `sed`, `grep`, `ls`, `sort` ... are commands. For example:
 
 ```
 *sh -c "echo one two three | sed s/two/2/"
