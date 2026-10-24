@@ -2,7 +2,7 @@
 
 This page takes you from the downloads to a program, a C++ program and a module running on a RISC OS 64 machine, and lists what does not work yet. Every command below was run with the published releases.
 
-**Status: pre-release.** The releases below are tested on the RISC OS Pyromaniac emulator: the module kit, the library and process test packs, the shell against `dash`'s expected output, the tools (`tar`, `gzip`, `xz`, `zstd`, `jq`, the coreutils scripts), and GNU `make`, `sed`, `Lua` and `zlib` built by the compiler running on Pyromaniac (the native compiler is not a release yet). It is one person's work: expect rough edges, and please report them.
+**Status: pre-release.** The releases below are tested on the RISC OS Pyromaniac emulator: the module kit, the library and process test packs, the shell against `dash`'s expected output, the tools (`tar`, `gzip`, `xz`, `zstd`, `jq`, the coreutils scripts), and GNU `make`, `sed`, `Lua` and `zlib` built by the compiler running on Pyromaniac (the native compiler is the preview release `riscos64-native-0.13`). It is one person's work: expect rough edges, and please report them.
 
 ## What you need
 
@@ -19,6 +19,7 @@ Download from the [releases page](https://github.com/robheaton/riscos-gcc16/rele
 | [`riscos64-gnu-tools-14`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-14) (13 MB) | `!GNU`: the shell, `sed`, `grep`, `gawk`, `make`, `tar`, `gzip`, `xz`, `zstd`, `zip`, `jq`, `less`, `m4`, `bc` ... | scripts and tools on RISC OS 64 |
 | [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) (26 MB) | `!CoreUtils`: the 102 GNU coreutils programs (`ls`, `cp`, `sort` ...) | the same |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) (0.7 MB) | zlib, libpng, libjpeg-turbo, expat, PCRE2 | linking against them |
+| [`riscos64-native-0.13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.13) (26 MB) | **preview:** the compiler running on the target itself (C only), with `Build` and four larger examples (zlib, Lua, make, sed) | compiling on the target |
 | [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) (21 KB) | four sample projects with Makefiles: C, C++, a command-line tool, a module | copying a working start |
 
 On Linux:
