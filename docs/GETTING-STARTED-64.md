@@ -99,7 +99,7 @@ A program that calls `system ()`, `popen ()` or `posix_spawn ()` needs `*Set Uni
 
 ## Known issues and limits
 
-* **No Fortran, no shared libraries, no Wimp or desktop libraries (OSLib, Toolbox) yet.** The compiler is for command-line programs, tools and modules first. There is no `fork`; use `posix_spawn`, `system` or `vfork` + `exec`. `bash` does not work (the included `sh` covers most scripts).
+* **No Fortran, no shared libraries, no Toolbox or OSLib yet.** Desktop (Wimp) applications can use [DeskLib64](https://github.com/robheaton/desklib64). The compiler is for command-line programs, tools and modules first. There is no `fork`; use `posix_spawn`, `system` or `vfork` + `exec`. `bash` does not work (the included `sh` covers most scripts).
 * **Command lines can be limited to 255 characters** (by the kernel of some systems). The library passes a longer command from one program to another through a file, so `system ()`, `make`, the compiler driver and the shell work with long argument lists; keep commands that you type or put in an Obey file short, and use `@file` response files with the compiler and linker.
 * **POSIX timers:** a program that uses `timer_create` and then ends can take the program that started it with it (the command prompt appears instead); threads, signals, `alarm` and the process calls return to their parent normally. We are looking at it.
 * **File names and file systems:** keep to names without dots on a file share, and use a local disc or a RAM disc for build trees; if `tar` says a file is "in the future", check the clocks of the machines involved.
