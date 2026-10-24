@@ -1,6 +1,6 @@
 # The shell and the GNU tools on RISC OS 64 (18 October 2026)
 
-This page is for people who **use** the programs in the two packages [`!GNU`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-2) and [`!CoreUtils`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-2), and for people who want to **port** another Unix program to RISC OS 64 with the GCC 16 tool chain. They are built with `aarch64-riscos-gcc` and UnixLib 64 ([UNIXLIB64.md](UNIXLIB64.md)), run on RISC OS 64 and on RISC OS Pyromaniac, and are **pre-releases: tested on Pyromaniac only so far**.
+This page is for people who **use** the programs in the two packages [`!GNU`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-2) and [`!CoreUtils`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-2), and for people who want to **port** another Unix program to RISC OS 64 with the GCC 16 tool chain. They are built with `aarch64-riscos-gcc` and UnixLib 64 ([UNIXLIB64.md](UNIXLIB64.md)), run on RISC OS 64 and on RISC OS Pyromaniac, and are **pre-releases: tested on Pyromaniac** (see [GETTING-STARTED-64.md](GETTING-STARTED-64.md) for what was run and the known limits).
 
 * [1. What is in the packages](#1-what-is-in-the-packages)
 * [2. Installing and setting up](#2-installing-and-setting-up)

@@ -113,20 +113,20 @@ Copy `hello,e1f` to the RISC OS machine and run it there; it needs the `SharedLi
 > [!NOTE]
 > Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section.**
 
-There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux only (there is no native compiler on RISC OS 64 yet), and it has been tested only on the RISC OS Pyromaniac emulator, **not yet on a real RISC OS 64 machine**, so please treat it as a first look. What you can do with it today:
+There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux, tested on the RISC OS Pyromaniac emulator; it is still a pre-release, so please treat it as an early version and report problems. **New here? Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md): from the downloads to a running program, with the known limits.** What you can do with it today:
 
 * **Compile C and C++** on Linux with `aarch64-riscos-gcc` (C++ includes exceptions, threads and the standard library) and run the programs on RISC OS 64. They use a 64-bit port of UnixLib, so ordinary Unix-style code (files, `printf`, `malloc`, threads, signals, `getopt`, ...) builds as it does on the 32-bit side.
 * **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
 * **Use a command-line toolbox**, built with the same compiler: a shell (`sh`), GNU `sed`, `grep`, `awk`, `make`, `diff`, `find`, `tar`, `gzip`, `xz` and `zstd`, `zip`/`unzip`, `less`, `jq`, `m4` and more (the `!GNU` application), and the GNU coreutils (`!CoreUtils`, 102 programs, laid out like the 32-bit package).
 * **Link against ready-made libraries**: zlib, libpng, libjpeg-turbo, expat and PCRE2.
 
-What it cannot do yet: there is no `fork`, so programs that start several processes at once, and `bash`, do not work (the included `sh` covers most scripts); sockets are written but untried; and the modules cannot yet intercept vectors or be Wimp tasks.
+What it cannot do yet: there is no `fork`, so programs that start several processes at once, and `bash`, do not work (the included `sh` covers most scripts); there is no Fortran, no shared-library layer and no desktop (Wimp, Toolbox) support yet; and the modules cannot yet be Wimp tasks.
 
 **To try it** (Linux x86-64 with glibc 2.38 or newer, the same as for the 32-bit cross compiler):
 
 ```bash
-tar -xf aarch64-riscos-gcc-16.2.0-0.11-linux-x86_64.tar.xz
-export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.11-linux-x86_64/bin:$PATH
+tar -xf aarch64-riscos-gcc-16.2.0-0.13-linux-x86_64.tar.xz
+export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.13-linux-x86_64/bin:$PATH
 aarch64-riscos-gcc -munixlib -O2 -o hello,ff8 hello.c      # ,ff8 is the RISC OS file type of a 64-bit program
 ```
 
@@ -141,7 +141,7 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the [RIS
 
 These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).
 
-Start with [docs/AARCH64.md](docs/AARCH64.md) (the compiler) and [docs/USERLAND64.md](docs/USERLAND64.md) (the shell and tools); [docs/RISCOS64.md](docs/RISCOS64.md) says what was tested.
+Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md), then [docs/AARCH64.md](docs/AARCH64.md) (the compiler) and [docs/USERLAND64.md](docs/USERLAND64.md) (the shell and tools); [docs/RISCOS64.md](docs/RISCOS64.md) says what was tested.
 
 <br>
 
@@ -178,6 +178,7 @@ The documents cover both the **32-bit** tool chain (the main part of this projec
 
 | | |
 |---|---|
+| [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md) | **start here:** from the downloads to a program, a C++ program and a module on RISC OS 64, and the known limits |
 | [docs/RISCOS64.md](docs/RISCOS64.md) | RISC OS 64 (AArch64) on Pyromaniac: the tests, the module kit, the SDK, the library test |
 | [docs/AARCH64.md](docs/AARCH64.md) | the `aarch64-riscos` tool chain for RISC OS 64: build it, programs, C++, `-munixlib`, modules, what is tested and what is not |
 | [docs/MODULES64.md](docs/MODULES64.md) | writing modules for RISC OS 64 in C and C++: `aarch64-riscos-gcc -mmodule`, `cmunge64`, the C library, floating point, what is not supported |

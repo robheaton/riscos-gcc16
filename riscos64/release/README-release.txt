@@ -1,7 +1,7 @@
 aarch64-riscos GCC 16.2.0 (RISC OS 64), tool chain @VERSION@  --  a cross compiler from Linux (x86-64) to AIF64 programs and 64-bit modules for RISC OS on AArch64
 ==========================================================================================================================================================
 
-This is a PRE-RELEASE: it has been tested on RISC OS Pyromaniac (build service), and in part on a real RISC OS 64 machine.  See share/riscos64/doc/KNOWN-ISSUES.md.
+This is a PRE-RELEASE: it has been tested on RISC OS Pyromaniac (build service).  Start with share/riscos64/doc/GETTING-STARTED-64.md (if present) or the repository's docs/GETTING-STARTED-64.md; known limits are listed there and in share/riscos64/doc/KNOWN-ISSUES.md.
 
 What is in it
   bin/aarch64-riscos-gcc, -g++, -ld, -as, -ar, -objcopy, ...   GCC 16.2.0 and binutils 2.45.1 for the target aarch64-riscos

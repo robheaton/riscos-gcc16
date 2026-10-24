@@ -2,7 +2,7 @@
 
 ## RISC OS 64 (AArch64) preview: releases of 18 to 21 October 2026
 
-The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac, not yet on a real RISC OS 64 machine); they are separate from the 32-bit releases below and are listed on the [releases page](https://github.com/robheaton/riscos-gcc16/releases) with names that start `riscos64-`:
+The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac); they are separate from the 32-bit releases below and are listed on the [releases page](https://github.com/robheaton/riscos-gcc16/releases) with names that start `riscos64-`:
 
 | Release | What it is |
 |---|---|

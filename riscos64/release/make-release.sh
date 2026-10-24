@@ -21,7 +21,7 @@ for f in $(find bin libexec aarch64-riscos/bin -type f 2>/dev/null); do
 done
 # documents, licences, the source offer
 mkdir -p share/riscos64/doc share/riscos64/licenses share/riscos64/source
-for d in RISCOS64.md MODULES64.md UNIXLIB64.md USERLAND64.md KNOWN-ISSUES.md; do [ -f "$REPO/docs/$d" ] && cp "$REPO/docs/$d" share/riscos64/doc/; done
+for d in GETTING-STARTED-64.md RISCOS64.md MODULES64.md UNIXLIB64.md USERLAND64.md KNOWN-ISSUES.md; do [ -f "$REPO/docs/$d" ] && cp "$REPO/docs/$d" share/riscos64/doc/; done
 cp "$R64/sdk/README.md" share/riscos64/doc/SDK.md 2>/dev/null || true
 cp "$R64/kit/README.md" share/riscos64/doc/KIT.md 2>/dev/null || true
 cp "$REPO"/licenses/* share/riscos64/licenses/ 2>/dev/null || true
