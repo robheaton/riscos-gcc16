@@ -50,6 +50,7 @@ extern void __ul64_poll_signals (void);
 
 static unsigned char nonblocking[NSOCK];
 static unsigned char in_use[NSOCK];
+static unsigned long long connecting;		/* bit s: a non-blocking connect returned EINPROGRESS and has not been seen to finish: the stack's select calls such a socket writable too early (a send then fails with ENOTCONN), so __ul64_sock_ready checks it */
 
 /* BSD error number -> errno of the C library */
 static int bsd_errno (unsigned num)
@@ -175,7 +176,14 @@ int connect (int fd, const struct sockaddr *a, socklen_t len)
   unsigned long r[10];
   if (s < 0 || to_bsd (a, len, b, &bl)) return -1;
   r[0] = (unsigned long) s; r[1] = (unsigned long) b; r[2] = bl;
-  return swi_x (Socket_Connect, r) ? sock_fail (r) : 0;
+  if (swi_x (Socket_Connect, r))
+    {
+      int rc = sock_fail (r);
+      if (errno == EINPROGRESS) connecting |= 1ull << s; else connecting &= ~(1ull << s);
+      return rc;
+    }
+  connecting &= ~(1ull << s);
+  return 0;
 }
 
 /* data: a blocking socket waits inside the module; Escape does not get through, so a blocking read polls: with the socket's own non-blocking mode the call returns EWOULDBLOCK, and the loop looks at signals */
@@ -229,6 +237,7 @@ int shutdown (int fd, int how)
 int __ul64_sock_close (int fd)
 {
   int s = sock_of (fd);
+  if (s >= 0) connecting &= ~(1ull << s);
   unsigned long r[10];
   if (s < 0) return -1;
   in_use[s] = 0;
@@ -299,12 +308,44 @@ int __ul64_sock_fstat (int fd, struct stat *st)
   return 0;
 }
 
-/* are the sockets in the sets ready?  One look (a zero timeout); the callers loop.  sets: bit s of the word is socket s.  Returns the number of sockets ready, or -1. */
+/* are the sockets in the sets ready?  One look (a zero timeout); the callers loop.  Each set is an array of (nsock + 31) / 32 words: bit s of the
+   array is socket s (the stack numbers its sockets from about 30 upwards, so there must be room for NSOCK of them).  Returns the number of sockets ready, or -1. */
+#define NWORDS ((NSOCK + 31) / 32)
+static int popcount_set (const unsigned *v) { int n = 0, i; if (!v) return 0; for (i = 0; i < NWORDS; i++) { unsigned x = v[i]; while (x) { n += x & 1; x >>= 1; } } return n; }
 int __ul64_sock_ready (unsigned *rd, unsigned *wr, unsigned *ex, int nsock)
 {
   unsigned long r[10];
   unsigned long tv[2] = { 0, 0 };				/* a zero timeout, whatever the width of the fields */
   r[0] = (unsigned long) nsock; r[1] = (unsigned long) rd; r[2] = (unsigned long) wr; r[3] = (unsigned long) ex; r[4] = (unsigned long) tv;
   if (swi_x (Socket_Select, r)) return sock_fail (r);
-  return (int) (r[0] & 0x7FFFFFFF);
+  if (wr)
+    {
+      /* a socket whose connect is still going on is not writable yet: ask for its peer address; if the stack does not know one, it is only
+         ready if it is readable too (a failed connect: the error is then read with SO_ERROR).  Without this a send follows the connect at once
+         and fails with ENOTCONN. */
+      unsigned chk[NWORDS] = { 0 }, rd2[NWORDS];
+      int s, any = 0;
+      for (s = 0; s < NSOCK; s++)
+	{
+	  unsigned char b[128]; unsigned long len = sizeof b, q[10];
+	  if (!((wr[s >> 5] >> (s & 31)) & 1) || !((connecting >> s) & 1)) continue;
+	  q[0] = (unsigned long) s; q[1] = (unsigned long) b; q[2] = (unsigned long) &len;
+	  if (swi_x (Socket_Getpeername, q)) { chk[s >> 5] |= 1u << (s & 31); any = 1; } else connecting &= ~(1ull << s);
+	}
+      if (any)
+	{
+	  unsigned long q[10], tv2[2] = { 0, 0 };
+	  memcpy (rd2, chk, sizeof rd2);
+	  q[0] = (unsigned long) nsock; q[1] = (unsigned long) rd2; q[2] = 0; q[3] = 0; q[4] = (unsigned long) tv2;
+	  if (swi_x (Socket_Select, q)) memset (rd2, 0, sizeof rd2);
+	  for (s = 0; s < NSOCK; s++)
+	    {
+	      unsigned bit = 1u << (s & 31);
+	      if (!(chk[s >> 5] & bit)) continue;
+	      if (rd2[s >> 5] & bit) connecting &= ~(1ull << s);	/* failed: leave it writable so that the error shows */
+	      else wr[s >> 5] &= ~bit;					/* still connecting */
+	    }
+	}
+    }
+  return popcount_set (rd) + popcount_set (wr) + popcount_set (ex);
 }

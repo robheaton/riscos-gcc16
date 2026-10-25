@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (RISC OS 64, for the next tool chain release)
+
+- `poll` and `select` know about sockets numbered up to 63 (they stopped at 31, and a socket above that was reported ready at once: a non-blocking `connect` followed by `poll` and `send` failed with `ENOTCONN`; curl with several connections to one host hit it). A socket whose non-blocking `connect` has not finished is no longer reported writable.
+- `build-sdk.sh` accepts `TC=<installed tool chain>` to compile the POSIX support files with that tool chain's headers (the raw picolibc headers lack `struct passwd` fields that the files use).
+
 ## RISC OS 64 (AArch64) preview: releases of 18 to 21 October 2026
 
 The 64-bit tool chain has its own pre-releases (tested on RISC OS Pyromaniac); they are separate from the 32-bit releases below and are listed on the [releases page](https://github.com/robheaton/riscos-gcc16/releases) with names that start `riscos64-`:

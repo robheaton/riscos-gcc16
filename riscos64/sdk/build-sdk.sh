@@ -12,7 +12,9 @@ for f in aifhdr crt0 swi; do $CC $CFLAGS -c "$HERE/crt/$f.S" -o "$HERE/lib/$f.o"
 for f in riscos_start riscos_syscalls; do $CC $CFLAGS -c "$HERE/crt/$f.c" -o "$HERE/lib/$f.o"; done
 # libriscosstub.a: the small POSIX functions (crt/posix: ids, sleeping, limits, mmap, file operations) and stubs (ENOSYS) of functions that only UnixLib 64 provides (crt/stubs), one file per object
 mkdir -p "$HERE/lib/stubs"
-for f in "$HERE"/crt/stubs/*.c "$HERE"/crt/posix/*.c; do $CC $CFLAGS -I"$HERE/include" -c "$f" -o "$HERE/lib/stubs/$(basename "${f%.c}").o"; done
+# The headers of these files are the ones of the installed tool chain (picolibc's headers after fix-picolibc-headers.py: struct passwd, setgroups ...), not the raw picolibc ones: with TC=<installed tool chain> they are compiled by its aarch64-riscos-gcc.
+if [ -n "${TC:-}" ] && [ -x "$TC/bin/aarch64-riscos-gcc" ]; then SCC=$TC/bin/aarch64-riscos-gcc; SFLAGS="-O2 -ffreestanding -ffixed-x18 -mstrict-align -fno-pic -fno-pie -fno-stack-protector -fno-asynchronous-unwind-tables -Wall -Wextra"; else SCC=$CC; SFLAGS="$CFLAGS -I$HERE/include"; fi
+for f in "$HERE"/crt/stubs/*.c "$HERE"/crt/posix/*.c; do $SCC $SFLAGS -c "$f" -o "$HERE/lib/stubs/$(basename "${f%.c}").o"; done
 rm -f "$HERE/lib/libriscosstub.a"
 $A64/aarch64-none-elf-ar rcs "$HERE/lib/libriscosstub.a" "$HERE"/lib/stubs/*.o
 ls -l "$HERE/lib"

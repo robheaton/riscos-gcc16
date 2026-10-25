@@ -100,7 +100,11 @@ static unsigned long now (void)
 extern int __ul64_is_sock (int) __attribute__ ((weak));			/* sockets.c: descriptors 300 and up */
 extern int __ul64_sock_ready (unsigned *, unsigned *, unsigned *, int) __attribute__ ((weak));
 #define SOCKFD_BASE 300
-#define ISSOCK(fd) (__ul64_is_sock && __ul64_is_sock (fd) && (fd) - SOCKFD_BASE < 32)
+#define NSOCKBITS 64						/* the stack numbers its sockets from about 30 upwards: room for 64 */
+#define ISSOCK(fd) (__ul64_is_sock && __ul64_is_sock (fd) && (fd) - SOCKFD_BASE < NSOCKBITS)
+#define SB_SET(a, n) ((a)[(n) >> 5] |= 1u << ((n) & 31))
+#define SB_GET(a, n) (((a)[(n) >> 5] >> ((n) & 31)) & 1)
+#define SB_ANY(a) ((a)[0] | (a)[1])
 
 int poll (struct pollfd *fds, nfds_t n, int ms)
 {
@@ -108,17 +112,17 @@ int poll (struct pollfd *fds, nfds_t n, int ms)
   for (;;)
     {
       int ready = 0, sockerr = 0;
-      unsigned rd = 0, wr = 0, ex = 0;
+      unsigned rd[2] = { 0, 0 }, wr[2] = { 0, 0 }, ex[2] = { 0, 0 };
       nfds_t i;
       for (i = 0; i < n; i++)					/* the sockets, looked at together */
 	if (fds[i].fd >= 0 && ISSOCK (fds[i].fd))
 	  {
-	    unsigned bit = 1u << (fds[i].fd - SOCKFD_BASE);
-	    if (fds[i].events & POLLIN) rd |= bit;
-	    if (fds[i].events & POLLOUT) wr |= bit;
-	    if (fds[i].events & POLLPRI) ex |= bit;
+	    int sn = fds[i].fd - SOCKFD_BASE;
+	    if (fds[i].events & POLLIN) SB_SET (rd, sn);
+	    if (fds[i].events & POLLOUT) SB_SET (wr, sn);
+	    if (fds[i].events & POLLPRI) SB_SET (ex, sn);
 	  }
-      if ((rd | wr | ex) && __ul64_sock_ready (&rd, &wr, &ex, 32) < 0) sockerr = 1;
+      if ((SB_ANY (rd) | SB_ANY (wr) | SB_ANY (ex)) && __ul64_sock_ready (rd, wr, ex, NSOCKBITS) < 0) sockerr = 1;
       for (i = 0; i < n; i++)
 	{
 	  short want = fds[i].events, got = 0;
@@ -126,9 +130,9 @@ int poll (struct pollfd *fds, nfds_t n, int ms)
 	  if (fd < 0) { fds[i].revents = 0; continue; }
 	  if (ISSOCK (fd))
 	    {
-	      unsigned bit = 1u << (fd - SOCKFD_BASE);
+	      int sn = fd - SOCKFD_BASE;
 	      if (sockerr) got = POLLERR;
-	      else { if (rd & bit) got |= POLLIN; if (wr & bit) got |= POLLOUT; if (ex & bit) got |= POLLPRI; }
+	      else { if (SB_GET (rd, sn)) got |= POLLIN; if (SB_GET (wr, sn)) got |= POLLOUT; if (SB_GET (ex, sn)) got |= POLLPRI; }
 	      fds[i].revents = got;
 	      if (got) ready++;
 	      continue;
@@ -156,26 +160,26 @@ int select (int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
   for (;;)
     {
       int ready = 0;
-      unsigned srd = 0, swr = 0, sex = 0;
+      unsigned srd[2] = { 0, 0 }, swr[2] = { 0, 0 }, sex[2] = { 0, 0 };
       fd_set ro, wo, eo;
       FD_ZERO (&ro); FD_ZERO (&wo); FD_ZERO (&eo);
       for (fd = 0; fd < nfds; fd++)				/* the sockets, looked at together */
 	if (ISSOCK (fd))
 	  {
-	    unsigned bit = 1u << (fd - SOCKFD_BASE);
-	    if (FD_ISSET (fd, &ri)) srd |= bit;
-	    if (FD_ISSET (fd, &wi)) swr |= bit;
-	    if (e && FD_ISSET (fd, e)) sex |= bit;
+	    int sn = fd - SOCKFD_BASE;
+	    if (FD_ISSET (fd, &ri)) SB_SET (srd, sn);
+	    if (FD_ISSET (fd, &wi)) SB_SET (swr, sn);
+	    if (e && FD_ISSET (fd, e)) SB_SET (sex, sn);
 	  }
-      if ((srd | swr | sex) && __ul64_sock_ready (&srd, &swr, &sex, 32) < 0) return -1;
+      if ((SB_ANY (srd) | SB_ANY (swr) | SB_ANY (sex)) && __ul64_sock_ready (srd, swr, sex, NSOCKBITS) < 0) return -1;
       for (fd = 0; fd < nfds; fd++)
 	{
 	  if (ISSOCK (fd))
 	    {
-	      unsigned bit = 1u << (fd - SOCKFD_BASE);
-	      if (srd & bit) { FD_SET (fd, &ro); ready++; }
-	      if (swr & bit) { FD_SET (fd, &wo); ready++; }
-	      if (sex & bit) { FD_SET (fd, &eo); ready++; }
+	      int sn = fd - SOCKFD_BASE;
+	      if (SB_GET (srd, sn)) { FD_SET (fd, &ro); ready++; }
+	      if (SB_GET (swr, sn)) { FD_SET (fd, &wo); ready++; }
+	      if (SB_GET (sex, sn)) { FD_SET (fd, &eo); ready++; }
 	      continue;
 	    }
 	  if (FD_ISSET (fd, &ri) && (fd == 0 ? key_waiting () : fd > 2)) { FD_SET (fd, &ro); ready++; }
