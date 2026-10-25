@@ -81,4 +81,4 @@ Components 1, 2, 4, 11 and the C++ library (below) are the first release; 3, 5, 
 ## 7. Risks
 
 * UnixLib's design depends on 32-bit RISC OS features whose 64-bit form is not public (callbacks, events, the abort handler, `Wimp_StartTask`, dynamic areas, the stack chunk mechanism): components 5-7 and 10 may have to wait or be built on guesses that Pyromaniac accepts and another kernel does not.
-* Differences between Pyromaniac and RISC OS (file system, `*RMReInit`, decoding code) mean that Pyromaniac results are evidence for the library's logic, not for the kernel's behaviour.
+* Differences between Pyromaniac and RISC OS (file system, `*RMReInit`, decoding code) mean that Pyromaniac results are evidence for the library's logic, not for the kernel's behaviour; the library has since also been run on real RISC OS 64 hardware.

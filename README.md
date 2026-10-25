@@ -113,7 +113,7 @@ Copy `hello,e1f` to the RISC OS machine and run it there; it needs the `SharedLi
 > [!NOTE]
 > Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section.**
 
-There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux, tested on the RISC OS Pyromaniac emulator; it is still a pre-release, so please treat it as an early version and report problems. **New here? Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md): from the downloads to a running program, with the known limits.** What you can do with it today:
+There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux, tested on the RISC OS Pyromaniac emulator and on real RISC OS 64 hardware; it is still a pre-release, so please treat it as an early version and report problems. **New here? Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md): from the downloads to a running program, with the known limits.** What you can do with it today:
 
 * **Compile C and C++** on Linux with `aarch64-riscos-gcc` (C++ includes exceptions, threads and the standard library) and run the programs on RISC OS 64. They use a 64-bit port of UnixLib, so ordinary Unix-style code (files, `printf`, `malloc`, threads, signals, `getopt`, ...) builds as it does on the 32-bit side.
 * **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
@@ -202,7 +202,7 @@ autobuilder. The sources it is based on are GCCSDK's svn trunk at revision 7800 
 
 The **thread ticker** of the runtime (16.2.0-15 and later, UnixLib fix level 17) is the work of **Andrew Youll**, from his [riscos-unixlib](https://github.com/adyoull/riscos-unixlib), an unofficial fork of GCCSDK's UnixLib; it fixed programs that made other tasks abort.
 
-The 64-bit preview could not have been tested without **Gerph**'s **RISC OS Pyromaniac**, the RISC OS emulator on which every 64-bit program and module here was run, and the hosted [RISC OS Build service](https://build.riscos.online/), which runs it for anyone. Many thanks.
+The 64-bit preview could not have been tested without **Gerph**'s **RISC OS Pyromaniac**, the RISC OS emulator on which every 64-bit program and module here was first run (they have since also been run on real RISC OS 64 hardware), and the hosted [RISC OS Build service](https://build.riscos.online/), which runs it for anyone. Many thanks.
 
 The scripts, tools and documents of this repository are released under the **GNU General Public Licence, version 3 or later**; patches keep the licence of the files they change
 (GCC and binutils: GPL-3.0-or-later; UnixLib: mostly the revised BSD licence, some files LGPL; `modkit/include/swisnums.h`: Apache-2.0). The exact terms are in [LICENSES.md](LICENSES.md).
