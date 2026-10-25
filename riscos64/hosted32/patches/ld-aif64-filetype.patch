@@ -1,0 +1,36 @@
+--- a/ld/emultempl/aarch64riscos.em	2026-10-25 17:07:26.582147546 +0000
++++ b/ld/emultempl/aarch64riscos.em	2026-10-25 17:07:26.592856759 +0000
+@@ -7,6 +7,13 @@
+ /* --aif64: see aarch64riscos.em */
+ #define OPTION_AIF64 0x7a01
+ 
++#if defined (__riscos__) && !defined (__riscos64__)
++/* ld running on 32 bit RISC OS (UnixLib): the file that it writes is a program of RISC OS 64 and gets the file type &FF8 (AIF64); without it the file is Text and cannot be run.  */
++#include <limits.h>
++#include <kernel.h>
++#include <unixlib/local.h>
++#endif
++
+ extern void (*ld_post_close_hook) (const char *);
+ 
+ /* Read the finished ELF file back with BFD and write the contents of its loadable sections, from the lowest load address up, with zeros in any gap: the same file as objcopy -O binary makes.  */
+@@ -41,6 +48,19 @@
+   if (f == NULL || fwrite (buf, 1, hi - lo, f) != hi - lo || fclose (f) != 0)
+     fatal (_("%P: --aif64: cannot write %s: %E\n"), file);
+   free (buf);
++#if defined (__riscos__) && !defined (__riscos64__)
++  {
++    char robuf[PATH_MAX];
++
++    if (__riscosify_std (file, 0, robuf, sizeof (robuf), NULL))
++      {
++	_kernel_osfile_block bl;
++
++	bl.load = 0xFF8;	/* the file type of a program of RISC OS 64 (AIF64) */
++	_kernel_osfile (18, robuf, &bl);
++      }
++  }
++#endif
+ }
+ 
+ EOF

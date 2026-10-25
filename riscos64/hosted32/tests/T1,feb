@@ -1,0 +1,7 @@
+| T1: compile, assemble and link a C program for RISC OS 64 on this machine
+Set Hello$Dir <Obey$Dir>
+WimpSlot -min 48M -max 48M
+Dir <Hello$Dir>
+aarch64-riscos-gcc -v
+aarch64-riscos-gcc -O2 -munixlib -o hello hello.c
+Echo done

@@ -2,6 +2,7 @@
 
 ## Unreleased (RISC OS 64, for the next tool chain release)
 
+- **The RISC OS 64 compiler on 32-bit RISC OS** (new pre-release `riscos64-cross32-0.1`, 25 October 2026): `aarch64-riscos-gcc`, `g++`, the GNU tools, `cmunge64`, `mkoslib` and `modreloc64` as programs for 32-bit RISC OS 5, so that programs and modules for RISC OS 64 can be built on a 32-bit machine. The output is the same, byte for byte, as the Linux cross compiler's (tested on a 32-bit machine, and the programs on RISC OS 64); see [docs/CROSS-FROM-32BIT.md](docs/CROSS-FROM-32BIT.md). The module tools are now also C programs (`riscos64/tools/modreloc64.c`, `riscos64/hosted32/src/cmunge64.c`, `mkoslib64.c`).
 - `poll` and `select` know about sockets numbered up to 63 (they stopped at 31, and a socket above that was reported ready at once: a non-blocking `connect` followed by `poll` and `send` failed with `ENOTCONN`; curl with several connections to one host hit it). A socket whose non-blocking `connect` has not finished is no longer reported writable.
 - `build-sdk.sh` accepts `TC=<installed tool chain>` to compile the POSIX support files with that tool chain's headers (the raw picolibc headers lack `struct passwd` fields that the files use).
 

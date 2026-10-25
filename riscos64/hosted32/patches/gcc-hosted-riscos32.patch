@@ -1,0 +1,515 @@
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/collect2.cc gcc-src/gcc/collect2.cc
+--- /var/tmp/a64/target7-work/gcc-src/gcc/collect2.cc	2026-08-07 08:46:05.812684447 +0100
++++ gcc-src/gcc/collect2.cc	2026-10-25 15:51:16.152512046 +0000
+@@ -604,6 +604,9 @@
+       char *lto_wrapper = getenv ("COLLECT_LTO_WRAPPER");
+       struct pex_obj *pex;
+       const char *prog = "lto-wrapper";
++#ifdef __riscos__
++      char *list_file;
++#endif
+       int lto_ld_argv_size = 0;
+       char **out_lto_ld_argv;
+       int out_lto_ld_argv_size;
+@@ -634,16 +637,37 @@
+       *lto_c_ptr = NULL;
+ 
+       /* Run the LTO back end.  */
++#ifdef __riscos__
++      /* RISC OS: the stdout of a child process is redirected with OS_ChangeRedirection, and that redirection does not survive the processes that
++	 lto-wrapper starts itself (the driver, lto1, as): the temporary file or pipe that takes the output is closed behind our back, and the child
++	 fails without a message (its messages go to the same file).  lto-wrapper therefore writes its list to the file named in the environment,
++	 and its stdout stays where it is.  */
++      list_file = make_temp_file (".lto_list");
++      putenv (concat ("COLLECT_LTO_OUTPUT_LIST=", list_file, NULL));
++      pex = collect_execute (prog, lto_c_argv, NULL, NULL,
++			     PEX_LAST | PEX_SEARCH, at_file_supplied,
++			     "lto_args");
++      do_wait (prog, pex);
++      pex = NULL;
++#else
+       pex = collect_execute (prog, lto_c_argv, NULL, NULL, PEX_SEARCH,
+ 			     at_file_supplied, "lto_args");
++#endif
+       {
+ 	int c;
+ 	FILE *stream;
+ 	size_t i;
+ 	char *start, *end;
+ 
++#ifdef __riscos__
++	stream = fopen (list_file, "r");
++	if (!stream)
++	  fatal_error (input_location, "cannot read the list of files of "
++		       "lto-wrapper %s: %m", list_file);
++#else
+ 	stream = pex_read_output (pex, 0);
+ 	gcc_assert (stream);
++#endif
+ 
+ 	num_files = 0;
+ 	while ((c = getc (stream)) != EOF)
+@@ -672,9 +696,15 @@
+ 	  }
+ 
+ 	obstack_free (&temporary_obstack, temporary_firstobj);
++#ifdef __riscos__
++	fclose (stream);
++	maybe_unlink (list_file);
++#endif
+       }
++#ifndef __riscos__
+       do_wait (prog, pex);
+       pex = NULL;
++#endif
+ 
+       /* Compute memory needed for new LD arguments.  At most number of original arguments
+ 	 plus number of partitions.  */
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/riscos32-gcc.c gcc-src/gcc/config/aarch64/riscos32-gcc.c
+--- /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/riscos32-gcc.c	1970-01-01 01:00:00.000000000 +0100
++++ gcc-src/gcc/config/aarch64/riscos32-gcc.c	2026-10-25 15:51:26.715328016 +0000
+@@ -0,0 +1,53 @@
++/* Driver-side hooks for GCC running natively on RISC OS (EABI): linked into the gcc driver through EXTRA_GCC_OBJS.
++   Based on the GCC 10 version by Nick Burrett and John Tytgat; the memory check of the old APCS-32 days (Wimp_SlotSize) is gone:
++   an EABI program does not live in the Wimp slot, its stack and heap are dynamic areas.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tm.h"
++#include "obstack.h"
++
++#include <unixlib/local.h>
++
++/* Where the shared libraries live on a machine that can run EABI programs (PackMan's SharedLibs-C-armeabihf): ld needs them for the symbols that libunixlib.so
++   gets from libgcc_s.so.1 when a program is linked with -static-libgcc.  */
++
++/* Called from the gcc driver (GCC_DRIVER_HOST_INITIALIZATION) before anything else.  */
++void
++riscos_host_initialisation (void)
++{
++}
++
++/* Called from the gcc driver to convert a RISC OS filename into a Unix format name.  When DO_EXE is non-zero the name is not converted: the executable's
++   output filename is passed on to collect2's command line as it is.  */
++const char *
++riscos_convert_filename (void *obstack, const char *name, int do_exe, int do_obj ATTRIBUTE_UNUSED)
++{
++  char tmp[1024];
++
++  if (do_exe)
++    return name;
++
++  if (!__unixify_std (name, tmp, sizeof (tmp), 0))
++    return name;
++
++  return (const char *) obstack_copy0 ((struct obstack *) obstack, tmp, strlen (tmp));
++}
++
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/riscos32-host.c gcc-src/gcc/config/aarch64/riscos32-host.c
+--- /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/riscos32-host.c	1970-01-01 01:00:00.000000000 +0100
++++ gcc-src/gcc/config/aarch64/riscos32-host.c	2026-10-25 15:51:26.715258556 +0000
+@@ -0,0 +1,35 @@
++/* Host support for GCC running natively on RISC OS (EABI): linked into the compiler proper (cc1, cc1plus, ...) through EXTRA_OBJS.
++   Written for the GCCSDK GCC 16 forward port (the throwback code of the GCC 10 riscos.c is not ported yet).
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++#include "config.h"
++#include "system.h"
++#include "coretypes.h"
++#include "tm.h"
++
++/* The maximum size of the heap dynamic area of the compiler proper (cc1, cc1plus ...): 512 MB of reserved logical address space, in bytes.  Everything else that is linked
++   with data/riscos-da.o gets UnixLib's default of 32 MB (see there for why the programs that only start others must not reserve more).  The memory is mapped as the heap
++   grows.  <program>$HeapMax (an integer, in MB) overrides it.  */
++int __dynamic_da_max_size = 512 * 1024 * 1024;
++
++/* The size of the main stack of the compiler proper, in bytes: 64 MB (libunixlib 16.2.0-6 and later; an older libunixlib ignores the variable and the stack stays 1 MB, which is too
++   little for deep template instantiation and constexpr evaluation: about 4 KB of stack per level of recursion, so 1 MB ends at a depth of about 250 and the compiler's own default
++   limits are 900 (-ftemplate-depth) and 512 (-fconstexpr-depth); GCC itself asks for 64 MB of stack where it can set it).  ARMEABISupport maps the stack when it is touched, so the
++   size costs address space only; all EABI stacks of the machine share one range of 256 MB, and when it is short UnixLib tries half the size, and so on.  */
++int __stack_size = 64 * 1024 * 1024;
++
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/xm-riscos32.h gcc-src/gcc/config/aarch64/xm-riscos32.h
+--- /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/xm-riscos32.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-src/gcc/config/aarch64/xm-riscos32.h	2026-10-25 15:54:22.861169348 +0000
+@@ -0,0 +1,8 @@
++/* Host configuration of GCC running on 32 bit RISC OS (EABI, UnixLib 5) when the target is AArch64 RISC OS: a cross compiler that runs on RISC OS. */
++#define PATH_SEPARATOR ','
++
++extern void riscos_host_initialisation (void);
++extern const char *riscos_convert_filename (void *obstack, const char *name, int do_exe, int do_obj);
++
++#define GCC_DRIVER_HOST_INITIALIZATION riscos_host_initialisation ()
++#define TARGET_CONVERT_FILENAME(a,b,c,d) return riscos_convert_filename (a,b,c,d)
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/x-riscos32 gcc-src/gcc/config/aarch64/x-riscos32
+--- /var/tmp/a64/target7-work/gcc-src/gcc/config/aarch64/x-riscos32	1970-01-01 01:00:00.000000000 +0100
++++ gcc-src/gcc/config/aarch64/x-riscos32	2026-10-25 15:51:26.715393899 +0000
+@@ -0,0 +1,11 @@
++# Rules for the objects that RISC OS-hosted compilers get through host_extra_objs / host_extra_gcc_objs (config.host).
++# UnixLib reads __dynamic_da_max_size (riscos32-host.c) to size the heap; nothing refers to it, so force the member in.
++BACKENDLIBS += -Wl,-u,__dynamic_da_max_size
++
++riscos32-host.o: $(srcdir)/config/aarch64/riscos32-host.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H)
++	$(COMPILE) $<
++	$(POSTCOMPILE)
++
++riscos32-gcc.o: $(srcdir)/config/aarch64/riscos32-gcc.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H)
++	$(COMPILE) $<
++	$(POSTCOMPILE)
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/config/arm/xm-riscos.h gcc-src/gcc/config/arm/xm-riscos.h
+--- /var/tmp/a64/target7-work/gcc-src/gcc/config/arm/xm-riscos.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-src/gcc/config/arm/xm-riscos.h	2026-10-25 15:51:16.171031527 +0000
+@@ -0,0 +1,22 @@
++/* Configuration for GCC for hosting on RISC OS.
++   Copyright (C) 2008 Free Software Foundation, Inc.
++   Contributed by Nick Burrett (nick@sqrt.co.uk>)
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++#define PATH_SEPARATOR ','
++
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/config.host gcc-src/gcc/config.host
+--- /var/tmp/a64/target7-work/gcc-src/gcc/config.host	2026-10-17 21:32:28.661775426 +0100
++++ gcc-src/gcc/config.host	2026-10-25 15:51:26.715443861 +0000
+@@ -108,7 +108,7 @@
+ 	;;
+     esac
+     ;;
+-  arm*-*-freebsd* | arm*-*-netbsd* | arm*-*-linux* | arm*-*-fuchsia*)
++  arm*-*-freebsd* | arm*-*-netbsd* | arm*-*-linux* | arm*-*-fuchsia* | arm*-riscos*)
+     case ${target} in
+       arm*-*-*)
+ 	host_extra_gcc_objs="driver-arm.o"
+@@ -201,6 +201,19 @@
+ 
+ # Machine-specific settings.
+ case ${host} in
++  arm*-*-riscos | arm*-riscos*)	# 32 bit RISC OS: the compiler itself runs on RISC OS
++    case ${target} in
++      aarch64*-*-riscos*)
++	host_xm_file="aarch64/xm-riscos32.h"
++	host_extra_objs="riscos32-host.o"
++	host_extra_gcc_objs="${host_extra_gcc_objs} riscos32-gcc.o"
++	host_xmake_file="${host_xmake_file} aarch64/x-riscos32"
++	;;
++      *)
++	host_xm_file="arm/xm-riscos.h"
++	;;
++    esac
++    ;;
+   hppa*64*-*-hpux11*)
+     out_host_hook_obj=host-hpux.o
+     host_xmake_file="${host_xmake_file} x-hpux"
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/gcov.cc gcc-src/gcc/gcov.cc
+--- /var/tmp/a64/target7-work/gcc-src/gcc/gcov.cc	2026-08-07 08:46:06.190690321 +0100
++++ gcc-src/gcc/gcov.cc	2026-10-25 15:51:16.158469537 +0000
+@@ -55,6 +55,13 @@
+ 
+ #include "md5.h"
+ 
++#ifdef __riscos__
++/* UnixLib decides for itself whether a relative file name is a Unix name or a RISC OS name, and takes "foo.c.gcov" (the file that gcov writes for foo.c) for the RISC OS
++   path foo.c.gcov: the file "gcov" in the directory "c" in the directory "foo", which does not exist.  gcov only has Unix names: say so.  */
++#include <unixlib/local.h>
++int __riscosify_control = __RISCOSIFY_STRICT_UNIX_SPECS;
++#endif
++
+ using namespace std;
+ 
+ #define IN_GCOV 1
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/lto/lto-common.cc gcc-src/gcc/lto/lto-common.cc
+--- /var/tmp/a64/target7-work/gcc-src/gcc/lto/lto-common.cc	2026-08-07 08:46:06.257691362 +0100
++++ gcc-src/gcc/lto/lto-common.cc	2026-10-25 15:51:16.160779351 +0000
+@@ -2200,7 +2200,19 @@
+   /* If the section is not suffixed with an ID return.  */
+   if ((size_t)(s - name) == strlen (section_name_prefix))
+     return 0;
++#ifdef __riscos__
++  /* UnixLib's scanf has no 64-bit conversions: "%llx" is converted with strtoul, which gives ULONG_MAX for the 16 digits of an id, and only 32 bits are
++     stored (the rest of *ID stays as it was).  The id built from that never matches the name of the section, and lto1 then reports that the bytecode
++     stream was "generated with GCC compiler older than 10.0".  */
++  {
++    char *end;
++
++    *id = strtoull (s + 1, &end, 16);
++    return end != s + 1;
++  }
++#else
+   return sscanf (s, "." HOST_WIDE_INT_PRINT_HEX_PURE, id) == 1;
++#endif
+ }
+ 
+ /* Create file_data of each sub file id.  */
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/gcc/lto-wrapper.cc gcc-src/gcc/lto-wrapper.cc
+--- /var/tmp/a64/target7-work/gcc-src/gcc/lto-wrapper.cc	2026-08-07 08:46:06.256691347 +0100
++++ gcc-src/gcc/lto-wrapper.cc	2026-10-25 15:51:16.152899159 +0000
+@@ -93,6 +93,29 @@
+ 
+ const char tool_name[] = "lto-wrapper";
+ 
++/* The list of the output files goes to stdout, unless the environment names a file for it: collect2 on RISC OS does that (see collect2.cc), because the
++   redirection of the stdout of a child process does not work there when the child starts processes itself.  */
++
++static FILE *
++list_stream (void)
++{
++  static FILE *stream;
++
++  if (!stream)
++    {
++      const char *name = getenv ("COLLECT_LTO_OUTPUT_LIST");
++
++      stream = stdout;
++      if (name && *name)
++	{
++	  stream = fopen (name, "w");
++	  if (!stream)
++	    fatal_error (input_location, "cannot open %s: %m", name);
++	}
++    }
++  return stream;
++}
++
+ /* Auxiliary function that frees elements of PTR and PTR itself.
+    N is number of elements to be freed.  If PTR is NULL, nothing is freed.
+    If an element is NULL, subsequent elements are not freed.  */
+@@ -1126,7 +1149,7 @@
+ 	else
+ 	  crtoffloadtable = concat (dumppfx, "crtoffloadtable.o", NULL);
+ 	copy_file (crtoffloadtable, paths[i]);
+-	printf ("%s\n", crtoffloadtable);
++	fprintf (list_stream (), "%s\n", crtoffloadtable);
+ 	XDELETEVEC (crtoffloadtable);
+ 	break;
+       }
+@@ -1709,6 +1732,15 @@
+ 	}
+     }
+ 
++#ifdef __riscos__
++  /* RISC OS: -flto=N, -flto=auto and a make jobserver are served like plain -flto, one LTRANS job after the other.  A process cannot run alongside another one inside
++     a task (a child that is started with vfork () and exec () runs while its parent waits), so make -jN would run the jobs one after the other anyway, and the makefile
++     that is written for it does not survive RISC OS path names: the "$" of "/Disc::Name.$/Dir/gcc" is a make variable reference ("File ':Name.Dir/gcc' not found").  */
++  jobserver = 0;
++  auto_parallel = 0;
++  parallel = 0;
++#endif
++
+   /* We need make working for a parallel execution.  */
+   if (parallel && !make_exists ())
+     parallel = 0;
+@@ -1843,7 +1875,7 @@
+ 	{
+ 	  find_crtoffloadtable (save_temps, pie_or_shared, dumppfx);
+ 	  for (i = 0; offload_names[i]; i++)
+-	    printf ("%s\n", offload_names[i]);
++	    fprintf (list_stream (), "%s\n", offload_names[i]);
+ 	  free_array_of_ptrs ((void **) offload_names, i);
+ 	  offload_names = NULL;
+ 	}
+@@ -1949,12 +1981,12 @@
+ 
+   if (lto_mode == LTO_MODE_LTO)
+     {
+-      printf ("%s\n", flto_out);
++      fprintf (list_stream (), "%s\n", flto_out);
+       if (!skip_debug)
+ 	{
+ 	  for (i = 0; i < ltoobj_argc; ++i)
+ 	    if (early_debug_object_names[i] != NULL)
+-	      printf ("%s\n", early_debug_object_names[i]);
++	      fprintf (list_stream (), "%s\n", early_debug_object_names[i]);
+ 	}
+       /* These now belong to collect2.  */
+       free (flto_out);
+@@ -2238,8 +2270,8 @@
+ 
+       for (i = 0; i < nr; ++i)
+ 	{
+-	  fputs (output_names[i], stdout);
+-	  putc ('\n', stdout);
++	  fputs (output_names[i], list_stream ());
++	  putc ('\n', list_stream ());
+ 	  free (input_names[i]);
+ 	}
+ 
+@@ -2250,7 +2282,7 @@
+ 	{
+ 	  for (i = 0; i < ltoobj_argc; ++i)
+ 	    if (early_debug_object_names[i] != NULL)
+-	      printf ("%s\n", early_debug_object_names[i]);
++	      fprintf (list_stream (), "%s\n", early_debug_object_names[i]);
+ 	}
+       nr = 0;
+       free (ltrans_priorities);
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/libcpp/charset.cc gcc-src/libcpp/charset.cc
+--- /var/tmp/a64/target7-work/gcc-src/libcpp/charset.cc	2026-08-07 08:46:09.932748473 +0100
++++ gcc-src/libcpp/charset.cc	2026-10-25 15:51:16.161878927 +0000
+@@ -3226,7 +3226,7 @@
+ uchar *
+ _cpp_convert_input (cpp_reader *pfile, const char *input_charset,
+ 		    uchar *input, size_t size, size_t len,
+-		    const unsigned char **buffer_start, off_t *st_size)
++		    const unsigned char **buffer_start, __off_t *st_size)
+ {
+   struct cset_converter input_cset;
+   struct _cpp_strbuf to;
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/libcpp/internal.h gcc-src/libcpp/internal.h
+--- /var/tmp/a64/target7-work/gcc-src/libcpp/internal.h	2026-08-07 08:46:09.935748519 +0100
++++ gcc-src/libcpp/internal.h	2026-10-25 15:51:16.163505524 +0000
+@@ -905,7 +905,7 @@
+ extern void _cpp_destroy_iconv (cpp_reader *);
+ extern unsigned char *_cpp_convert_input (cpp_reader *, const char *,
+ 					  unsigned char *, size_t, size_t,
+-					  const unsigned char **, off_t *);
++					  const unsigned char **, __off_t *);
+ extern const char *_cpp_default_encoding (void);
+ extern cpp_hashnode * _cpp_interpret_identifier (cpp_reader *pfile,
+ 						 const unsigned char *id,
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/libiberty/pex-unix.c gcc-src/libiberty/pex-unix.c
+--- /var/tmp/a64/target7-work/gcc-src/libiberty/pex-unix.c	2026-08-07 08:46:10.588758667 +0100
++++ gcc-src/libiberty/pex-unix.c	2026-10-25 15:51:16.165548895 +0000
+@@ -730,6 +730,56 @@
+   return pid;
+ }
+ #else
++#ifdef __riscos__
++/* RISC OS: a command line of 1024 characters or more only reaches the child through the DDEUtils module, which is not always loaded (the link command line of the gcc
++   driver, with the absolute paths of the crt files and the libraries, is about 2 KB; without the module the exec fails and the parent then crashes when it resumes).
++   Every program that matters here (gcc, cc1, collect2, as, ld) expands @file response files, so a long argument list is passed that way.  */
++#define RISCOS_MAX_CLI 700
++
++static char * const *
++riscos_response_file (struct pex_obj *obj, char * const *argv)
++{
++  size_t len = 0, n = 0;
++  char * const *p;
++  char *name;
++  FILE *f;
++  char **nargv;
++
++  for (p = argv; *p; p++)
++    {
++      len += strlen (*p) + 3;
++      n++;
++    }
++  if (len < RISCOS_MAX_CLI || n < 3)
++    return argv;
++  name = make_temp_file (".args");
++  if (name == NULL)
++    return argv;
++  f = fopen (name, "w");
++  if (f == NULL)
++    {
++      free (name);
++      return argv;
++    }
++  /* one argument per line, backslash-escaped: what expandargv reads */
++  if (writeargv (argv + 1, f) != 0 || fclose (f) != 0)
++    {
++      unlink (name);
++      free (name);
++      return argv;
++    }
++  /* removed (and freed) when the pex object is freed, like pex_add_remove () does */
++  ++obj->remove_count;
++  obj->remove = XRESIZEVEC (char *, obj->remove, obj->remove_count);
++  obj->remove[obj->remove_count - 1] = name;
++  nargv = XNEWVEC (char *, 3);
++  nargv[0] = argv[0];
++  nargv[1] = concat ("@", name, NULL);
++  nargv[2] = NULL;
++  return nargv;
++}
++#endif
++
+ /* Implementation of pex->exec_child using standard vfork + exec.  */
+ 
+ static pid_t
+@@ -739,6 +789,9 @@
+ 		     int toclose, const char **errmsg, int *err)
+ {
+   pid_t pid = -1;
++#ifdef __riscos__
++  argv = riscos_response_file (obj, argv);
++#endif
+   /* Tuple to communicate error from child to parent.  We can safely
+      transfer string literal pointers as both run with identical
+      address mappings.  */
+diff -ruN -x '*.orig' /var/tmp/a64/target7-work/gcc-src/libiberty/physmem.c gcc-src/libiberty/physmem.c
+--- /var/tmp/a64/target7-work/gcc-src/libiberty/physmem.c	2026-08-07 08:46:10.589758682 +0100
++++ gcc-src/libiberty/physmem.c	2026-10-25 15:51:16.167182747 +0000
+@@ -78,10 +78,27 @@
+ 
+ #include "libiberty.h"
+ 
++#ifdef __riscos__
++#include <kernel.h>
++#include <swis.h>
++#endif
++
+ /* Return the total amount of physical memory.  */
+ double
+ physmem_total (void)
+ {
++#ifdef __riscos__
++  { /* UnixLib's sysconf (_SC_PHYS_PAGES) answers 0, which makes GCC's garbage
++       collector run at its minimum heap size.  OS_ReadMemMapInfo returns the
++       page size (R0) and the number of pages of RAM (R1).  */
++    int pagesize, pages;
++
++    if (_swix (OS_ReadMemMapInfo, _OUT (0) | _OUT (1), &pagesize, &pages) == NULL
++	&& pagesize > 0 && pages > 0)
++      return (double) pages * (double) pagesize;
++  }
++#endif
++
+ #if defined _SC_PHYS_PAGES && defined _SC_PAGESIZE
+   { /* This works on linux-gnu, solaris2 and cygwin.  */
+     double pages = sysconf (_SC_PHYS_PAGES);

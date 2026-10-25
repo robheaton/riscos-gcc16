@@ -1,0 +1,41 @@
+| Setup for the AArch64 (RISC OS 64) cross compiler that runs on 32 bit RISC OS: run it once per session
+Set A64$Dir <Obey$Dir>
+If "<A64bin$Path>" = "" Then Set Run$Path <Run$Path>,A64bin:,A64tbin:
+Set A64bin$Path <A64$Dir>.bin.
+Set A64tbin$Path <A64$Dir>.aarch64-riscos.bin.
+Set Sys$RCLimit 65536
+Set UnixEnv$gcc$sfix "f:for:F:f90:F90:f95:F95:f03:F03:f08:F08:fpp:cc:cxx:cpp:c++:C:i:ii:rpo:c:m:h:hh:s:S:xrb:xrs:l:o:y:tcc:cmhg:adb:ads:ali"
+Set UnixEnv$aarch64-riscos-gcc$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-g++$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-c++$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-cpp$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$cc1$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$cc1plus$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$collect2$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$lto-wrapper$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$as$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$ld$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$ar$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$nm$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$objdump$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$objcopy$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$readelf$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$strip$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$ranlib$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$size$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$strings$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$addr2line$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$c++filt$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$elfedit$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$modreloc64$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-ar$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-ld$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-as$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-nm$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-objdump$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-objcopy$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-readelf$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$aarch64-riscos-strip$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$cmunge64$sfix <UnixEnv$gcc$sfix>
+Set UnixEnv$mkoslib$sfix <UnixEnv$gcc$sfix>
+RMEnsure SharedUnixLibrary 1.12 RMLoad System:Modules.SharedULib

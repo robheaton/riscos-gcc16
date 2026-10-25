@@ -117,6 +117,7 @@ There is also a separate, early preview of the same idea for **64-bit RISC OS (A
 
 * **Compile C and C++** on Linux with `aarch64-riscos-gcc` (C++ includes exceptions, threads and the standard library) and run the programs on RISC OS 64. They use a 64-bit port of UnixLib, so ordinary Unix-style code (files, `printf`, `malloc`, threads, signals, `getopt`, ...) builds as it does on the 32-bit side.
 * **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
+* **Compile on a 32-bit RISC OS machine**: the same compiler also runs on 32-bit RISC OS 5 and makes the same programs and modules ([docs/CROSS-FROM-32BIT.md](docs/CROSS-FROM-32BIT.md)).
 * **Use a command-line toolbox**, built with the same compiler: a shell (`sh`), GNU `sed`, `grep`, `awk`, `make`, `diff`, `find`, `tar`, `gzip`, `xz` and `zstd`, `zip`/`unzip`, `less`, `jq`, `m4` and more (the `!GNU` application), and the GNU coreutils (`!CoreUtils`, 102 programs, laid out like the 32-bit package).
 * **Link against ready-made libraries**: zlib, libpng, libjpeg-turbo, expat and PCRE2.
 * **Write desktop (Wimp) applications** with [DeskLib64](https://github.com/robheaton/riscos-desklib64), a port of [DeskLib](https://github.com/riscos-dot-info/desklib) to RISC OS 64 (a separate repository, with source releases).
@@ -140,6 +141,7 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the RISC
 | [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) | 26 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |
 | [`riscos64-native-0.13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.13) | 26 MB | **preview:** the C compiler, assembler and linker as programs for RISC OS 64, to compile on the target itself; builds zlib, Lua, make and sed as examples |
+| [`riscos64-cross32-0.1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-cross32-0.1) | 61 MB | **preview:** the RISC OS 64 cross compiler as programs for 32-bit RISC OS (`!GCC64`) |
 | [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) | 21 KB | four sample projects to copy: C, C++, a command-line tool and a module, each with a Makefile |
 
 These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).
@@ -184,6 +186,7 @@ The documents cover both the **32-bit** tool chain (the main part of this projec
 | [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md) | **start here:** from the downloads to a program, a C++ program and a module on RISC OS 64, and the known limits |
 | [docs/RISCOS64.md](docs/RISCOS64.md) | RISC OS 64 (AArch64) on Pyromaniac: the tests, the module kit, the SDK, the library test |
 | [docs/AARCH64.md](docs/AARCH64.md) | the `aarch64-riscos` tool chain for RISC OS 64: build it, programs, C++, `-munixlib`, modules, what is tested and what is not |
+| [docs/CROSS-FROM-32BIT.md](docs/CROSS-FROM-32BIT.md) | the RISC OS 64 compiler on a 32-bit RISC OS machine: install, use, what is tested, how it is built |
 | [docs/MODULES64.md](docs/MODULES64.md) | writing modules for RISC OS 64 in C and C++: `aarch64-riscos-gcc -mmodule`, `cmunge64`, the C library, floating point, what is not supported |
 | [docs/UNIXLIB64.md](docs/UNIXLIB64.md) | a C library for programs on RISC OS 64: what UnixLib is (measured), three ways to port it, a component plan with hours, risks |
 | [docs/USERLAND64.md](docs/USERLAND64.md) | the shell and the GNU tools for RISC OS 64 (`!GNU`, `!CoreUtils`): setup, file names, the process model, the `sh` reference, tool notes, limits, a porting guide |
