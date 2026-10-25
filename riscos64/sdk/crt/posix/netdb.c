@@ -1,6 +1,6 @@
 /* netdb.c - names of hosts, services and protocols.  Numeric addresses and "localhost" are answered here; other host names go to the Resolver module (Resolver_GetHost, SWI 0x46001: R0 = name, answers R0 =
    status (0 is good) and R1 = a hostent; the hostent is read with the layout of this C library, which is what a 64-bit Resolver has to use too).  Services and protocols come from a small table (the usual ones;
-   there is no /etc/services).  IPv4 only.  Not tested on a real Resolver: the build service for Pyromaniac has the Internet SWIs disabled.  The SDK of RISC OS 64. */
+   there is no /etc/services).  IPv4 only.  The build service for Pyromaniac has the Internet SWIs disabled, so it cannot test the resolver calls.  The SDK of RISC OS 64. */
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
