@@ -111,9 +111,9 @@ Copy `hello,e1f` to the RISC OS machine and run it there; it needs the `SharedLi
 ## RISC OS 64 (AArch64): early preview
 
 > [!NOTE]
-> Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section.**
+> Everything above is for today's 32-bit RISC OS 5 machines, and that is what almost everyone should use. **If you are on a 32-bit machine you can skip this section,** unless you want to build programs for RISC OS 64 on your 32-bit machine: there is a compiler for that, see [docs/CROSS-FROM-32BIT.md](docs/CROSS-FROM-32BIT.md).
 
-There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux, tested on the RISC OS Pyromaniac emulator and on real RISC OS 64 hardware; it is still a pre-release, so please treat it as an early version and report problems. **New here? Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md): from the downloads to a running program, with the known limits.** What you can do with it today:
+There is also a separate, early preview of the same idea for **64-bit RISC OS (AArch64)**. It is a cross compiler for Linux (and, as a preview, for 32-bit RISC OS), tested on the RISC OS Pyromaniac emulator and on real RISC OS 64 hardware; it is still a pre-release, so please treat it as an early version and report problems. **New here? Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md): from the downloads to a running program, with the known limits.** What you can do with it today:
 
 * **Compile C and C++** on Linux with `aarch64-riscos-gcc` (C++ includes exceptions, threads and the standard library) and run the programs on RISC OS 64. They use a 64-bit port of UnixLib, so ordinary Unix-style code (files, `printf`, `malloc`, threads, signals, `getopt`, ...) builds as it does on the 32-bit side.
 * **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
