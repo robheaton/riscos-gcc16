@@ -366,3 +366,15 @@ typedef off_t off64_t;
 #endif
 #endif
 """)
+
+add_before_last_endif("search.h", "SDK: lfind", """/* SDK: lfind, lsearch, insque, remque (crt/posix/bsdcompat.c) */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void *lfind(const void *, const void *, size_t *, size_t, int (*)(const void *, const void *));
+void *lsearch(const void *, void *, size_t *, size_t, int (*)(const void *, const void *));
+void insque(void *, void *);
+void remque(void *);
+#ifdef __cplusplus
+}
+#endif""")
