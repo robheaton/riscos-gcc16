@@ -16,6 +16,7 @@ Patches and new files that become part of another project's source keep **that p
 | `docs/upstream/patches`, `docs/upstream/src` | the same rule: UnixLib (BSD/LGPL), SharedUnixLibrary and ARMEABISupport (GCCSDK's licences) |
 | `modkit/include/swisnums.h` (new in 16.2.0-16) | the names and numbers of the SWIs, made by `modkit/bin/mkswis.py` from the assembler headers of the RISC OS Open sources, which are under the **Apache License 2.0** ([text](licenses/Apache-2.0.txt); Castle Technology Ltd, RISC OS Open Ltd and others; the notice is in the file's first lines, and the text is in the `licenses/` folder of the Linux tarball and as `docs/Apache-2.0` in the `Gcc16` package (the file `Apache-2/0` of the folder `docs` on RISC OS, where a dot in a name is a directory separator); Apache-2.0 material may be included in a GPL-3.0-or-later work). It holds macros only |
 | `modkit/lib/fd_*.c`, `fdlibm.h` (new in 16.2.0-17) | Sun Microsystems' **fdlibm** 5.3 (GNU Classpath's copy), which is free to use, copy, modify and distribute if its notice stays (the notice is at the top of each file; `lib/fdlibm.h` lists the changes) |
+| `recipe/extra-libs/`, `tests/extra-libs/` | GPL-3.0-or-later (the scripts and test programs of this project; the libraries themselves are libffi and OpenSSL, under their own licences, as above) |
 | everything else (scripts, `tools/`, `tests/`, `modkit/`, `modpoc/`, `docs/`) | GPL-3.0-or-later |
 
 ## The binaries on the releases page
@@ -28,6 +29,8 @@ Patches and new files that become part of another project's source keep **that p
 | `swisnums.h` among the module kit's headers (in `Gcc16` and in the Linux tarball) | Apache License 2.0 (text: `docs/Apache-2.0` in `Gcc16`, shown as `Apache-2/0` on RISC OS; `licenses/Apache-2.0.txt` in the tarball); the rest of the kit: GPL-3.0-or-later |
 | `libgcc_s.so.1` in the C runtime package | GPL-3.0-or-later with the GCC Runtime Library Exception (GCC 10.2.0's, from GCCSDK) |
 | the icon sprites in `!GCC16` | GCCSDK's, from its own `gcc` package |
+| libffi 3.8.0 in the library package `libs-armeabihf-1` | the MIT licence ([text](licenses/libffi-MIT.txt); copyright Anthony Green, Red Hat and others, as the source files say) |
+| OpenSSL 1.1.1w in the library package `libs-armeabihf-1` | the OpenSSL licence and the SSLeay licence ([text](licenses/OpenSSL-1.1.1-LICENSE.txt)); the advertising clause applies to material that mentions features of the library: *This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/)*. The package carries both texts in `share/licenses/riscos-extra-libs/`; the sources are attached to the release |
 | the module `SharedULib` in `SharedULibFix` | UnixLib's licence (the revised BSD licence for most files, LGPL for some): it is `sul.s` of UnixLib with three patches |
 | the programs and Obey files of `SharedULibFix` (`sulfile`, `Install` ...) | GPL-3.0-or-later |
 

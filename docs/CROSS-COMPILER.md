@@ -132,7 +132,7 @@ FC  = arm-riscos-gnueabihf-gfortran
 AR  = arm-riscos-gnueabihf-ar
 ```
 
-For autoconf projects `./configure --host=arm-riscos-gnueabihf` is the usual way, and it worked for expat and curl in the NetSurf build ([NETSURF.md](NETSURF.md)); the same build used a CMake toolchain file (`CMAKE_SYSTEM_NAME Generic`) for libjpeg-turbo and libpng, zlib's own `configure` and OpenSSL's `Configure BSD-generic32`. Meson cross files have not been tried.
+For autoconf projects `./configure --host=arm-riscos-gnueabihf` is the usual way, and it worked for expat and curl in the NetSurf build ([NETSURF.md](NETSURF.md)); the same build used a CMake toolchain file (`CMAKE_SYSTEM_NAME Generic`) for libjpeg-turbo and libpng, zlib's own `configure` and OpenSSL's `Configure BSD-generic32`. Meson cross files have not been tried. Static libffi 3.8.0 and OpenSSL 1.1.1w are available ready built, with the recipe that builds them and the details (no `-pthread`, random numbers, certificates): [EXTRA-LIBS.md](EXTRA-LIBS.md).
 
 ## Differences from GCCSDK's GCC 10.2.0 cross compiler
 

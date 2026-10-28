@@ -1,5 +1,11 @@
 # Changelog
 
+## Libraries for the 32-bit tool chain: libffi 3.8.0 and OpenSSL 1.1.1w (pre-release `libs-armeabihf-1`, 28 October 2026)
+
+* **New pre-release `libs-armeabihf-1`**: static libraries, headers, pkg-config files and licences of **libffi 3.8.0** and **OpenSSL 1.1.1w** for `arm-riscos-gnueabihf` (hard float), built with the cross compiler 16.2.0-24 and unpacked over it (`-lffi`, `-lssl -lcrypto` then need no flags). A user porting Python 3.8 asked how to add such libraries: those built for GCCSDK 4.7.4 are for the old soft-float ABI and cannot be linked. The release attaches the two upstream tarballs and `SHA256SUMS`. See [docs/EXTRA-LIBS.md](docs/EXTRA-LIBS.md).
+* The recipe is [`recipe/extra-libs/build-extra-libs.sh`](recipe/extra-libs/build-extra-libs.sh). OpenSSL's `BSD-generic32` target passes `-pthread`, which the compiler of this tool chain does not accept (threads are in UnixLib); the recipe defines a target without it, so OpenSSL is built thread safe. Random numbers come from `/dev/urandom` (the CryptRandom module); the compiled-in certificate directory is `/OpenSSL`, which does not exist, so programs pass their CA bundle explicitly.
+* Checked on the Raspberry Pi (RISC OS 5.30) with three programs, [`tests/extra-libs`](tests/extra-libs): libffi calls and closures (9 checks), OpenSSL digests, AES, an EC key, a certificate and a TLS 1.3 handshake with data both ways (all passed), and four threads at once with shared `SSL_CTX` objects (five runs, all passed). Python itself was not built against the libraries, and OpenSSL's own tests were not run.
+
 ## Unreleased (RISC OS 64, for the next tool chain release)
 
 - **The RISC OS 64 compiler on 32-bit RISC OS** (new pre-release `riscos64-cross32-0.1`, 25 October 2026): `aarch64-riscos-gcc`, `g++`, the GNU tools, `cmunge64`, `mkoslib` and `modreloc64` as programs for 32-bit RISC OS 5, so that programs and modules for RISC OS 64 can be built on a 32-bit machine. The output is the same, byte for byte, as the Linux cross compiler's (tested on a 32-bit machine, and the programs on RISC OS 64); see [docs/CROSS-FROM-32BIT.md](docs/CROSS-FROM-32BIT.md). The module tools are now also C programs (`riscos64/tools/modreloc64.c`, `riscos64/hosted32/src/cmunge64.c`, `mkoslib64.c`).
