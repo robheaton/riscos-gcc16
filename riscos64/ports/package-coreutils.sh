@@ -1,7 +1,7 @@
 #!/bin/bash
 # package-coreutils.sh BUILDDIR SRCDIR OUTDIR [VERSION]: makes the RISC OS application !CoreUtils from a build of GNU coreutils (ports/build-gnu.sh style, no --enable-single-binary) and a zip of it
 # the way the 32-bit package (coreutils_8.30-2_arm.zip) is made: Apps/Utilities/!CoreUtils with one program per utility, a !Boot that sets CoreUtils$Dir and one  Alias$NAME  per program (so that "sort" works on
-# the command line, in Obey files and for system () and posix_spawn), !Run (runs !Boot), !Help, the licence files, and RiscPkg/Control.  The files have ,ff8 on the end (type &FF8, AIF64), as in a zip made on Linux.
+# the command line, in Obey files and for system () and posix_spawn), !Run (runs !Boot), !Help, the licence files, and RiscPkg/Control.  The programs have ,ff8 on the end in the tree (type &FF8, AIF64); tools/rozip.py turns that into the file type of each entry of the zip, which is what an unzip on RISC OS reads.
 set -e
 B=$(cd "${1:?build directory of coreutils}" && pwd); S=$(cd "${2:?coreutils source directory}" && pwd); O=${3:?output directory}; V=${4:-9.5-1}
 mkdir -p "$O"; O=$(cd "$O" && pwd)
@@ -61,4 +61,5 @@ Homepage: http://gnu.org/software/coreutils
 E
 printf 'coreutils\n\nGNU coreutils is copyrighted under the GNU General Public License version 3 or later (see COPYING in the application).\nBuilt from the unmodified source of coreutils 9.5 with the patches of the riscos-gcc16 project (ports/patches/coreutils-9.5-riscos64.patch).\n' > "$O/RiscPkg/Copyright"
 ( cd "$O" && rm -f "coreutils_${V}_aarch64.zip" && zip -qr "coreutils_${V}_aarch64.zip" Apps RiscPkg )
+python3 "$(dirname "$0")/../../tools/rozip.py" --in-place "$O/coreutils_${V}_aarch64.zip" --default-type fff || exit 1
 ls -l "$O/coreutils_${V}_aarch64.zip"; echo "${#progs[@]} programs"

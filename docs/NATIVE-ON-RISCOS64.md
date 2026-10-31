@@ -4,10 +4,10 @@
 
 | Pre-release | Zip | Makes programs for | Unpacked |
 |---|---|---|---|
-| [`riscos64-native-0.17`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.17) | 57 MB | **RISC OS 64** (AArch64, file type &FF8) | 169 MB |
-| [`riscos64-native32-0.3`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native32-0.3) | 41 MB | **32-bit RISC OS 5** (ARM, ELF, file type &E1F): run them on a 32-bit machine | 105 MB |
+| [`riscos64-native-0.18`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.18) | 57 MB | **RISC OS 64** (AArch64, file type &FF8) | 169 MB |
+| [`riscos64-native32-0.4`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native32-0.4) | 41 MB | **32-bit RISC OS 5** (ARM, ELF, file type &E1F): run them on a 32-bit machine | 105 MB |
 
-`riscos64-native-0.17` replaces `riscos64-native-0.16`, `riscos64-native-0.15` (the first release with C++) and [`riscos64-native-0.13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.13) (C only); `riscos64-native32-0.3` replaces `riscos64-native32-0.2` and `riscos64-native32-0.1`. The 0.15 and 0.1 packages were made with an SDK library that was built without unwind tables: a C++ exception thrown by a callback that a C library function calls (`lfind`, for example) ended the program in `std::terminate`. In 0.16 and 0.2 the library and the compilers are built with the scripts of the repository (`-fexceptions`); 0.17 and 0.3 differ from them only in shorter lines that the two zlib scripts print (the programs are the same files). The cross compiler for Linux ([GETTING-STARTED-64.md](GETTING-STARTED-64.md)) is still the main route to RISC OS 64 programs and modules: it is faster and better tested. These two are for compiling on the target itself, and for making 32-bit programs from a 64-bit machine. The opposite direction, a 32-bit machine that makes 64-bit programs, is [CROSS-FROM-32BIT.md](CROSS-FROM-32BIT.md).
+`riscos64-native-0.18` replaces `riscos64-native-0.17` (the same files: only the version and the file types in the zip changed, see Install and try), `riscos64-native-0.16`, `riscos64-native-0.15` (the first release with C++) and [`riscos64-native-0.13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.13) (C only); `riscos64-native32-0.4` replaces `riscos64-native32-0.4` (the same files), `riscos64-native32-0.2` and `riscos64-native32-0.1`. The 0.15 and 0.1 packages were made with an SDK library that was built without unwind tables: a C++ exception thrown by a callback that a C library function calls (`lfind`, for example) ended the program in `std::terminate`. In 0.16 and 0.2 the library and the compilers are built with the scripts of the repository (`-fexceptions`); 0.17 and 0.3 differ from them only in shorter lines that the two zlib scripts print (the programs are the same files). The cross compiler for Linux ([GETTING-STARTED-64.md](GETTING-STARTED-64.md)) is still the main route to RISC OS 64 programs and modules: it is faster and better tested. These two are for compiling on the target itself, and for making 32-bit programs from a 64-bit machine. The opposite direction, a 32-bit machine that makes 64-bit programs, is [CROSS-FROM-32BIT.md](CROSS-FROM-32BIT.md).
 
 They are previews: they work, they are rough, and they are not PackMan packages.
 
@@ -18,7 +18,7 @@ They are previews: they work, they are rough, and they are not PackMan packages.
 
 ## Install and try
 
-Unzip so that the folder `riscos64-native-0.17` (or `riscos64-native32-0.3`) is somewhere on a disc with room for it (use an unzip that understands the `,ff8` file type suffixes in the names). Read its `ReadMe`, then double-click one of the **Run** files:
+Unzip so that the folder `riscos64-native-0.18` (or `riscos64-native32-0.4`) is somewhere on a disc with room for it (SparkFS, or any unzip that keeps RISC OS file types: the zips of 0.17 and 0.3 and earlier marked the types with `,xxx` name suffixes that an unzip on RISC OS does not read, so the programs came out as Data; 0.18 and 0.4 have the types in the zip). Read its `ReadMe`, then double-click one of the **Run** files:
 
 | Package | Run file | What it does |
 |---|---|---|
@@ -64,6 +64,7 @@ For C use `xgcc` and `-x c`. For `native32` the lines are in `scripts.RunTo32` (
 
 On a RISC OS 64 machine, with the folders unpacked from the zips, 31 October 2026:
 
+* **0.18 and 0.4 are 0.17 and 0.3 repackaged:** every file is byte for byte the same (only the `ReadMe`, which names the version, and the top folder's name differ), and the zip carries the RISC OS file types, so the tests below apply to them. The zips were checked entry by entry against the old ones.
 * **`native`**: `RunNatCxx` compiled, linked and ran its C++ program and printed the expected lines (started by a double-click in the Filer with `riscos64-native-0.15`, from a command with 0.16); `Run64Zlib`, started by a double-click in the Filer, compiled the 16 files of zlib with the C compiler, put them into an archive with `ar`, linked the test program and ran it: all seven checks printed the expected text (the last is `inflate with dictionary: hello, hello!`).
 * **`native32`**: `RunTo32` and `RunZlib32`, started by a double-click in the Filer, ran to their end. The object files of the C and the C++ sample are byte for byte the object files that the Linux cross compiler (16.2.0-24) makes from the same source. The three programs they linked (a C program, the C++ program and zlib's test program) were run on a 32-bit RISC OS 5 machine (a Raspberry Pi Compute Module 4) and printed the expected text; the zlib test passes all its checks there.
 * **The exception test** [`riscos64/unixlib/tests/t_excthru.cc`](../riscos64/unixlib/tests/t_excthru.cc), compiled and run with the native compiler of each package: with `native-0.15` the exception thrown by the comparison function of `lfind` ends in `terminate called after throwing an instance of 'std::runtime_error'`; with `native-0.16` it is caught.
@@ -77,7 +78,7 @@ Not tried: large programs other than zlib, Fortran and LTO (not in these package
 * C and C++, no Fortran, no LTO. A C++ file that includes `iostream` takes seconds to a minute.
 * Programs that are killed leave their memory areas behind until the next reboot.
 * A link with very many object files can fail on some file systems (too many files open at once): put the objects into an archive first with `bin.ar`, as the zlib samples do.
-* `native-0.17` has no `Build` command and no Lua, make or sed examples; `native-0.13` has them (for C).
+* `native-0.18` has no `Build` command and no Lua, make or sed examples; `native-0.13` has them (for C).
 * `native32`: the programs link the static libstdc++ (780 KB for a C++ hello world), and the 32-bit machine needs the C runtime of the Gcc16 package.
 
 ## Building the packages

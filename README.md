@@ -119,7 +119,7 @@ There is also a separate, early preview of the same idea for **64-bit RISC OS (A
 * **Compile C and C++** on Linux with `aarch64-riscos-gcc` (C++ includes exceptions, threads and the standard library) and run the programs on RISC OS 64. They use a 64-bit port of UnixLib, so ordinary Unix-style code (files, `printf`, `malloc`, threads, signals, `getopt`, ...) builds as it does on the 32-bit side.
 * **Write modules** in C or C++ for RISC OS 64 (`-mmodule`, with a CMHG-compatible `cmunge64`).
 * **Compile on a 32-bit RISC OS machine**: the same compiler also runs on 32-bit RISC OS 5 and makes the same programs and modules ([docs/CROSS-FROM-32BIT.md](docs/CROSS-FROM-32BIT.md)).
-* **Compile on RISC OS 64 itself**: the C and C++ compilers also run on RISC OS 64 (`riscos64-native-0.17`), and a second package makes programs for 32-bit RISC OS from a 64-bit machine (`riscos64-native32-0.3`) ([docs/NATIVE-ON-RISCOS64.md](docs/NATIVE-ON-RISCOS64.md)).
+* **Compile on RISC OS 64 itself**: the C and C++ compilers also run on RISC OS 64 (`riscos64-native-0.18`), and a second package makes programs for 32-bit RISC OS from a 64-bit machine (`riscos64-native32-0.4`) ([docs/NATIVE-ON-RISCOS64.md](docs/NATIVE-ON-RISCOS64.md)).
 * **Use a command-line toolbox**, built with the same compiler: a shell (`sh`), GNU `sed`, `grep`, `awk`, `make`, `diff`, `find`, `tar`, `gzip`, `xz` and `zstd`, `zip`/`unzip`, `less`, `jq`, `m4` and more (the `!GNU` application), and the GNU coreutils (`!CoreUtils`, 102 programs, laid out like the 32-bit package).
 * **Link against ready-made libraries**: zlib, libpng, libjpeg-turbo, expat and PCRE2.
 * **Write desktop (Wimp) applications** with [DeskLib64](https://github.com/robheaton/riscos-desklib64), a port of [DeskLib](https://github.com/riscos-dot-info/desklib) to RISC OS 64 (a separate repository, with source releases).
@@ -139,14 +139,14 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the RISC
 | Download (all pre-releases) | Size | Description |
 |---|---|---|
 | [`riscos64-toolchain-0.15`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.15) | 60 MB | the Linux cross compiler (x86-64) |
-| [`riscos64-gnu-tools-15`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-15) | 13 MB | `!GNU`: the shell and the tools |
-| [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) | 26 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
+| [`riscos64-gnu-tools-16`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-16) | 13 MB | `!GNU`: the shell and the tools |
+| [`riscos64-coreutils-9.5-12`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-12) | 26 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |
-| [`riscos64-native-0.17`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.17) | 57 MB | **preview:** the C and C++ compilers, assembler and linker as programs for RISC OS 64, to compile on the target itself; builds zlib as an example ([docs/NATIVE-ON-RISCOS64.md](docs/NATIVE-ON-RISCOS64.md)) |
-| [`riscos64-native32-0.3`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native32-0.3) | 41 MB | **preview:** the same, on RISC OS 64, making programs for **32-bit** RISC OS 5 |
+| [`riscos64-native-0.18`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.18) | 57 MB | **preview:** the C and C++ compilers, assembler and linker as programs for RISC OS 64, to compile on the target itself; builds zlib as an example ([docs/NATIVE-ON-RISCOS64.md](docs/NATIVE-ON-RISCOS64.md)) |
+| [`riscos64-native32-0.4`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native32-0.4) | 41 MB | **preview:** the same, on RISC OS 64, making programs for **32-bit** RISC OS 5 |
 | [`riscos64-native-0.13`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-native-0.13) | 26 MB | the earlier preview of the native compiler (C only, with `Build` and zlib, Lua, make and sed examples) |
 | [`riscos64-cross32-0.1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-cross32-0.1) | 61 MB | **preview:** the RISC OS 64 cross compiler as programs for 32-bit RISC OS (`!GCC64`) |
-| [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) | 21 KB | four sample projects to copy: C, C++, a command-line tool and a module, each with a Makefile |
+| [`riscos64-samples-2`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-2) | 21 KB | four sample projects to copy: C, C++, a command-line tool and a module, each with a Makefile |
 
 **Which ones do you need?** To build programs and modules on a Linux PC: the tool chain. To compile on the RISC OS 64 machine itself: a `native` package (`riscos64-native` makes 64-bit programs, `riscos64-native32` makes programs for 32-bit RISC OS), and `riscos64-cross32` is the opposite direction, a 32-bit machine that makes 64-bit programs. For a shell and Unix tools on RISC OS 64: `!GNU` and `!CoreUtils`. The libraries and the samples are optional. **The version numbers belong to each package and are independent** (tool chain 0.15, native compiler 0.16, 32-bit target compiler 0.2, `!GNU` 15 ...): take the newest of each name; a newer number of one package does not mean that the others must be updated, and the numbers do not match each other.
 

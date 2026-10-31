@@ -10,7 +10,7 @@ TREE is a folder with the programs, libraries and headers in the layout of those
   scripts/                     Clean, the sample scripts of the package (the static ones are ports/native/scripts and hosted64/scripts) and the zlib script, which is written here from the file list
   Run*,ff8                     a copy of the launcher (ports/native/ulrun.c) for each sample script: it runs scripts.<its own name>
   ReadMe, Licences/            ports/native/ReadMe-<kind>.txt with @VERSION@ filled in, and the licence texts of REPO (licenses/*.txt, LICENSES.md) and zlib's
-and writes OUTDIR/riscos64-<kind>-V.zip (names with the ,xxx file type suffixes; programs are 0755) and SHA256SUMS.  An existing OUTDIR/<package> is not touched: remove it yourself."""
+and writes OUTDIR/riscos64-<kind>-V.zip (the RISC OS file types are in the zip: tools/rozip.py runs on it; programs are 0755) and SHA256SUMS.  An existing OUTDIR/<package> is not touched: remove it yourself."""
 import argparse, hashlib, os, shutil, sys, zipfile
 
 ap = argparse.ArgumentParser()
@@ -130,6 +130,8 @@ with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             zi.external_attr = (0o100755 if f.endswith(",ff8") else 0o100644) << 16
             z.writestr(zi, open(p, "rb").read())
             n += 1
+import subprocess
+subprocess.check_call([sys.executable, os.path.join(HERE, "..", "..", "tools", "rozip.py"), "--in-place", zp, "--default-type", "fff"])   # the ,xxx suffixes become the file type of each entry
 sha = hashlib.sha256(open(zp, "rb").read()).hexdigest()
 open(os.path.join(a.outdir, NAME + ".sha256"), "w").write("%s  %s.zip\n" % (sha, NAME))
 print("%s: %d files, %.1f MB, sha256 %s" % (zp, n, os.path.getsize(zp) / 1e6, sha))

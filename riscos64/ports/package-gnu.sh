@@ -93,4 +93,6 @@ Homepage: https://github.com/robheaton/riscos-gcc16
 E
 printf 'GNU tools\n\nsed, grep, gawk and make: GNU General Public License version 3 or later. Lua: MIT. bzip2: BSD-style (Licences/bzip2-LICENSE). SQLite: public domain. sh: BSD-style.\nSources: the releases named in !Help plus the patches in the riscos-gcc16 repository.\n' > "$O/RiscPkg/Copyright"
 ( cd "$O" && rm -f "gnutools_${V}_aarch64.zip" && zip -qr "gnutools_${V}_aarch64.zip" Apps RiscPkg )
+# the RISC OS file types (the ,xxx of the programs; Obey for !Boot and !Run, Text for the rest) go into the zip: an unzip on RISC OS does not read ,xxx
+python3 "$(dirname "$0")/../../tools/rozip.py" --in-place "$O/gnutools_${V}_aarch64.zip" --default-type fff || exit 1
 ls -l "$O/gnutools_${V}_aarch64.zip"
