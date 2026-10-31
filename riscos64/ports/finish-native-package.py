@@ -86,7 +86,7 @@ if a.kind == "native":
 for n in sorted(ALL):
     lines.append("Obey Clean")
     lines.append("<T64$Dir>.xgcc -B bin/ -B lib/ -L lib -I zl -isystem include -O2 -x c -c zl/c/%s -o zl/o/%s" % (n, n))
-lines.append("Echo ===== link (the objects go into an archive first, so that the link has few files to open)")
+lines.append("Echo ===== link (the objects go into an archive first)")
 lib = CSRC
 lines.append("<T64$Dir>.bin.ar rcs zl/out/libz.a " + " ".join("zl/o/" + n for n in lib[:8]))
 lines.append("<T64$Dir>.bin.ar rcs zl/out/libz.a " + " ".join("zl/o/" + n for n in lib[8:]))
@@ -94,11 +94,13 @@ lines.append("Obey Clean")
 if a.kind == "native":
     lines.append("<T64$Dir>.xgcc -B bin/ -B lib/ -L lib -munixlib zl/o/example zl/out/libz.a -o zl/out/zexample")
     lines.append("SetType <T64$Dir>.zl.out.zexample &FF8")
-    lines.append("Echo ===== run the zlib test program (expected: the lines of the tests, the last is inflate with dictionary: hello, hello!)")
+    lines.append("Echo ===== run the zlib test program")
+    lines.append("Echo (the last line should be: inflate with dictionary: hello, hello!)")
     lines.append("<T64$Dir>.zl.out.zexample")
 else:
     lines.append("<T64$Dir>.xgcc -B bin/ -B lib/ -L lib zl/o/example zl/out/libz.a -o zl/out/zexample32")
-    lines.append("Echo ===== run the program on a 32 bit machine: zl.out.zexample32 (expected: the lines of the tests, the last is inflate with dictionary: hello, hello!)")
+    lines.append("Echo ===== now run zl.out.zexample32 on a 32 bit machine")
+    lines.append("Echo (the last line should be: inflate with dictionary: hello, hello!)")
 lines.append("Echo Finished.")
 put_text("scripts/" + launchers[1] + ",feb", "\n".join(lines) + "\n")
 for l in launchers:
