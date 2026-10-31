@@ -129,8 +129,8 @@ What it cannot do yet: there is no `fork`, so programs that start several proces
 **To try it** (Linux x86-64 with glibc 2.38 or newer, the same as for the 32-bit cross compiler):
 
 ```bash
-tar -xf aarch64-riscos-gcc-16.2.0-0.14-linux-x86_64.tar.xz
-export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.14-linux-x86_64/bin:$PATH
+tar -xf aarch64-riscos-gcc-16.2.0-0.15-linux-x86_64.tar.xz
+export PATH=$PWD/aarch64-riscos-gcc-16.2.0-0.15-linux-x86_64/bin:$PATH
 aarch64-riscos-gcc -munixlib -O2 -o hello,ff8 hello.c      # ,ff8 is the RISC OS file type of a 64-bit program
 ```
 
@@ -138,7 +138,7 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the RISC
 
 | Download (all pre-releases) | Size | Description |
 |---|---|---|
-| [`riscos64-toolchain-0.14`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.14) | 60 MB | the Linux cross compiler (x86-64) |
+| [`riscos64-toolchain-0.15`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-toolchain-0.15) | 60 MB | the Linux cross compiler (x86-64) |
 | [`riscos64-gnu-tools-15`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-gnu-tools-15) | 13 MB | `!GNU`: the shell and the tools |
 | [`riscos64-coreutils-9.5-11`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-coreutils-9.5-11) | 26 MB | `!CoreUtils`: `ls`, `cp`, `sort`, ... |
 | [`riscos64-libs-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-libs-1) | 0.7 MB | the libraries, for the cross compiler |

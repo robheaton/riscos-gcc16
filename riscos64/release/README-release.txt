@@ -1,7 +1,7 @@
 aarch64-riscos GCC 16.2.0 (RISC OS 64), tool chain @VERSION@  --  a cross compiler from Linux (x86-64) to AIF64 programs and 64-bit modules for RISC OS on AArch64
 ==========================================================================================================================================================
 
-This is a PRE-RELEASE: it has been tested on RISC OS Pyromaniac (build service).  Start with share/riscos64/doc/GETTING-STARTED-64.md (if present) or the repository's docs/GETTING-STARTED-64.md; known limits are listed there and in share/riscos64/doc/KNOWN-ISSUES.md.
+This is a PRE-RELEASE: it has been tested on RISC OS Pyromaniac (build service) and on a RISC OS 64 machine.  Start with share/riscos64/doc/GETTING-STARTED-64.md (if present) or the repository's docs/GETTING-STARTED-64.md; known limits are listed there and in share/riscos64/doc/KNOWN-ISSUES.md.
 
 What is in it
   bin/aarch64-riscos-gcc, -g++, -ld, -as, -ar, -objcopy, ...   GCC 16.2.0 and binutils 2.45.1 for the target aarch64-riscos
@@ -20,7 +20,7 @@ Run ./selftest.sh to check that it works on your machine.  The programs run on R
 
 Limits to know about
   * Threads are cooperative (they switch in blocking calls and sched_yield): no preemption.  One processor.
-  * Sockets are written to the documented Internet module interface and have not been tried on a real module.  IPv4 only.
+  * Sockets: IPv4 only; select and poll know the sockets numbered up to 63 (the Internet module numbers them from about 30: a few dozen at once).  They have been used on a RISC OS 64 machine (loopback TCP client and server, the tests t_sock and t_sock64 in share/riscos64/source/unixlib-src/tests).
   * No Shared C Library (SCL) and no shared libraries: programs are linked statically.
   * SIGSEGV and friends are delivered only to programs that install a handler.
 
