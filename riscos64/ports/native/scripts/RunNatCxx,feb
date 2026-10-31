@@ -1,0 +1,13 @@
+| RunNatCxx - a C++ program compiled, linked and run on RISC OS 64 with the native C++ compiler.  double-click RunNatCxx
+| the C++ compiler needs a big application slot
+WimpSlot -min 128M -max 128M
+Echo ===== compile
+Obey Clean
+<T64$Dir>.xg++ -B bin/ -B lib/ -L lib -isystem include/c++/16.2.0 -isystem include/c++/16.2.0/aarch64-riscos -isystem include -O1 -x c++ -c cc/hellopp -o o/hellopp
+Echo ===== link
+Obey Clean
+<T64$Dir>.xg++ -B bin/ -B lib/ -L lib -munixlib o/hellopp -o out/hellopp
+SetType <T64$Dir>.out.hellopp &FF8
+Echo ===== run
+<T64$Dir>.out.hellopp
+Echo Finished.

@@ -1,0 +1,13 @@
+| RunTo32 - programs for 32 bit RISC OS compiled and linked on RISC OS 64 (the output is out.hello32 and out.hellopp32; run them on a 32 bit machine).  double-click RunTo32
+WimpSlot -min 128M -max 128M
+Echo ===== C: compile and link
+Obey Clean
+<T64$Dir>.xgcc -B bin/ -B lib/ -L lib -isystem include -O2 -x c -c c/hello -o o/hello32
+Obey Clean
+<T64$Dir>.xgcc -B bin/ -B lib/ -L lib o/hello32 -o out/hello32
+Echo ===== C++: compile and link
+Obey Clean
+<T64$Dir>.xg++ -B bin/ -B lib/ -L lib -isystem include/c++/16.2.0 -isystem include/c++/16.2.0/arm-riscos-gnueabihf -isystem include -O1 -x c++ -c cc/hellopp -o o/hellopp32
+Obey Clean
+<T64$Dir>.xg++ -B bin/ -B lib/ -L lib o/hellopp32 -o out/hellopp32
+Echo Finished.

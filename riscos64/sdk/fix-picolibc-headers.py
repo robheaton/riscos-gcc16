@@ -22,6 +22,17 @@ if "fputc_unlocked" not in t:
                   "size_t fwrite_unlocked(const void *, size_t, size_t, FILE *) __picolibc_export;\nint fflush_unlocked(FILE *) __picolibc_export;\nint fileno_unlocked(FILE *) __picolibc_export;\nchar *fgets_unlocked(char *, int, FILE *) __picolibc_export;", 1)
 open(p, "w").write(t)
 
+# <sys/wait.h> declares wait3 but not wait4 (crt/posix/bsdcompat.c has both): libiberty's pex-unix.c calls wait4 when configure finds it in the library
+ww = inc + "/sys/wait.h"
+try:
+    t = open(ww).read()
+    if "wait4" not in t:
+        old = "pid_t wait3(int *, int, struct rusage *);"
+        assert old in t, "unexpected sys/wait.h"
+        open(ww, "w").write(t.replace(old, old + "\npid_t wait4(pid_t, int *, int, struct rusage *);", 1))
+except IOError:
+    pass
+
 def add_before_last_endif(path, marker, text):
     """adds text before the last #endif of the header (once)"""
     try:

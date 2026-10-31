@@ -15,6 +15,7 @@ ap.add_argument("--prefix", required=True, help="the installed aarch64-riscos to
 ap.add_argument("--gcc", required=True, help="the build directory of build-native-gcc.sh (natgcc/build)")
 ap.add_argument("--binutils", required=True, help="the build directory of build-native-binutils.sh (nat2/build)")
 ap.add_argument("--hello", help="a C file for c/hello (default: native/hello.c next to this script)")
+ap.add_argument("--cxx", action="store_true", help="also the C++ compiler: xg++, bin/cc1plus, libstdc++.a, libsupc++.a and the C++ headers (include/c++/16.2.0), and a C++ test program (cc/hellopp)")
 ap.add_argument("--asm", help="its assembly (s/hello); default: made from the C file with the cross compiler of PREFIX")
 a = ap.parse_args()
 D = a.dest
@@ -48,6 +49,18 @@ for f in ("crti", "crtbegin", "crtend", "crtn"):
     put(os.path.join(G, f + ".o"), "lib/o/" + f)
 for f, src in (("libc.a", T), ("libm.a", T), ("libriscosstub.a", T), ("libunixlib64.a", T), ("aif64.ld", T), ("libgcc.a", G)):
     put(os.path.join(src, "lib" if src == T else "", f), "lib/" + f)
+if a.cxx:
+    put(os.path.join(a.gcc, "gcc", "xg++"), "xg++,ff8")
+    put(os.path.join(a.gcc, "gcc", "cc1plus"), "bin/cc1plus,ff8")
+    for f in ("libstdc++.a", "libsupc++.a"):
+        put(os.path.join(T, "lib", f), "lib/" + f)
+    cx = os.path.join(T, "include", "c++")
+    for root, dirs, files in os.walk(cx):
+        rel = os.path.relpath(root, os.path.join(T, "include"))
+        for f in files:
+            r = os.path.normpath(os.path.join(rel, f))
+            put(os.path.join(root, f), os.path.join("include", swapped(r)))
+    put(os.path.join(os.path.dirname(os.path.abspath(__file__)), "native", "hellopp.cc"), "cc/hellopp")
 # the C headers: picolibc's and the SDK's (no C++), and GCC's own (stddef.h, stdarg.h ...)
 for root, dirs, files in os.walk(os.path.join(T, "include")):
     rel = os.path.relpath(root, os.path.join(T, "include"))

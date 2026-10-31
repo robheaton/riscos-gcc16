@@ -1,0 +1,21 @@
+--- a/libstdc++-v3/config/locale/generic/c_locale.cc	2026-08-07 08:46:10.779324951 +0100
++++ b/libstdc++-v3/config/locale/generic/c_locale.cc	2026-10-22 17:28:31.550960756 +0100
+@@ -40,6 +40,8 @@
+ #include <ieeefp.h>
+ #endif
+ 
++extern "C" int __ul64_locale_valid(const char*);
++
+ namespace std _GLIBCXX_VISIBILITY(default)
+ {
+ _GLIBCXX_BEGIN_NAMESPACE_VERSION
+@@ -242,7 +244,8 @@
+     // Currently, the generic model only supports the "C" locale.
+     // See http://gcc.gnu.org/ml/libstdc++/2003-02/msg00345.html
+     __cloc = 0;
+-    if (strcmp(__s, "C"))
++    // UnixLib 64: the names that setlocale accepts are valid too (the facets have the data of "C")
++    if (strcmp(__s, "C") && strcmp(__s, "POSIX") && !__ul64_locale_valid(__s))
+       __throw_runtime_error(__N("locale::facet::_S_create_c_locale "
+ 			    "name not valid"));
+   }

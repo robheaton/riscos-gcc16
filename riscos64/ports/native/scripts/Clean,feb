@@ -1,0 +1,5 @@
+| Clean - the compiler leaves its COMPILER_PATH, LIBRARY_PATH, GCC_EXEC_PREFIX and COLLECT_* variables set after it ends; this removes them so that the next run starts clean (the Run files call it before every compiler run)
+Unset COMPILER_PATH
+Unset LIBRARY_PATH
+Unset GCC_EXEC_PREFIX
+Unset COLLECT_*
