@@ -148,6 +148,8 @@ Copy `hello,ff8` to a RISC OS 64 machine and run it there, or run it on the RISC
 | [`riscos64-cross32-0.1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-cross32-0.1) | 61 MB | **preview:** the RISC OS 64 cross compiler as programs for 32-bit RISC OS (`!GCC64`) |
 | [`riscos64-samples-1`](https://github.com/robheaton/riscos-gcc16/releases/tag/riscos64-samples-1) | 21 KB | four sample projects to copy: C, C++, a command-line tool and a module, each with a Makefile |
 
+**Which ones do you need?** To build programs and modules on a Linux PC: the tool chain. To compile on the RISC OS 64 machine itself: a `native` package (`riscos64-native` makes 64-bit programs, `riscos64-native32` makes programs for 32-bit RISC OS), and `riscos64-cross32` is the opposite direction, a 32-bit machine that makes 64-bit programs. For a shell and Unix tools on RISC OS 64: `!GNU` and `!CoreUtils`. The libraries and the samples are optional. **The version numbers belong to each package and are independent** (tool chain 0.15, native compiler 0.16, 32-bit target compiler 0.2, `!GNU` 15 ...): take the newest of each name; a newer number of one package does not mean that the others must be updated, and the numbers do not match each other.
+
 These are marked as pre-releases, so GitHub's "Latest" release stays the 32-bit one; the 64-bit releases have names that start `riscos64-`: [list of all 64-bit releases](https://github.com/robheaton/riscos-gcc16/releases?q=%22RISC+OS+64%22&expanded=true).
 
 Start with [docs/GETTING-STARTED-64.md](docs/GETTING-STARTED-64.md), then [docs/AARCH64.md](docs/AARCH64.md) (the compiler) and [docs/USERLAND64.md](docs/USERLAND64.md) (the shell and tools); [docs/RISCOS64.md](docs/RISCOS64.md) says what was tested.
