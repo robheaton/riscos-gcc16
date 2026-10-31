@@ -4,8 +4,8 @@ Five kinds of test, from "check my installation" to the host tests that need no 
 
 ## 1. Check an installation on RISC OS: `tests/selftest`
 
-After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`), a profile-guided build (`-fprofile-generate`, then `-fprofile-use`), a gprof run (`-pg`, then `gprof`) and a module (`cmunge`, `gcc -mmodule`, load it, run its command, remove it),
-and checks the fix level of the runtime. It takes about half a minute (33 seconds on the test machine) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
+After [installing the packages](INSTALL-RISCOS.md), copy the folder [`tests/selftest`](../tests/selftest) to your RISC OS machine and run it in a Task window. It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build and an LTO build, checks that a compile error is reported, makes a coverage run (`--coverage`, then `gcov`), a profile-guided build (`-fprofile-generate`, then `-fprofile-use`), a gprof run (`-pg`, then `gprof`) and two modules, one in C and one in C++ (`cmunge`, `gcc -mmodule` or `g++ -mmodule -specs=modcxx`, load it, run its command, remove it),
+and checks the fix level of the runtime. It takes about a minute (63 seconds on the test machine with 13 checks; 33 seconds with the 12 checks of 16.2.0-24) and ends with `SELFTEST: ALL CHECKS PASSED`, or lists the checks that failed. See its [README](../tests/selftest/README.md).
 
 ## 2. Check the Linux cross compiler: `tests/cross-smoke`
 

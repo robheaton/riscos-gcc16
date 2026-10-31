@@ -1,0 +1,61 @@
+/* modcxx.cc -- a module written in C++ for the self-test of  g++ -mmodule -specs=modcxx : no UnixLib, no libstdc++ library, the C library of modkit, the veneers that cmunge wrote.
+   It has a static object whose constructor must have run before the command, new and delete, a virtual function, a template and std::vector.  *ModCxx_Sum 2 3 prints 5.  */
+#include <new>
+#include <vector>
+#include <stdlib.h>
+#include <stdio.h>
+#include "kernel.h"
+#include "modcxx.h"
+
+namespace
+{
+  struct Adder
+  {
+    virtual ~Adder () {}
+    virtual long add (long a, long b) const { return a + b; }
+  };
+
+  struct Start
+  {
+    int ready;
+    Start () : ready (1) {}
+  };
+  Start start;                                                   /* its constructor runs before the module's initialisation code */
+
+  template <typename T> T total (const std::vector<T> &v)
+  {
+    T t = 0;
+    for (size_t i = 0; i < v.size (); i++) t += v[i];
+    return t;
+  }
+}
+
+extern "C" _kernel_oserror *modcxx_init (const char *tail, int podule_base, void *pw)
+{
+  (void) tail; (void) podule_base; (void) pw;
+  return 0;
+}
+
+extern "C" _kernel_oserror *modcxx_final (int fatal, int podule_base, void *pw)
+{
+  (void) fatal; (void) podule_base; (void) pw;
+  return 0;
+}
+
+extern "C" _kernel_oserror *modcxx_command (const char *arg_string, int argc, int number, void *pw)
+{
+  (void) argc; (void) pw;
+  if (number == CMD_ModCxx_Sum)
+    {
+      char *end;
+      long a = strtol (arg_string, &end, 10), b = strtol (end, 0, 10);
+      Adder *p = new Adder;
+      std::vector<long> v;
+      v.push_back (a);
+      v.push_back (b);
+      long s = start.ready ? p->add (total (v), 0) : -1;
+      delete p;
+      printf ("%ld\n", s);
+    }
+  return 0;
+}

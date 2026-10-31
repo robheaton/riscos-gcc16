@@ -129,6 +129,15 @@ PKG_OUT=~/gccsdk-next/release python3 $R/make-selftest-package.py 24            
 The native compiler is *cross-built* on Linux with the cross compiler of step 4 (host = target = `arm-riscos-gnueabihf`); the target options are exactly those of the cross compiler, so the native `cc1` is the same compiler.
 What the native build needed, each point learned on the hardware, is in `recipe/gcc-16.2.0-riscos/README.md`.
 
+**16.2.0-25 is made from the package of 16.2.0-24, not by a new run of this page.** Its `Gcc16` has the same compiler, binutils, `make` and libraries (every file of the 16.2.0-24 package that is not named here is byte for byte the same, with the same attributes), five files more (the four C++ headers of the kit in `lib/gcc/arm-riscos-gnueabihf/16.2.0/include-cxx`, and the spec file `modcxx` next to them) and four files changed (`RiscPkg/Control`, `RiscPkg/Copyright`, `!Boot` for the version and `docs/ReadMe` for the text). One script does that:
+
+```bash
+python3 -I $R/make-packages-cxxmod.py ~/gccsdk-next/release/assets-v16.2.0-24 ~/riscos-gcc16/modkit ~/gccsdk-next/release/out25      # Gcc16_16.2.0-25_arm.zip
+PKG_OUT=~/gccsdk-next/release/out25 python3 $R/make-selftest-package.py 25                                                            # Gcc16SelfTest_16.2.0-25_arm.zip (the self-test with check 13)
+```
+
+The first argument is the folder with the zip files of the 16.2.0-24 release, the second the module kit of this repository (the script reads `modkit/include-cxx` from it). The Linux tarball, the three runtime packages and `SharedULibFix` of the release are the files of 16.2.0-24 and 16.2.0-15, and the run described above was not repeated for 16.2.0-25.
+
 ## 8. The Linux tarball and the release
 
 ```bash

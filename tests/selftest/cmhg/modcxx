@@ -1,0 +1,9 @@
+; a module written in C++ for the self-test (16.2.0-25): a static constructor, new and delete, a virtual function, a template, std::vector, and one star command
+title-string: ModCxx
+help-string: ModCxx 0.01
+date-string: 31 Oct 2026
+module-is-c-plus-plus:
+initialisation-code: modcxx_init
+finalisation-code: modcxx_final
+command-keyword-table: modcxx_command
+     ModCxx_Sum(min-args: 2, max-args: 2, help-text: "Syntax: *ModCxx_Sum <a> <b>\n")

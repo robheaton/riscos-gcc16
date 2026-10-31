@@ -1,5 +1,5 @@
-| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-24 on SharedLibs-C-armeabihf 16.2.0-13 or later).
-| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov, a profile-guided build, a gprof run and a module that is built, loaded and run, and checks that a compile error is reported.
+| RunSelfTest - checks an installation of the native GCC 16 tool chain (Gcc16 16.2.0-25 on SharedLibs-C-armeabihf 16.2.0-13 or later).
+| It compiles and runs small C, C++ and Fortran programs, a two-file project, a make build, an LTO build, a coverage run with gcov, a profile-guided build, a gprof run and two modules (one in C, one in C++) that are built, loaded and run, and checks that a compile error is reported.
 | BEFORE: install the packages with PackMan, REBOOT, and double-click !GCC16 once (it sets GCC16$Dir and the search path).
 | RUN IT IN A TASK WINDOW (Ctrl-F12):     Obey <GCC16Test$Dir>.RunSelfTest        About half a minute.
 | The work is done on the local disc (<Wimp$ScrapDir>.GCC16Test); the output is also copied to Results next to this file (and to SelfTest$ResultsTo, if you set that variable first).
@@ -23,7 +23,7 @@ Copy <SelfTest$Src>.Makefile <SelfTest$Dir>.Makefile F~C~V
 Dir <SelfTest$Dir>
 | what double-clicking !GCC16 does: Run$Path, return code limit and the suffix swapping lists of every tool
 Obey <GCC16$Dir>.!Run
-If "<GCC16$Version>" <> "16.2.0-24" Then Error This self-test is for Gcc16 16.2.0-24 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-24 with PackMan, reboot, double-click !GCC16, then run this again
+If "<GCC16$Version>" <> "16.2.0-25" Then Error This self-test is for Gcc16 16.2.0-25 and the installed one is <GCC16$Version>: install Gcc16_16.2.0-25 with PackMan, reboot, double-click !GCC16, then run this again
 Unset TMPDIR
 WimpSlot -min 48M -max 48M
 Unset SelfTest$Fails
@@ -304,6 +304,40 @@ IfThere <SelfTest$Dir>.sum Then Set SelfTest$RC <Sys$ReturnCode>
 If "<SelfTest$RC>" = "0" Then Echo PASS: the module was loaded, *ModHello_Sum 2 3 printed 5, and the module was removed again
 If "<SelfTest$RC>" <> "0" Then Echo FAIL: the module did not print 5 (modcheck returned <SelfTest$RC>)
 If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> module-run
+Time
+Spool
+SpoolOn <SelfTest$Dir>.Results
+Echo ===================== 13. a module written in C++ (new in 16.2.0-25): cmunge (cmhg.modcxx has module-is-c-plus-plus:), g++ -mmodule -specs=modcxx (the kit's C++ headers and libstdc++'s come first), the C driver links it, load it, run its command, remove it
+GCC16bin:cmunge -tgcc -32bit -p -d modcxx.h -o modcxx_hdr.o modcxx.cmhg
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: cmunge modcxx.cmhg
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: cmunge modcxx.cmhg (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cxxmod-cmunge
+GCC16bin:g++ -mmodule -specs=modcxx -std=gnu++17 -O2 -c modcxx.cc
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: compile modcxx.cc with g++ -mmodule -specs=modcxx
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: compile modcxx.cc with g++ -mmodule -specs=modcxx (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cxxmod-compile
+GCC16bin:gcc -mmodule -o modcxx modcxx.o modcxx_hdr.o
+Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: link the C++ module (gcc -mmodule -o modcxx: the C driver, so that libstdc++ and libm are not added)
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: link the C++ module (return code <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cxxmod-link
+Unset SelfTest$ModOk
+IfThere <SelfTest$Dir>.modcheck Then Run <SelfTest$Dir>.modcheck module modcxx ModCxx ModCxx_Sum
+IfThere <SelfTest$Dir>.modcheck Then Set SelfTest$ModOk <Sys$ReturnCode>
+If "<SelfTest$ModOk>" = "0" Then Echo PASS: the C++ module is a module image with the right header and relocation table
+If "<SelfTest$ModOk>" <> "0" Then Echo FAIL: the C++ module is not a good module image (modcheck returned <SelfTest$ModOk>): it is NOT loaded
+If "<SelfTest$ModOk>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cxxmod-image
+If "<SelfTest$ModOk>" = "0" Then RMLoad <SelfTest$Dir>.modcxx
+If "<SelfTest$ModOk>" = "0" Then ModCxx_Sum 2 3 { > <SelfTest$Dir>.sumcxx }
+If "<SelfTest$ModOk>" = "0" Then RMKill ModCxx
+Unset SelfTest$RC
+IfThere <SelfTest$Dir>.sumcxx Then Run <SelfTest$Dir>.modcheck text sumcxx 5
+IfThere <SelfTest$Dir>.sumcxx Then Set SelfTest$RC <Sys$ReturnCode>
+If "<SelfTest$RC>" = "0" Then Echo PASS: the C++ module was loaded (its static constructor ran), *ModCxx_Sum 2 3 printed 5 (new, delete, a virtual function and std::vector), and it was removed again
+If "<SelfTest$RC>" <> "0" Then Echo FAIL: the C++ module did not print 5 (modcheck returned <SelfTest$RC>)
+If "<SelfTest$RC>" <> "0" Then Set SelfTest$Fails <SelfTest$Fails> cxxmod-run
 Time
 Spool
 SpoolOn <SelfTest$Dir>.Results

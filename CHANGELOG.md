@@ -1,5 +1,30 @@
 # Changelog
 
+## v16.2.0-25: 2026-10-31, C++ modules are built on RISC OS too: the native compiler has the kit's C++ headers and a spec file
+
+| Asset | Version |
+|---|---|
+| native compiler `Gcc16` | 16.2.0-25 |
+| runtime `SharedLibs-C-armeabihf` | 16.2.0-15 (unchanged) |
+| runtime `SharedLibs-C++-armeabihf` | 16.2.0-6 (unchanged) |
+| runtime `SharedLibs-Fortran-armeabihf` | 16.2.0-2 (unchanged) |
+| self-test `Gcc16SelfTest` | 16.2.0-25 (new: check 13) |
+| Linux cross compiler | 16.2.0-24 (unchanged; its file name keeps the number) |
+| optional `SharedULibFix` (the fixed SharedUnixLibrary) | 1.16-vforkfix3 (unchanged) |
+
+* **The native `Gcc16` builds C++ modules.** Until now the documentation said that C++ modules could only be built on Linux. That was a gap in the package, not a limit of the compiler: the package had the module kit's `libmodkit.a` (which names `libstdcxx-mod.a`) but not the kit's four C++ headers (`<cmath>`, `<math.h>`, `bits/c++config.h` and `bits/gthr-default.h`, in the new folder `lib/gcc/arm-riscos-gnueabihf/16.2.0/include-cxx`), and nothing gave `g++` the options that the Linux make rules (`module.mk`) give it. Now the package has both. Put `module-is-c-plus-plus:` in the CMHG file and run `cmunge` as for a C module, then:
+  ```
+  g++ -mmodule -specs=modcxx -std=gnu++17 -O2 -c main.cc
+  gcc -mmodule -o MyModule main.o header.o
+  ```
+  The link goes through the C driver, because the C++ driver would add libstdc++ and libm, which a module does not have. Commands, subset of C++ and limits: [docs/USING-NATIVE.md](docs/USING-NATIVE.md#modules--mmodule-cmunge-new-in-1620-14) and [docs/MODULES.md](docs/MODULES.md#c-in-modules).
+* **The spec file `modcxx`** (next to `include-cxx`) adds to the C++ compiler, for `-mmodule` only: the kit's headers and libstdc++'s headers first, `__STDC_HOSTED__` set to 1 (`-mmodule` says freestanding, libstdc++'s headers need a hosted compiler), `-fno-exceptions -fno-rtti -fno-threadsafe-statics` (a module has no unwinder, no type information and one thread of control) and `-ffunction-sections -fdata-sections` (so that the link can drop what nothing calls). The header folders are written from the compiler's own prefix, so the package works wherever it is installed. Without `-specs=modcxx` the compiler does not find the kit's headers, because `-mmodule` leaves the system folders out.
+* **A module built on the Pi is byte for byte the module that the cross compiler makes** from the same source and the same commands: that holds for the two C++ modules that were tried (the kit's `CxxMod` example, 11,616 bytes, and the module of the new self-test check).
+* **`Gcc16SelfTest` has a thirteenth check**: a module written in C++ (a static object with a constructor, a virtual function, `new` and `delete`, a template over `std::vector`) is built with `cmunge`, `g++ -mmodule -specs=modcxx` and `gcc -mmodule`, its image is checked, it is loaded, `*ModCxx_Sum 2 3` prints 5 (so the constructor ran) and it is removed again.
+* Documentation: the statements that C++ modules are built on Linux only are gone from the README, `KNOWN-ISSUES.md`, `FEATURES.md`, `MODULES.md`, `USING-NATIVE.md` and `INSTALL-RISCOS.md`; `BUILDING.md` says how the package is made (`recipe/gcc-16.2.0-riscos/scripts/make-packages-cxxmod.py`: the package of 16.2.0-24 plus five files, with four changed).
+* **Not changed**: GCC, binutils, `make`, the module kit, the libraries and the runtime packages. Every file of the `Gcc16` package of 16.2.0-24 that is not named above is byte for byte the same in 16.2.0-25, with the same attributes (five files are new: the four headers and the spec file; four changed: `RiscPkg/Control`, `RiscPkg/Copyright`, `!Boot` for the version, and `docs/ReadMe`). The build instructions and the regression run were not repeated for this release. `Gcc16` 16.2.0-25 needs `SharedLibs-C-armeabihf` 16.2.0-13 or later, as before.
+* Checked on the Raspberry Pi with the packages of this release, installed with PackMan: the self-test (13 of 13 checks in 63 seconds, `SELFTEST: ALL CHECKS PASSED`; check 13 is the C++ module: `cmunge`, `g++ -mmodule -specs=modcxx`, the link, the image, `RMLoad`, `*ModCxx_Sum 2 3` printing 5, `RMKill`), and the two C++ modules built natively, `CxxMod` (11,616 bytes) and `ModCxx` (10,516 bytes), each byte for byte the cross build. The regression run of 16.2.0-24 (54 `SUMMARY` lines) was not repeated: the compiler and the libraries are the same files.
+
 ## Libraries for the 32-bit tool chain: libffi 3.8.0 and OpenSSL 1.1.1w (pre-release `libs-armeabihf-1`, 28 October 2026)
 
 * **New pre-release `libs-armeabihf-1`**: static libraries, headers, pkg-config files and licences of **libffi 3.8.0** and **OpenSSL 1.1.1w** for `arm-riscos-gnueabihf` (hard float), built with the cross compiler 16.2.0-24 and unpacked over it (`-lffi`, `-lssl -lcrypto` then need no flags). A user porting Python 3.8 asked how to add such libraries: those built for GCCSDK 4.7.4 are for the old soft-float ABI and cannot be linked. The release attaches the two upstream tarballs and `SHA256SUMS`. See [docs/EXTRA-LIBS.md](docs/EXTRA-LIBS.md).
